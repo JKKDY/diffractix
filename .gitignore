@@ -1,0 +1,154 @@
+# ==========================================
+# Core & Environment
+# ==========================================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+**/.env
+**/.env.local
+**/.env.*.local
+
+# OS specific
+.DS_Store
+
+# Data
+data/*
+!data/.gitkeep
+
+# ==========================================
+# Python Template
+# ==========================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+**/__pycache__/
+
+# C extensions
+*.so
+
+# Virtual Environments & Package Managers
+.pixi/
+**/.pixi/
+venv/
+.venv
+ENV/
+env/
+venv*/
+.python-version
+pyvenv.cfg
+pip-selfcheck.json
+.installed.cfg
+[Bb]in
+[Ii]nclude
+[Ll]ib
+[Ll]ib64
+[Ll]ocal
+[Ss]cripts
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+*.egg
+.Python
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage / CI
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*,cover
+.hypothesis/
+.pytest_cache/
+
+# ==========================================
+# Node.js / Frontend
+# ==========================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.eslintcache
+.prettiercache
+.husky/_
+
+# Build outputs
+dist/
+dist-ssr/
+*.local
+
+# ==========================================
+# IDEs & Editors
+# ==========================================
+# JetBrains (PyCharm, IntelliJ, etc.)
+.idea/
+*.iws
+out/
+atlassian-ide-plugin.xml
+com_crashlytics_export_strings.xml
+crashlytics.properties
+crashlytics-build.properties
+fabric.properties
+
+# VS Code
+.vscode/*
+!.vscode/extensions.json
+
+# Others
+.spyderproject
+.ropeproject
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+cmake-build-*/
+
+# ==========================================
+# Framework Specific (Django, Flask, etc.)
+# ==========================================
+*.log
+local_settings.py
+instance/
+.webassets-cache
+.scrapy
+docs/_build/
+target/
+.ipynb_checkpoints
+celerybeat-schedule
+
+# ==========================================
+# Custom AI Secrets & Specific Logic
+# ==========================================
+# Ignore the actual "high-quality" prompt files
+server/ai/prompts/system.ts
+server/ai/prompts/system.py
+
+# Keep these public templates
+!server/.env.example
+!server/ai/prompts/system_example.py
+
+# Translations
+*.mo
+*.pot
