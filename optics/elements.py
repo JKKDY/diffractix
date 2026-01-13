@@ -1,6 +1,7 @@
 import inspect
 import uuid
 
+from typing import Iterable
 from dataclasses import dataclass, field, InitVar
 from abc import abstractmethod
 
@@ -111,7 +112,7 @@ class OpticalElement(Entity):
         return len_func(*args)
 
     @property
-    def length_param_names(self) -> Optional[List[str]]:
+    def length_param_names(self) -> list[str] | None:
         """
         Explicitly lists parameters that affect physical length.
         - Return ['d', 'L'] to enable Fast-Path checking.

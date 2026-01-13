@@ -1,9 +1,8 @@
 import inspect
 import autograd.numpy as np
-from typing import Union, List, Optional
 from collections.abc import Iterable
 
-from .elements import OpticalElement, Lens, Space
+from .elements import OpticalElement, Space
 from .beams import GaussianBeam
 from .simulation import Simulation
 
@@ -13,15 +12,18 @@ class System:
     It holds the 'Blueprints' before they are compiled into math.
     """
     def __init__(self):
-        # We don't define wavelength here. It lives on the Input Beam.
-        self.elements: List[OpticalElement] = []
-        self.input_beams: List[GaussianBeam] = []
+        self.elements: list[OpticalElement] = []
+        self.input_beams: list[GaussianBeam] = []
         
+        # store "compiled" layout (after self.build())
+        self._compiled_elements : list[OpticalElement] = []
+        self._generated_constraints : list[callable] = []
+
         # Track execution counts for UI sync (Loop disambiguation)
-        self._execution_counts = {}
+        self._execution_counts : dict = {}
 
-
-    def input(self, beam_or_beams: Union[GaussianBeam, List[GaussianBeam]]):
+    # TODO rename to add_input_beam
+    def input(self, beam_or_beams: GaussianBeam | list[GaussianBeam]):
         """Define the source beam(s) entering the system at z=0."""
         if isinstance(beam_or_beams, list):
             raise NotImplementedError("Multiple input beams not yet supported.")
@@ -30,24 +32,20 @@ class System:
             self.input_beams.append(beam_or_beams)
         return self 
 
-    def add(self, element: Union[OpticalElement, List[OpticalElement]], z: float = None):
-        """
-        Add component(s) to the optical path.
-        Captures source code metadata for the UI Patcher.
-        """
-        if z is not None: 
-            raise NotImplementedError("Absolute Z placement is not yet implemented.")
 
-        # handle lists (recursive add)
-        if isinstance(element, list):
-            if z is not None:
-                raise ValueError("Cannot apply a single absolute Z to a list of elements.")
-            for e in element:
-                self.add(e)
-            return self
+    def add(self, element: OpticalElement, z: float = None, optimize_z: bool = False):
+        """
+        Add an element to the optical path.
+        Args:
+            element: The OpticalElement (Lens, Mirror, etc.)
+            z:      Optional Absolute Position. 
+                    If None, places element relative to the previous one (immediately after).
+                    If Set, inserts an 'AutoSpace' to reach this Z coordinate.
+            optimize_z: If True, the 'AutoSpace' created to reach 'z' becomes a Variable parameter.
+        """
 
-        # Reflection Magic (For UI Sync)
-        # We capture where in the user's script this component was added.
+        # reflection magic (For UI Sync later)
+        # we capture where in the user's script this component was added.
         frame = inspect.currentframe().f_back
         lineno = frame.f_lineno
         filename = frame.f_code.co_filename
@@ -56,38 +54,122 @@ class System:
         call_index = self._execution_counts.get(lineno, 0)
         self._execution_counts[lineno] = call_index + 1
         
-        # Attach metadata to the element   
+        # attach metadata to the element   
         element._source_info.update({
             "file": filename,
             "line": lineno,
             "call_index": call_index
         })
 
-        # if user specified absolute z, set it
+        # now add element
         if z is not None: 
             element.z = z 
+            element.optimize_z = optimize_z
         self.elements.append(element)
         return self
 
 
     def _validate_layout(self):
         """
-        Validates that the element layout is consistent.
-        E.g., of only relative elements are used, there must be a space between each
+        Validates user input:
+            1. Ensures that absolute positions increase monotonically
+            2. Ensures that absolute positions do not conflict with the accumulated length of relative elements
         """
-        # not implement yet
-        # TODO validate inputs
-        pass
+        # tracks our position in the simulation
+        current_z = 0.0
+        
+        for i, el in enumerate(self.elements):
+
+            # if element has absolute position, make sure it is not behind the current cursor
+            absolute_pos = getattr(el, 'z', None)
+            if absolute_pos is not None:
+                # tolerance of 1nm to avoid floating point issues
+                if absolute_pos < current_z - 1e-9:
+                    raise ValueError(
+                        f"Layout Error at Element #{i} ({el.label}): "
+                        f"Requested absolute z={absolute_pos:.4f}, but previous elements "
+                        f"push the optical path to z={current_z:.4f}."
+                    )
+                # set curosr to new absolute position
+                current_z = absolute_pos
+
+            # add length of this element to the cursor 
+            # (ensures that relative elements fit between absolute elements)
+            current_z += el.length
 
 
     def _resolve_layout(self):
         """
-        Converts a mix of Absolute and Relative elements into a 
-        purely Relative (Sequential) list for the simulation.
+        Compiles the mixed Absolute/Relative list into a pure Sequential list.
+          - Inserts AutoSpaces to reach Absolute Z positions.
+          - Configures optimization for those spaces (Variable vs Fixed).
+          - Generates constraints if Fixed Anchors follow Variable Elements.
         """
-        # not implement yet
-        # TODO enable absolute positioning
-        pass
+        # clear any previous state
+        self._compiled_elements = []
+        self._generated_constraints = [] 
+        
+        current_z = 0.0
+        variable_length_block = [] # all variable length elements since last fixed absolute
+        
+        for el in self.elements:
+            absolute_pos = getattr(el, 'z', None)
+            opt_absolute_pos = getattr(el, 'optimize_z', False)
+            
+            # if element has absolute position, we may need to insert a spacer
+            if absolute_pos is not None:
+                gap = absolute_pos - current_z
+
+                # spacer inserted right before the absolute element to fill gap
+                spacer = Space(d=gap, label=f"AutoSpace_to_{absolute_pos}")
+
+                # Check if chain is currently loose
+                upstream_is_variable = len(variable_length_block) > 0
+
+                if opt_absolute_pos:
+                    # user explicitly requested optimization: spacer is variable & everything updstream is now loose 
+                    # i.e. will be moved if spacer length is adjusted
+                    spacer.variable('d')
+                    last_variable_length_elem = spacer
+                    variable_length_block.append(spacer)
+
+                elif not opt_absolute_pos and len(variable_length_block) > 0: # 
+                    # element is Fixed Absolute, but upstream is Variable -> we need to lock this position
+                    # shock absorber logic: This spacer MUST vary to absorb upstream changes
+                    spacer.variable('d')
+
+                    # we do this by adding a constraint: 
+                    target_trace_idx = len(self._compiled_elements) + 1
+                    def make_z_constraint(idx, target_z, lbl):
+                        # Capture specific values in closure
+                        def z_lock(params, simulation_trace: list):
+                            # data shape is (Steps+1, 3) -> [z, w, R]
+                            actual_z = simulation_trace[idx, 0]
+                            return (actual_z - target_z) 
+                        return z_lock
+
+                    self._generated_constraints.append(
+                        make_z_constraint(target_trace_idx, absolute_pos, el.label)
+                    )
+                    
+                    # break the varible length block
+                    variable_length_block = []
+                    
+
+                self._compiled_elements.append(spacer)
+                current_z += gap
+
+            # add actual element
+            self._compiled_elements.append(el)
+            current_z += el.length
+
+           
+            if el.has_variable_length:
+                variable_length_block.append(el)
+        
+        return self._compiled_elements
+
+
 
     def _generate_metadata(self):
         pass
@@ -142,6 +224,7 @@ class System:
 
 
     def __str__(self):
+        # AI generated. Hope it works.
         lines = []
         lines.append("=== Optical System Configuration ===")
         
