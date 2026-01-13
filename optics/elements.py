@@ -1,7 +1,7 @@
 import inspect
 import uuid
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, InitVar
 from abc import abstractmethod
 
 import numpy as np
@@ -12,7 +12,7 @@ from .core import Entity
 class OpticalElement(Entity):
     # Track which parameters are optimizable (e.g., {'f'}, {'d'}, {'A', 'D'})
     # By default, this is empty (everything is fixed)
-    variable_params: set[str] = field(default_factory=set, repr=False)
+    _variable_params: set[str] = field(default_factory=set, repr=False)
 
     @property
     def param_names(self) -> list[str]:
@@ -37,13 +37,11 @@ class OpticalElement(Entity):
             ABCD(...).variable('A', 'B')  -> marks only 'A', 'B'
 
         """
-    
         valid_names = self.param_names
 
         # no arg -> set all parameters as variable
         if not param_names:
-
-            self.variable_params.update(valid_names)
+            self._variable_params.update(valid_names)
             return self
 
         # loop through all provided param names, set them as variable
@@ -53,10 +51,77 @@ class OpticalElement(Entity):
                     f"Parameter '{p}' not found in {self.__class__.__name__}. "
                     f"Available: {valid_names}"
                 )
-            self.variable_params.add(p)
+            self._variable_params.add(p)
 
         return self
 
+    def fixed(self):
+        """
+        Fluent setter to mark all parameters as fixed (non-trainable) (default)
+        """
+        self._variable_params.clear()
+        return self
+
+    @property
+    def has_variable_length(self) -> bool:
+        """
+        Returns True if the physical length of this element changes when any of its currently variable parameters change.
+        Returns False if length is constant regardless of variable parameters.
+
+        The function performs sensitivity checks using autograd to determine if length depends on any variable parameter.
+        """
+
+        # shortcircuit: if all parameters fixed: length is fixed
+        if not self._variable_params:
+            return False
+
+        # get the distance function + parameter values
+        _, len_func, val = self.get_sim_data()
+        args = val if isinstance(val, Iterable) else [val]
+        
+        # check sensitivity for each variable parameter     
+        for i, name in enumerate(self.param_names):
+            if name not in self._variable_params: 
+                continue
+
+            try:
+                # Ask Autograd: "What is d(Length) / d(Param_i)?"
+                # argnum=i tells it to differentiate w.r.t the i-th argument
+                sensitivity_func = grad(len_func, argnum=i)
+                g = sensitivity_func(*args)
+                
+                # If gradient is non-zero, the length depends on this variable!
+                if abs(g) > 1e-9:
+                    return True
+                    
+            except Exception:
+                # If function is non-differentiable (e.g. constant), 
+                # grad might fail or return 0. We assume fixed.
+                pass
+                
+        return False
+
+    @property
+    def length(self) -> float:
+        """
+        Returns the physical length of this element at its current parameter values.
+        """
+        _, len_func, val = self.get_sim_data()
+        args = val if isinstance(val, Iterable) else [val]
+        return len_func(*args)
+
+    @property
+    def length_param_names(self) -> Optional[List[str]]:
+        """
+        Explicitly lists parameters that affect physical length.
+        - Return ['d', 'L'] to enable Fast-Path checking.
+        - Return [] to explicitly declare this as a Fixed-Length/Thin element.
+        - Return None (default) to fall back to robust Autograd sensitivity checks.
+
+        .. warning::
+            It is recommended to override this property in subclasses for performance optimization.
+        """
+        return None
 
     @abstractmethod
     def get_matrix(self):
@@ -70,7 +135,7 @@ class OpticalElement(Entity):
         This should return a tuple of (matrix_function, length_function, parameter_value(s)).
           - matrix_function: A callable that returns the ABCD matrix given the parameter(s).
           - length_function: A callable that returns the effective length of the element given the parameter(s).
-        
+          - parameter_value(s): The current value(s) of the parameter(s) (must be a single value or a flat iterable of values).
         We return functions to enable auto differentiation over parameters
         """
         raise NotImplementedError("Subclasses must implement get_sim_data method.")
@@ -82,6 +147,10 @@ class Space(OpticalElement):
     d: float
     n: float = 1.0  # Refractive index of the medium
 
+    @property
+    def length_param_names(self):
+        return ['d']
+
     def get_matrix(self, d):
         # Note: self.n is baked into this bound method
         return np.array([[1.0, d/self.n], [0.0, 1.0]])
@@ -92,8 +161,12 @@ class Space(OpticalElement):
 
 
 @dataclass(kw_only=True)
-class Lens(OpticalElement):
+class ThinLens(OpticalElement):
     f: float # Focal length in meters
+
+    @property
+    def length_param_names(self):
+        return []
 
     def get_matrix(self, f):
         return np.array([[1.0, 0.0], [-1.0/f, 1.0]])
@@ -101,6 +174,8 @@ class Lens(OpticalElement):
     def get_sim_data(self):
         # Length Logic: Lenses are thin, so they add 0.0 to position
         return self.get_matrix, lambda _: 0.0, self.f
+
+
 
 
 
@@ -122,6 +197,10 @@ class ABCD(OpticalElement):
     C: InitVar[float] = None
     D: InitVar[float] = None
 
+    @property
+    def length_param_names(self):
+        return [] # no length for now
+
     def __post_init__(self, A, B, C, D):
         # if matrix is explicitly provided, use it (ignores A,B,C,D)
         if self.matrix is not None:
@@ -141,7 +220,7 @@ class ABCD(OpticalElement):
 
     def get_sim_data(self):
         # Length Logic: ??? 0.0 for now
-        # TODO: Allow user to specify effective length if desired. Maybe derive from B? 
+        # TODO: Allow user to specify effective length if desired
         return self.get_matrix, lambda *args: 0.0, self.matrix.flatten()
 
     
