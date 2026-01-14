@@ -110,8 +110,13 @@ class Simulation:
             mat = func(*step_params)
             step_z = len_func(*step_params)
         
-            # propagate
-            q = core.propagate(q, mat)
+            # propagate with möbius transform
+            A, B = mat[0]
+            C, D = mat[1]
+            numerator = A * q + B
+            denominator = C * q + D
+                     
+            q = numerator / denominator
             z += step_z
 
             # record state

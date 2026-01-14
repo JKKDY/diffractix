@@ -32,7 +32,7 @@ class OpticalElement(Entity):
         """
         Fluent setter to mark a parameter as variable (e.e. trainable).
         Usage: 
-            Lens(f=0.1).variable()        -> marks 'f'
+            ThinLens(f=0.1).variable()    -> marks 'f'
             ABCD(...).variable()          -> marks 'A', 'B', 'C', 'D'
             ABCD(...).variable('A')       -> marks only 'A'
             ABCD(...).variable('A', 'B')  -> marks only 'A', 'B'
@@ -166,19 +166,22 @@ class OpticalElement(Entity):
 @dataclass(kw_only=True)
 class Space(OpticalElement):
     d: float
-    n: float = 1.0  # Refractive index of the medium
+    n: float = 1.0
 
     @property
     def length_param_names(self):
-        return ['d']
+        return ['d'] # refractive index n does not affect physical length
 
-    def get_matrix(self, d):
-        # Note: self.n is baked into this bound method
-        return np.array([[1.0, d/self.n], [0.0, 1.0]])
+    def get_matrix(self, d, n):
+        return np.array([[1.0, d/n], [0.0, 1.0]])
 
     def get_sim_data(self):
-        # Length Logic: The physical length is exactly the parameter 'd'
-        return self.get_matrix, lambda d : d, [self.d]
+        return (
+            self.get_matrix,                # matrix function
+            lambda d, n: d,                 # length function
+            [float(self.d), float(self.n)]  # values: [d, n]
+        )
+
 
 
 @dataclass(kw_only=True)
@@ -198,6 +201,39 @@ class ThinLens(OpticalElement):
 
 
 
+@dataclass(kw_only=True)
+class DielectricInterface(OpticalElement):
+    n1: float
+    n2: float
+    R: float = np.inf  # Radius of curvature (inf = flat)
+
+    @property
+    def length_param_names(self):
+        return [] # Thin interface
+
+    def get_matrix(self, n1, n2, R):
+        # Paraxial Snell's Law / Spherical Refraction
+        # P = (n2 - n1) / R
+        power = (n2 - n1) / R
+        return np.array([[1.0, 0.0], [-power/n2, n1/n2]])
+
+    def get_sim_data(self):
+        return (
+            self.get_matrix, 
+            lambda n1, n2, R: 0.0, 
+            [float(self.n1), float(self.n2), float(self.R)]
+        )
+
+
+def Slab(d: float, n: float, n_ambient: float = 1.0, label: str = "Slab"):
+    """
+    Creates a sequence representing a physical block of material.
+    """
+    return [
+        DielectricInterface(n1=n_ambient, n2=n, R=np.inf, label=f"{label}_In"),
+        Space(d=d, n=n, label=f"{label}_Body"),
+        DielectricInterface(n1=n, n2=n_ambient, R=np.inf, label=f"{label}_Out")
+    ]
 
 
 @dataclass(kw_only=True)
@@ -212,6 +248,7 @@ class ABCD(OpticalElement):
         el = ABCD()                           # Option 3: Default Identity
     """
     matrix: np.ndarray = field(default=None)
+    thickness: float = 0.0 # Physical length added to the layout
 
     A: InitVar[float] = None
     B: InitVar[float] = None
@@ -220,7 +257,7 @@ class ABCD(OpticalElement):
 
     @property
     def length_param_names(self):
-        return [] # no length for now
+        return ["thickness"]
 
     def __post_init__(self, A, B, C, D):
         # if matrix is explicitly provided, use it (ignores A,B,C,D)
@@ -236,11 +273,17 @@ class ABCD(OpticalElement):
         
         self.matrix = np.array([[val_A, val_B], [val_C, val_D]])
 
-    def get_matrix(self, A, B, C, D):
+    def get_matrix(self, A, B, C, D, thickness):
+        # thickness is passed here to satisfy the signature 
         return np.array([[A, B], [C, D]])
 
     def get_sim_data(self):
-        # Length Logic: ??? 0.0 for now
-        # TODO: Allow user to specify effective length if desired
-        return self.get_matrix, lambda *args: 0.0, self.matrix.flatten()
+        A, B = self.matrix[0]
+        C, D = self.matrix[1]
+        
+        return (
+            self.get_matrix, # matrix function
+            lambda a, b, c, d, t: t, # length function
+            [float(A), float(B), float(C), float(D), float(self.thickness)] # values: A, B, C, D, thickness
+        )
 

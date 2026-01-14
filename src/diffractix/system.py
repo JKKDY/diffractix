@@ -49,7 +49,7 @@ class System:
         return self 
 
 
-    def add(self, element: OpticalElement, z: float = None, optimize_z: bool = False):
+    def add(self, element: OpticalElement | Iterable[OpticalElement], z: float = None, optimize_z: bool = False):
         """
         Add an element to the optical path.
         Args:
@@ -59,6 +59,15 @@ class System:
                     If Set, inserts an 'AutoSpace' to reach this Z coordinate.
             optimize_z: If True, the thickness of the 'AutoSpace' created to reach 'z' becomes a Variable parameter.
         """
+
+        # recurisve duck typing for sequences of elments
+        if isinstance(element, Iterable):
+            for el in element:
+                self.add(el) 
+            return self # allow chaining
+
+        # single element case
+        assert isinstance(element, OpticalElement), "Only OpticalElement instances can be added to the System."
 
         # reflection magic (For UI Sync later)
         # we capture where in the user's script this component was added.
@@ -94,8 +103,8 @@ class System:
         # tracks our position in the simulation
         current_z = 0.0
         
+        # validate absolute positions
         for i, el in enumerate(self.elements):
-
             # if element has absolute position, make sure it is not behind the current cursor
             absolute_pos = getattr(el, 'z', None)
             if absolute_pos is not None:
@@ -112,6 +121,20 @@ class System:
             # add length of this element to the cursor 
             # (ensures that relative elements fit between absolute elements)
             current_z += el.length
+
+        # validate refractive index transitions
+        for i in range(len(self.elements) - 1):
+            el1 = self.elements[i]
+            el2 = self.elements[i+1]
+            
+            # Check for index mismatch between consecutive spaces
+            if isinstance(el1, Space) and isinstance(el2, Space):
+                if not np.isclose(el1.n, el2.n):
+                    raise ValueError(
+                        f"Refractive Index Mismatch at boundary between '{el1.label}' and '{el2.label}'.\n"
+                        f"Medium 1: n={el1.n}, Medium 2: n={el2.n}.\n"
+                        "To change index, you must explicitly insert a 'DielectricInterface'."
+                    )
 
 
     def _resolve_layout(self):

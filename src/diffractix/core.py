@@ -10,34 +10,7 @@ class Entity:
     
     # Metadata for UI sync (populated later by System.add)
     _source_info: dict = field(default_factory=dict, repr=False)
-
-
-
-def propagate(q_in, mat):
-    """
-    Applies the ABCD Möbius transformation to a complex beam parameter q.
-    
-    q_out = (A * q_in + B) / (C * q_in + D)
-    
-    Args:
-        q_in (complex): Input beam parameter.
-        mat (np.ndarray): 2x2 ABCD matrix.
-        
-    Returns:
-        complex: The output beam parameter q_out.
-    """
-    # Unpack matrix elements
-    A = mat[0, 0]
-    B = mat[0, 1]
-    C = mat[1, 0]
-    D = mat[1, 1]
-    
-    numerator = A * q_in + B
-    denominator = C * q_in + D
-    
-    # We allow div-by-zero to propagate as inf/nan naturally usually, 
-    # but for optimization stability, standard floats handle this well enough.
-    return numerator / denominator
+ 
 
 
 
