@@ -38,8 +38,7 @@ class System:
         # Track execution counts for UI sync (Loop disambiguation)
         self._execution_counts : dict = {}
 
-    # TODO rename to add_input_beam
-    def input(self, beam_or_beams: GaussianBeam | list[GaussianBeam]):
+    def add_input(self, beam_or_beams: GaussianBeam | list[GaussianBeam]):
         """Define the source beam(s) entering the system at z=0."""
         if isinstance(beam_or_beams, list):
             raise NotImplementedError("Multiple input beams not yet supported.")
@@ -348,7 +347,3 @@ class System:
 
         return "\n".join(lines) + "\n"
 
-
-if __name__ == "__main__":
-    x = Space(d=0.3, label="Slider").variable()
-    print(x)

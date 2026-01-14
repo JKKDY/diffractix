@@ -1,16 +1,40 @@
+"""
+Defines the base abstractions for all optical components in the simulation.
+
+This module provides the `OpticalElement` base class, which handles the 
+interface between physical components (Lenses, Spaces, etc.) and the 
+differentiable simulation engine. It manages parameter variability, 
+physical length tracking, and metadata generation.
+"""
+
 import inspect
 
 from typing import Iterable
-from dataclasses import dataclass, field, InitVar
+from dataclasses import dataclass, field
 from abc import abstractmethod
 from autograd import grad
 
-import numpy as np
-from .core import Entity
+from ..core import Entity
 
 
 @dataclass
 class OpticalElement(Entity):
+    """
+    Abstract base class for all optical components.
+
+    An OpticalElement represents a physical entity in an optical system that 
+    can transform a beam (via an ABCD matrix) and occupies physical space. 
+    
+    Key Features:
+    - Differentiability: Provides matrix and length functions compatible 
+      with autograd for optimization.
+    - Variability: Parameters can be marked as 'variable' to be included 
+      in optimization search spaces.
+    - Layout Intelligence: Automatically determines if its physical length 
+      is sensitive to parameter changes to assist in layout resolution.
+    """
+
+
     # Track which parameters are optimizable (e.g., {'f'}, {'d'}, {'A', 'D'})
     # By default, this is empty (everything is fixed)
     _variable_params: set[str] = field(default_factory=set, repr=False)
@@ -160,130 +184,3 @@ class OpticalElement(Entity):
         We return functions to enable auto differentiation over parameters
         """
         raise NotImplementedError("Subclasses must implement get_sim_data method.")
-
-
-
-@dataclass(kw_only=True)
-class Space(OpticalElement):
-    d: float
-    n: float = 1.0
-
-    @property
-    def length_param_names(self):
-        return ['d'] # refractive index n does not affect physical length
-
-    def get_matrix(self, d, n):
-        return np.array([[1.0, d/n], [0.0, 1.0]])
-
-    def get_sim_data(self):
-        return (
-            self.get_matrix,                # matrix function
-            lambda d, n: d,                 # length function
-            [float(self.d), float(self.n)]  # values: [d, n]
-        )
-
-
-
-@dataclass(kw_only=True)
-class ThinLens(OpticalElement):
-    f: float # Focal length in meters
-
-    @property
-    def length_param_names(self):
-        return []
-
-    def get_matrix(self, f):
-        return np.array([[1.0, 0.0], [-1.0/f, 1.0]])
-
-    def get_sim_data(self):
-        # Length Logic: Lenses are thin, so they add 0.0 to position
-        return self.get_matrix, lambda _: 0.0, [self.f]
-
-
-
-@dataclass(kw_only=True)
-class DielectricInterface(OpticalElement):
-    n1: float
-    n2: float
-    R: float = np.inf  # Radius of curvature (inf = flat)
-
-    @property
-    def length_param_names(self):
-        return [] # Thin interface
-
-    def get_matrix(self, n1, n2, R):
-        # Paraxial Snell's Law / Spherical Refraction
-        # P = (n2 - n1) / R
-        power = (n2 - n1) / R
-        return np.array([[1.0, 0.0], [-power/n2, n1/n2]])
-
-    def get_sim_data(self):
-        return (
-            self.get_matrix, 
-            lambda n1, n2, R: 0.0, 
-            [float(self.n1), float(self.n2), float(self.R)]
-        )
-
-
-def Slab(d: float, n: float, n_ambient: float = 1.0, label: str = "Slab"):
-    """
-    Creates a sequence representing a physical block of material.
-    """
-    return [
-        DielectricInterface(n1=n_ambient, n2=n, R=np.inf, label=f"{label}_In"),
-        Space(d=d, n=n, label=f"{label}_Body"),
-        DielectricInterface(n1=n, n2=n_ambient, R=np.inf, label=f"{label}_Out")
-    ]
-
-
-@dataclass(kw_only=True)
-class ABCD(OpticalElement):
-    """
-    A black-box optical element defined manually by its matrix.
-    Useful for subsystems or unknown optics.
-
-    Usage:
-        el = ABCD(matrix=np.eye(2))           # Option 1: Full Matrix
-        el = ABCD(A=1, B=0.1, C=0, D=1)       # Option 2: Scalars
-        el = ABCD()                           # Option 3: Default Identity
-    """
-    matrix: np.ndarray = field(default=None)
-    thickness: float = 0.0 # Physical length added to the layout
-
-    A: InitVar[float] = None
-    B: InitVar[float] = None
-    C: InitVar[float] = None
-    D: InitVar[float] = None
-
-    @property
-    def length_param_names(self):
-        return ["thickness"]
-
-    def __post_init__(self, A, B, C, D):
-        # if matrix is explicitly provided, use it (ignores A,B,C,D)
-        if self.matrix is not None:
-            return
-
-        # if matrix is missing, build it from A, B, C, D
-        # default to identity if specific values are missing
-        val_A = A if A is not None else 1.0
-        val_B = B if B is not None else 0.0
-        val_C = C if C is not None else 0.0
-        val_D = D if D is not None else 1.0
-        
-        self.matrix = np.array([[val_A, val_B], [val_C, val_D]])
-
-    def get_matrix(self, A, B, C, D, thickness):
-        # thickness is passed here to satisfy the signature 
-        return np.array([[A, B], [C, D]])
-
-    def get_sim_data(self):
-        A, B = self.matrix[0]
-        C, D = self.matrix[1]
-        
-        return (
-            self.get_matrix, # matrix function
-            lambda a, b, c, d, t: t, # length function
-            [float(A), float(B), float(C), float(D), float(self.thickness)] # values: A, B, C, D, thickness
-        )
-
