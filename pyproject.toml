@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "diffractix"
+version = "0.1.0"
+dependencies = [
+    "autograd",
+    "numpy",
+    "matplotlib",
+    "jupyter",
+    "notebook",
+    "scipy"
+]
+
+# This is your "down the road" testing framework
+[project.optional-dependencies]
+dev = [
+    "pytest"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
