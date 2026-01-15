@@ -46,5 +46,6 @@ class ThinLens(OpticalElement):
         return (
             self.get_matrix, 
             lambda f: 0.0, 
+            None,
             [float(self.f)]
         )

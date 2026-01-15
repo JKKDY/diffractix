@@ -41,7 +41,7 @@ class SimulationResult:
             # Calculate physical properties for visualization
             # Note: We calculate w at the plane (offset=0)
             ws.append(float(beam.w_at_z(0))) 
-            Rs.append(float(beam.curvature_at_z(0)))
+            Rs.append(float(beam.R_at_z(0)))
 
         return {
             "structure": self.structure_metadata,
@@ -62,25 +62,30 @@ class Simulation:
     It defines the TOPOLOGY of the system.
     """
     def __init__(self, 
-                 steps: list[callable], 
-                 length_steps: list[callable],
-                 param_indices: list[tuple], 
-                 initial_params: np.ndarray, 
-                 input_beams: list['GaussianBeam'],
-                 structure_metadata: list[dict],
-                 param_definitions: list['ParameterDef'],
-                 constraints: list[callable] = None):
+                steps: list[callable], 
+                length_steps: list[callable],
+                index_steps: list[callable],
+                param_indices: list[tuple], 
+                ambient_n: float,
+                initial_params: np.ndarray, 
+                input_beams: list['GaussianBeam'],
+                structure_metadata: list[dict],
+                param_definitions: list['ParameterDef'],
+                constraints: list[callable] = None):
         # validation
         assert len(steps) == len(param_indices), "Steps and param_indices must align."
         assert len(steps) == len(length_steps), "Steps and length_steps must align."
+        assert len(steps) == len(index_steps), "Steps and index_steps must align."
         assert len(input_beams) == 1, "Currently only single input beam supported."
         
         # Physics
         self.steps = steps               # functions returning ABCD matrices
         self.length_steps = length_steps # functions returning physical length
+        self.index_steps = index_steps   # functions returning refractive index
         self.param_indices = param_indices # List of tuples mapping steps to indices in params array
         self.initial_params = np.array(initial_params, dtype=float)
         self.input_beam = input_beams[0] 
+        self.ambient_n = ambient_n
 
         # Metadata & Optimization Hooks
         self.structure_metadata = structure_metadata
@@ -98,17 +103,20 @@ class Simulation:
         q = self.input_beam.q
         z = 0.0  # starting at z=0
         wavelength = self.input_beam.wavelength
+        current_n = self.ambient_n
         
         # Initialize history with starting beam
-        result = [(z, q)]
+        result = [(z, q, current_n)]
 
         # Propagation Loop
-        for func, len_func, idx in zip(self.steps, self.length_steps, self.param_indices):
+        for func, len_func, idx_func, idx in zip(self.steps, self.length_steps, self.index_steps, self.param_indices):
 
-            # extract parameters
             step_params = params[list(idx)]
+
+            # get current element properties
             mat = func(*step_params)
             step_z = len_func(*step_params)
+            current_n = idx_func(current_n, *step_params)
         
             # propagate with möbius transform
             A, B = mat[0]
@@ -120,11 +128,11 @@ class Simulation:
             z += step_z
 
             # record state
-            result.append((z, q))
+            result.append((z, q, current_n))
 
         return result
 
-    def run_for_optimzer(self, params: np.ndarray | None = None) -> np.ndarray:
+    def run_for_optimizer(self, params: np.ndarray | None = None) -> np.ndarray:
         """
         Math-Facing Forward Pass.
         Returns: A numpy array of shape (N_steps, 3) -> [z, w, R]
@@ -135,15 +143,11 @@ class Simulation:
         # Convert to a flat array for efficient slicing in loss functions
         # autograd loves numpy arrays, hates lists of tuples.
         data = []
-        for z, q in raw_history:
-            w, R = core.w_R_from_q(q, wavelength)
+        for z, q, n in raw_history:
+            w, R = GaussianBeam.w_R_from_q(q, wavelength, n)
             data.append([z, w, R])
             
         return np.stack(data) # Shape: (Steps, 3)
-
-    def foo(self):
-        print("bar")
-
 
     def run(self, params: np.ndarray | None = None) -> 'SimulationResult':
         """
@@ -154,7 +158,7 @@ class Simulation:
         wavelength = self.input_beam.wavelength
         
         # Convert raw (z, q) -> (z, GaussianBeam) for the Result object
-        trace = [(z, GaussianBeam(q, wavelength)) for z, q in raw_history]
+        trace = [(z, GaussianBeam(q, wavelength)) for z, q, n in raw_history]
 
         return SimulationResult(trace, self.structure_metadata)
 

@@ -54,5 +54,6 @@ class DielectricInterface(OpticalElement):
         return (
             self.get_matrix, 
             lambda n1, n2, R: 0.0, 
+            lambda n1, n2, R: n2, 
             [float(self.n1), float(self.n2), float(self.R)]
         )

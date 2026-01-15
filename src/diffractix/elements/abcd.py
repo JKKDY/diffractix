@@ -20,10 +20,13 @@ class ABCD(OpticalElement):
     Parameters:
         matrix (np.ndarray): The 2x2 ABCD matrix. Overrides A, B, C, D if provided.
         thickness (float): Physical length added to the layout (default: 0.0).
+        n (float): Refractive index. Optional. if not set will inherit from previous element. If that is not set, defaults to 1.0.
         A, B, C, D (float): Individual matrix components (optional helpers).
+
     """
     matrix: np.ndarray = field(default=None)
     thickness: float = 0.0  # Physical length added to the layout
+    n = None  # optional
 
     # Helper init-vars to allow ABCD(A=1, ...) syntax
     A: InitVar[float] = None
@@ -50,10 +53,10 @@ class ABCD(OpticalElement):
         
         self.matrix = np.array([[val_A, val_B], [val_C, val_D]])
 
-    def get_matrix(self, A, B, C, D, thickness):
+    def get_matrix(self, A, B, C, D, thickness, n):
         """
         Returns the matrix constructed from the current optimization parameters.
-        Note: 'thickness' is passed to satisfy the signature but affects only layout, not the matrix.
+        Note: 'thickness' and 'n' are passed to satisfy the signature but affect only layout and physical beam, not the matrix.
         """
         return np.array([[A, B], [C, D]])
 
@@ -61,8 +64,18 @@ class ABCD(OpticalElement):
         A, B = self.matrix[0]
         C, D = self.matrix[1]
         
+        if self.n is None: 
+            # if no refractive index specified we specify a dummy value do satisfy return signature
+            # the ABCD balckbox will inherit refractive index from previous element in layout
+            idx_func = None
+            val_n = 1.0
+        else: 
+            idx_func = lambda a, b, c, d, t, n: n
+            val_n = float(self.n)
+        
         return (
             self.get_matrix, 
-            lambda a, b, c, d, t: t,  # Length function just returns 't' (thickness)
-            [float(A), float(B), float(C), float(D), float(self.thickness)]
+            lambda a, b, c, d, t, n: t,  # Length function just returns 't' (thickness)
+            idx_func,  # Refractive index function
+            [float(A), float(B), float(C), float(D), self.thickness, val_n]
         )

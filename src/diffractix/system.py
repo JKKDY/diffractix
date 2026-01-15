@@ -8,6 +8,7 @@ from .beams import GaussianBeam
 from .simulation import Simulation
 
 
+
 @dataclass(frozen=True)
 class ParameterInfo:
     """
@@ -22,12 +23,15 @@ class ParameterInfo:
     is_variable: bool    # True if the user marked this for optimization
 
 
+
 class System:
     """
     The declarative builder for the optical setup.
     It holds the 'Blueprints' before they are compiled into math.
     """
-    def __init__(self):
+    def __init__(self, ambient_n: float = 1.0, ambient_n_variable: bool = False):
+        self.ambient_n = ambient_n;
+        self.ambient_n_variable = ambient_n_variable;
         self.elements: list[OpticalElement] = []
         self.input_beams: list[GaussianBeam] = []
         
@@ -141,7 +145,7 @@ class System:
         Compiles the mixed Absolute/Relative list into a pure Sequential list.
           - Inserts AutoSpaces to reach Absolute Z positions.
           - Configures optimization for those spaces (Variable vs Fixed).
-          - Generates constraints if Fixed Anchors follow Variable Elements.
+          - Generates constraints if fixed anchors follow variable length Elements.
         """
         # clear any previous state
         self._compiled_elements = []
@@ -185,7 +189,7 @@ class System:
                             actual_z = simulation_trace[idx, 0]
                             return (actual_z - target_z) 
                         return z_lock
-                    print(f"Generated Z-Constraint at Element '{el.label}' (z={absolute_pos}) to lock position after variable elements: {[e.label for e in variable_length_block]}")
+
                     self._generated_constraints.append(
                         make_z_constraint(target_trace_idx, absolute_pos, el.label)
                     )
@@ -221,7 +225,8 @@ class System:
         self._resolve_layout() 
 
         functions = []          # List of element step functions (returning ABCD matrices)
-        length_functions = []   # 
+        length_functions = []   # List of element length functions
+        index_functions = []    # List of element refractive index functions
         indices = []            # list of tuples of indices into parameter array. Each tuple corresponds to one element
         values = []             # (initial) parameter values
         param_defs = []         # parameter map: We need this so the Optimizer knows that Index 5 is "Lens 1 Focal Length"
@@ -232,11 +237,18 @@ class System:
         # Loop over compiled (i.e. finalized) elements
         for el in  self._compiled_elements:
             if hasattr(el, 'get_sim_data'):
-                func, len_func, vals = el.get_sim_data()
+                func, len_func, idx_func, vals = el.get_sim_data()
              
                 # store Functions
                 functions.append(func)
                 length_functions.append(len_func)
+
+                # normalize the index functions. We make these also depend on the refractive index of the previous element
+                if idx_func is not None:
+                    normalized_idx_func = lambda curr, *args, idx_func=idx_func: idx_func(*args)
+                else:
+                    normalized_idx_func = lambda curr, *args: curr
+                index_functions.append(normalized_idx_func)
 
                 # store Indices & parameter values
                 idxs = tuple(range(current_param_idx, current_param_idx + len(vals)))                    
@@ -263,6 +275,8 @@ class System:
         return Simulation(
             steps=functions, 
             length_steps=length_functions,
+            index_steps=index_functions,
+            ambient_n = self.ambient_n,
             param_indices=indices, 
             initial_params=values,
             input_beams=self.input_beams, 
@@ -316,7 +330,7 @@ class System:
             
             # D. Parameters & Values
             if hasattr(el, 'get_sim_data'):
-                _, _, vals = el.get_sim_data()
+                _, _, _, vals = el.get_sim_data()
                 names = el.param_names
                 
                 param_chunks = []

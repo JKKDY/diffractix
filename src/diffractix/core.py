@@ -14,35 +14,30 @@ class Entity:
 
 
 
-def w_R_from_q(q, wavelength, n=1.0):
+def w_R_from_q(q: complex, wavelength: float, n: float = 1.0) -> tuple[float, float]:
     """
-    Extracts physical properties (waist radius w, curvature R) from the complex q parameter.
+    Extracts beam width (w) and radius of curvature (R) from the complex q-parameter.
     
-    Formulas:
-    1/q = 1/R - i * (lambda / (pi * n * w^2))
-    
-    Args:
-        q (complex): The complex beam parameter.
-        wavelength (float): The wavelength in vacuum (meters).
-        n (float): The refractive index of the medium (default 1.0).
-        
-    Returns:
-        (w, R): Tuple of floats (spot size radius, radius of curvature).
+    Math: 1/q = 1/R - i * (lambda / (pi * n * w^2))
     """
     inv_q = 1.0 / q
     
-    # Curvature R = 1 / Re(1/q)
-    # Handle the plane wave case (Re(1/q) == 0) carefully if needed, 
-    # but normally numpy handles inf correctly.
-    # We add a tiny epsilon to avoid div-by-zero if strictly 0.
-    real_part = np.real(inv_q)
-    R = 1.0 / (real_part + 1e-20) 
+    # radius of Curvature
+    if abs(inv_q.real) < 1e-16:
+        R = np.inf
+    else:
+        R = 1.0 / inv_q.real
+        
+    # Beam Waist (corrected for index n)
+    # Im(1/q) = - lambda / (pi * n * w^2)  =>  w = sqrt( -lambda / (pi * n * Im(1/q)) )
+    imag_part = inv_q.imag
     
-    # Spot Size w
-    # Im(1/q) = - lambda / (pi * n * w^2)
-    # w^2 = - lambda / (pi * n * Im(1/q))
-    imag_part = np.imag(inv_q)
-    w_squared = -wavelength / (np.pi * n * imag_part)
-    w = np.sqrt(w_squared)
+    # Safety: q.imag should always be negative for a valid Gaussian beam (forward propagation)
+    # If positive, raise an error
+    if imag_part > -1e-16: 
+         raise Exception("Invalid q-parameter: Imaginary part of 1/q must be negative for a physical Gaussian beam.")
+
+    w_sq = -wavelength / (np.pi * n * imag_part)
+    w = np.sqrt(w_sq)
     
     return w, R

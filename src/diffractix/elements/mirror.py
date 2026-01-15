@@ -43,5 +43,6 @@ class Mirror(OpticalElement):
         return (
             self.get_matrix, 
             lambda R: 0.0, 
+            None, 
             [float(self.R)]
         )

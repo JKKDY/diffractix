@@ -13,6 +13,7 @@ from typing import Iterable
 from dataclasses import dataclass, field
 from abc import abstractmethod
 from autograd import grad
+import autograd.numpy as np
 
 from ..core import Entity
 
@@ -43,7 +44,7 @@ class OpticalElement(Entity):
     def param_names(self) -> list[str]:
         """
         Returns the list of parameter names corresponding to the simulation data.
-        The order mathes that of self.get_sim_data()'s returned parameters (3rd return value).
+        The order mathes that of self.get_sim_data()'s returned parameters (4. return value).
 
         e.g. Lens.get_matrix(self, f) -> returns ['f']
         e.g. ABCD.get_matrix(self, A, B, C, D) -> returns ['A', 'B', 'C', 'D']
@@ -113,7 +114,7 @@ class OpticalElement(Entity):
 
         # Fallback: use autograd to check sensitivity of length function
         # get the distance function + parameter values
-        _, len_func, vals = self.get_sim_data()
+        _, len_func, _, vals = self.get_sim_data()
         
         # check sensitivity for each variable parameter     
         for i, name in enumerate(self.param_names):
@@ -134,7 +135,7 @@ class OpticalElement(Entity):
         header = f"{name:<15}{label_str:<20}L={self.length:.4g} {'[VAR]' if self.has_variable_length else '[FIX]'}"
         
         # parameters
-        _, _, current_vals = self.get_sim_data()
+        _, _, _, current_vals = self.get_sim_data()
         names = self.param_names
         
         param_details = []
@@ -152,8 +153,29 @@ class OpticalElement(Entity):
         """
         Returns the physical length of this element at its current parameter values.
         """
-        _, len_func, args = self.get_sim_data()
+        _, len_func, _, args = self.get_sim_data()
         return len_func(*args)
+
+    @property
+    def refractive_index(self) -> float:
+        """
+        Returns the physical length of this element at its current parameter values.
+        """
+        _, _, index_func, args = self.get_sim_data()
+        return index_func(*args) if index_func is not None else None
+
+    @property
+    def refractive_index_param_names(self) -> list[str] | None:
+        """
+        Explicitly lists parameters that affect refractive index (if refractive index relevant for ABCD matrix).
+        - Return ['d', 'L'] to enable Fast-Path checking.
+        - Return [] to explicitly declare this as a Fixed-Length/Thin element.
+        - Return None (default) to fall back to robust Autograd sensitivity checks.
+
+        .. warning::
+            It is recommended to override this property in subclasses for performance optimization.
+        """
+        return None
 
     @property
     def length_param_names(self) -> list[str] | None:
@@ -169,18 +191,21 @@ class OpticalElement(Entity):
         return None
 
     @abstractmethod
-    def get_matrix(self):
+    def get_matrix(self) -> np.ndarray:
         """Return the ABCD matrix of the optical element."""
         raise NotImplementedError("Subclasses must implement get_matrix method.")
 
     @abstractmethod
-    def get_sim_data(self):
+    def get_sim_data(self) -> tuple[callable, callable, callable, Iterable[float]]:
         """
         Return simulation data for the optical element.
         This should return a tuple of (matrix_function, length_function, parameter_value(s)).
           - matrix_function: A callable that returns the ABCD matrix given the parameter(s).
           - length_function: A callable that returns the effective length of the element given the parameter(s).
+          - index_function:  A callable that returns the refractive index of the element given the parameter(s).
           - parameter_value(s): The current value(s) of the parameter(s) (must be a single value or a flat iterable of values).
+
         We return functions to enable auto differentiation over parameters
+        Length and refractive index require their own functions because they cannot be derived from the ABCD matrix alone.
         """
         raise NotImplementedError("Subclasses must implement get_sim_data method.")

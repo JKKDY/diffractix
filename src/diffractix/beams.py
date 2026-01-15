@@ -42,7 +42,7 @@ class GaussianBeam(Entity):
     def z_r(self) -> float:
         """Rayleigh range (in terms of propagation distance z)."""
         # q = z + i*z_r
-        return self.q.imag
+        return np.imag(self.q)
 
     @property
     def z0(self) -> float:
@@ -84,7 +84,7 @@ class GaussianBeam(Entity):
         Range: -pi/2 to +pi/2
         """
         # Re(q) is the distance z from the waist. Im(q) is z_r.
-        return np.arctan2(self.q.real, self.q.imag)
+        return np.arctan2(np.real(self.q), np.imag(self.q))
 
     @property
     def b(self) -> float:
@@ -134,8 +134,11 @@ class GaussianBeam(Entity):
         
         inv_q1 = 1.0 / q1
         inv_q2 = 1.0 / q2
+
+        inv_q1_imag = np.imag(inv_q)
+        inv_q2_imag = np.imag(inv_q)
         
-        numerator = 4 * inv_q1.imag * inv_q2.imag
+        numerator = 4 * inv_q1_imag * inv_q2_imag
         denominator = abs(np.conj(inv_q1) + inv_q2)**2
         
         return numerator / denominator
@@ -148,19 +151,21 @@ class GaussianBeam(Entity):
         Math: 1/q = 1/R - i * (lambda / (pi * n * w^2))
         """
         inv_q = 1.0 / q
+
+        # need to use np.real/imag to ensure autograd compatibility
+        inv_q_real = np.real(inv_q)
+        inv_q_imag = np.imag(inv_q)
         
         # radius of curvature (real part of 1/q)
-        R = np.inf if abs(inv_q.real) < 1e-16 else 1.0 / inv_q.real
+        R = np.inf if abs(inv_q_real) < 1e-16 else 1.0 / inv_q_real
             
-        # Beam Waist (Imaginary part of 1/q)
-        # Im(1/q) = - lambda / (pi * n * w^2)  =>  w = sqrt( -lambda / (pi * n * Im(1/q)) )
-        imag_part = inv_q.imag
-        
+        # Beam waist 
+        # Im(1/q) = - lambda / (pi * n * w^2)  =>  w = sqrt( -lambda / (pi * n * Im(1/q)) )        
         # safety check: q.imag should always be negative for a valid Gaussian beam (forward propagation)
-        if imag_part > -1e-16: 
+        if inv_q_imag > -1e-16: 
             raise Exception("Invalid q-parameter: Imaginary part of 1/q must be negative for a physical Gaussian beam.")
 
-        w_sq = -wavelength / (np.pi * n * imag_part)
+        w_sq = -wavelength / (np.pi * n * inv_q_imag)
         w = np.sqrt(w_sq)
         
         return w, R

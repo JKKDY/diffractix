@@ -42,5 +42,6 @@ class Space(OpticalElement):
         return (
             self.get_matrix,                # matrix function
             lambda d, n: d,                 # length function
+            lambda d, n: n,                 # refractive index function
             [float(self.d), float(self.n)]  # values: [d, n]
         )
