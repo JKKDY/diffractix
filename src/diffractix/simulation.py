@@ -3,7 +3,6 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from autograd import jacobian
 from typing import Tuple
-from . import core
 from .beams import GaussianBeam
 
 
@@ -52,6 +51,15 @@ class SimulationResult:
                 "R": Rs
             }]
         }
+
+
+
+@dataclass
+class SimulationStep: 
+    matrix_func: callable
+    length_func: callable
+    index_func: callable
+    param_indices: callable
 
 
 

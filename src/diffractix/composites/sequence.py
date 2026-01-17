@@ -1,5 +1,5 @@
 from typing import Dict, List, Tuple
-from .base import OpticalElement
+from ..elements.base import OpticalElement
 
 class ElementSequence(list):
     """

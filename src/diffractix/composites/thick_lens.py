@@ -2,11 +2,10 @@
 Defines the Thick Lens element.
 """
 
-
 import autograd.numpy as np
 from .sequence import ElementSequence
-from .space import Space
-from .dielectric_interface import DielectricInterface
+from ..elements.space import Space
+from ..elements.dielectric_interface import DielectricInterface
 
 class ThickLens(ElementSequence):
     """

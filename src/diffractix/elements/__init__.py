@@ -7,9 +7,6 @@ from .mirror import Mirror
 from .dielectric_interface import DielectricInterface
 from .abcd import ABCD
 
-# Import factories
-from .slab import Slab
-from .thick_lens import ThickLens
 
 __all__ = [
     "OpticalElement", 
@@ -18,6 +15,4 @@ __all__ = [
     "Mirror", 
     "DielectricInterface", 
     "ABCD",
-    "Slab",
-    "ThickLens"
 ]

@@ -9,17 +9,17 @@ physical length tracking, and metadata generation.
 
 import inspect
 
-from typing import Iterable
+from typing import Iterable, ClassVar
 from dataclasses import dataclass, field
 from abc import abstractmethod
 from autograd import grad
 import autograd.numpy as np
 
-from ..core import Entity
+from ..graph import Node, Parameter
 
 
 @dataclass
-class OpticalElement(Entity):
+class OpticalElement:
     """
     Abstract base class for all optical components.
 
@@ -35,25 +35,81 @@ class OpticalElement(Entity):
       is sensitive to parameter changes to assist in layout resolution.
     """
 
+    # housekeeping
+    label: str = None 
+    _counts: ClassVar[dict] = {} # ClassVar so dataclasses doesn't treat this as an instance field
 
     # Track which parameters are optimizable (e.g., {'f'}, {'d'}, {'A', 'D'})
     # By default, this is empty (everything is fixed)
     _variable_params: set[str] = field(default_factory=set, repr=False)
 
-    @property
-    def param_names(self) -> list[str]:
-        """
-        Returns the list of parameter names corresponding to the simulation data.
-        The order mathes that of self.get_sim_data()'s returned parameters (4. return value).
 
-        e.g. Lens.get_matrix(self, f) -> returns ['f']
-        e.g. ABCD.get_matrix(self, A, B, C, D) -> returns ['A', 'B', 'C', 'D']
-        """
-        sig = inspect.signature(self.get_matrix)
-        return list(sig.parameters.keys())
+    #-----------------------
+    # DUNDER / MAGIC METHODS
+    #-----------------------
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        
+        # Perform signature inspection at class construction time
+        func = getattr(cls, "get_matrix", None)
+        if func is None:
+            raise TypeError("Subclass must define get_matrix")
+
+        sig = inspect.signature(func)
+
+        cls._param_names = [
+            name for name in sig.parameters if name != "self"
+        ]
+
+       
+    def __post_init__(self):
+        # set label to *class_name*#instantaitions 
+        if self.label is None:
+            cls = self.__class__
+            
+            if cls not in OpticalElement._counts:
+                OpticalElement._counts[cls] = 0
+            
+            OpticalElement._counts[cls] += 1
+            self.label = f"{cls.__name__}{OpticalElement._counts[cls]}"
 
 
-    def variable(self, *param_names: str):
+    def __setattr__(self, name, value):
+        # Intercept Physics Parameters -> Wrap in ast.Parameter node
+        if name in getattr(self.__class__, '_param_names', set()):
+
+            if not isinstance(value, Node) and value is not None:
+                value = Parameter(value=value, name=name, fixed=True, owner=self)
+        
+        super().__setattr__(name, value)
+
+
+    def __str__(self):
+        # Identity and Basic Geometry
+        name = f"{self.__class__.__name__}"
+        label_str = f" '{self.label}'" if self.label else ""
+        header = f"{name:<15}{label_str:<20}L={self.length:.4g} {'[VAR]' if self.has_variable_length else '[FIX]'}"
+        
+        # parameters
+        _, _, _, current_vals = self.get_sim_data()
+        names = self.param_names
+        
+        param_details = []
+        for name, val in zip(names, current_vals):
+            # Tag variable parameters for the UI/CLI
+            status = "[VAR]" if name in self._variable_params else "[FIX]"
+            param_details.append(f"{name}={val:.4g} {status}")
+        
+        params_str = " | " + " | ".join(param_details)
+      
+        return f"{header:<50} {params_str}"
+  
+
+
+    #----
+    # API
+    #----
+    def variable(self, *variable_params: str):
         """
         Fluent setter to mark a parameter as variable (e.e. trainable).
         Usage: 
@@ -63,21 +119,20 @@ class OpticalElement(Entity):
             ABCD(...).variable('A', 'B')  -> marks only 'A', 'B'
 
         """
-        valid_names = self.param_names
-
         # no arg -> set all parameters as variable
-        if not param_names:
-            self._variable_params.update(valid_names)
-            return self
+        if not variable_params:
+            variable_params = self.param_names
 
         # loop through all provided param names, set them as variable
-        for p in param_names:
-            if p not in valid_names:
+        for p in variable_params:
+            if p not in self.param_names:
                 raise ValueError(
                     f"Parameter '{p}' not found in {self.__class__.__name__}. "
-                    f"Available: {valid_names}"
+                    f"Available: {self.param_names}"
                 )
             self._variable_params.add(p)
+            obj = getattr(self, p)
+            obj.fixed = False
 
         return self
 
@@ -86,7 +141,25 @@ class OpticalElement(Entity):
         Fluent setter to mark all parameters as fixed (non-trainable) (default)
         """
         self._variable_params.clear()
+        for p in variable_params:
+            obj = getattr(self, p)
+            obj.fixed = True
+
         return self
+
+    #------------------
+    # @PROPERTY METHODS
+    #------------------
+    @property
+    def param_names(self) -> list[str]:
+        """
+        Returns the list of parameter names corresponding to the simulation data.
+        The order mathes that of self.get_sim_data()'s returned parameters (4. return value).
+
+        e.g. Lens.get_matrix(self, f) -> returns ['f']
+        e.g. ABCD.get_matrix(self, A, B, C, D) -> returns ['A', 'B', 'C', 'D']
+        """
+        return self.__class__._param_names
 
     @property
     def has_variable_length(self) -> bool:
@@ -128,25 +201,6 @@ class OpticalElement(Entity):
 
         return False
 
-    def __str__(self):
-        # Identity and Basic Geometry
-        name = f"{self.__class__.__name__}"
-        label_str = f" '{self.label}'" if self.label else ""
-        header = f"{name:<15}{label_str:<20}L={self.length:.4g} {'[VAR]' if self.has_variable_length else '[FIX]'}"
-        
-        # parameters
-        _, _, _, current_vals = self.get_sim_data()
-        names = self.param_names
-        
-        param_details = []
-        for name, val in zip(names, current_vals):
-            # Tag variable parameters for the UI/CLI
-            status = "[VAR]" if name in self._variable_params else "[FIX]"
-            param_details.append(f"{name}={val:.4g} {status}")
-        
-        params_str = " | " + " | ".join(param_details)
-      
-        return f"{header:<50} {params_str}"
 
     @property
     def length(self) -> float:
@@ -164,6 +218,10 @@ class OpticalElement(Entity):
         _, _, index_func, args = self.get_sim_data()
         return index_func(*args) if index_func is not None else None
 
+
+    #------------
+    # OVERRIDABLE
+    #------------
     @property
     def refractive_index_param_names(self) -> list[str] | None:
         """

@@ -3,11 +3,10 @@ from dataclasses import dataclass
 from typing import Tuple
 import autograd.numpy as np
 import cmath
-from .core import Entity
 
 
 @dataclass
-class GaussianBeam(Entity):
+class GaussianBeam:
     """
     Represents a Gaussian Beam at a specific point in space and medium.
     
