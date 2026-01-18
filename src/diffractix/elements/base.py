@@ -226,12 +226,6 @@ class OpticalElement:
     def refractive_index_param_names(self) -> list[str] | None:
         """
         Explicitly lists parameters that affect refractive index (if refractive index relevant for ABCD matrix).
-        - Return ['d', 'L'] to enable Fast-Path checking.
-        - Return [] to explicitly declare this as a Fixed-Length/Thin element.
-        - Return None (default) to fall back to robust Autograd sensitivity checks.
-
-        .. warning::
-            It is recommended to override this property in subclasses for performance optimization.
         """
         return None
 
@@ -239,9 +233,9 @@ class OpticalElement:
     def length_param_names(self) -> list[str] | None:
         """
         Explicitly lists parameters that affect physical length.
-        - Return ['d', 'L'] to enable Fast-Path checking.
+        - Return ['d', 'L', ...(any other parameters that influence the length)] to enable Fast-Path checking.
         - Return [] to explicitly declare this as a Fixed-Length/Thin element.
-        - Return None (default) to fall back to robust Autograd sensitivity checks.
+        - Return None (default) to fall back to use autodiff sensitivity checks.
 
         .. warning::
             It is recommended to override this property in subclasses for performance optimization.

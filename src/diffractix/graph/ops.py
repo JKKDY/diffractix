@@ -14,6 +14,23 @@ class Op(Enum):
     def __repr__(self):
         return self.name
 
+    @property
+    def is_commutative(self):
+        return self in (Op.ADD, Op.MUL)
+
+    @property
+    def unicode(self) -> str:
+        return {
+            Op.ADD: "＋",
+            Op.SUB: "−",
+            Op.MUL: "×",
+            Op.DIV: "÷",
+            Op.NEG: "−",
+            Op.MAX: "max",
+            Op.MIN: "min",
+            Op.SIGMOID: "σ",
+        }[self]
+
 OP_MAP = {
     Op.ADD: np.add,
     Op.SUB: np.subtract,
@@ -24,12 +41,3 @@ OP_MAP = {
     Op.MIN: np.minimum,
 }
 
-COMMUTATION_MAP = {
-    Op.ADD: True,
-    Op.SUB: False,
-    Op.MUL: True,
-    Op.DIV: False,
-    Op.NEG: True,
-    Op.MAX: True,
-    Op.MIN: True,
-}
