@@ -79,6 +79,12 @@ class Node:
         return  Node._make_binary_op(Op.MIN, self, ceiling)
 
 
+    def __float__(self):
+        if not hasattr(self, "value"):
+            raise Exception(f"self.value not implemented for {self.__class__}")
+        return float(self.value)
+
+
 
 class BinaryOp(Node):
     """
@@ -86,8 +92,8 @@ class BinaryOp(Node):
     """
     def __init__(self, op: Op, left: Node | Scalar, right: Node | Scalar):
         self.op = op
-        self.left = left 
-        self.right = right 
+        self.left = left if hash(left) <= hash(right) else right 
+        self.right = right if hash(left) <= hash(right) else left  
 
     def __repr__(self) -> str:
         return f"({self.left} {self.op.unicode} {self.right})"
@@ -98,11 +104,10 @@ class BinaryOp(Node):
             l, r = r, l
         return hash((BinaryOp, self.op, l, r))
 
-    def __eq__(self, other):
-       return (isinstance(other, BinaryOp) and 
-                self.op == other.op and 
-                self.left is other.left and 
-                self.right is other.right)
+    @property
+    def value(self) -> float:
+        return self.op.func(self.left.value, self.right.value) 
+
 
 
 class UnaryOp(Node):
@@ -119,10 +124,9 @@ class UnaryOp(Node):
     def __hash__(self):
         return hash((UnaryOp, self.op, self.operand))
 
-    def __eq__(self, other):
-        return (isinstance(other, UnaryOp) and 
-                self.op == other.op and 
-                self.operand is other.operand)
+    @property
+    def value(self) -> float:
+        return self.op.func(self.operand.value) 
 
 
 

@@ -31,13 +31,17 @@ class Op(Enum):
             Op.SIGMOID: "σ",
         }[self]
 
-OP_MAP = {
-    Op.ADD: np.add,
-    Op.SUB: np.subtract,
-    Op.MUL: np.multiply,
-    Op.DIV: np.divide,
-    Op.NEG: np.negative,
-    Op.MAX: np.maximum,
-    Op.MIN: np.minimum,
-}
+
+    @property
+    def func(self) -> callable:
+        return {
+            Op.ADD: np.add,
+            Op.SUB: np.subtract,
+            Op.MUL: np.multiply,
+            Op.DIV: np.divide,
+            Op.NEG: np.negative,
+            Op.MAX: np.maximum,
+            Op.MIN: np.minimum,
+        }[self]
+
 

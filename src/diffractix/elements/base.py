@@ -85,7 +85,7 @@ class OpticalElement:
 
 
     def __str__(self):
-        # Identity and Basic Geometry
+        # Identity and length
         name = f"{self.__class__.__name__}"
         label_str = f" '{self.label}'" if self.label else ""
         header = f"{name:<15}{label_str:<20}L={self.length:.4g} {'[VAR]' if self.has_variable_length else '[FIX]'}"

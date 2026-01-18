@@ -12,11 +12,14 @@ if __name__ == "__main__":
     S4 = Space(d=L1.f + L2.f, label="S2")
     S2 = Space(d=L2.f + L1.f, label="S3")
     S4 = Space(d=S2.d * 9+ 828 * L1.f * 2983, label="S3")
-    S4 = Space(d=S2.d * 9+ 828 * L1.f * 2983, label="S3")
-
+    
 
     # S2 = Space(d=2 * S1.d, label="S2")
     # S3 = Space(d= S2.d * L1.f, label="S3")
 
     for k, v in Node._cache.items():
         print(k, v)
+
+    print(S1.d.value)
+    print(S2.d.value)
+    print(S4.d.value)
