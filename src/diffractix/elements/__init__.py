@@ -1,6 +1,6 @@
 # diffractix/elements/__init__.py
 
-from .base import OpticalElement
+from .element import OpticalElement
 from .space import Space
 from .thin_lens import ThinLens
 from .mirror import Mirror

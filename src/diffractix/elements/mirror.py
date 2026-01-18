@@ -3,7 +3,8 @@ Defines the Mirror element.
 """
 from dataclasses import dataclass
 import autograd.numpy as np
-from .base import OpticalElement
+from .element import OpticalElement
+from ..graph import Parameter
 
 
 @dataclass(kw_only=True)
@@ -21,7 +22,7 @@ class Mirror(OpticalElement):
                    R < 0 is convex (diverging).
                    R = np.inf is a flat mirror.
     """
-    R: float = np.inf
+    R: float | Parameter = np.inf
 
     @property
     def length_param_names(self):
@@ -44,5 +45,5 @@ class Mirror(OpticalElement):
             self.get_matrix, 
             lambda R: 0.0, 
             None, 
-            [float(self.R)]
+            [self.R]
         )

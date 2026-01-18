@@ -3,8 +3,9 @@ Defines the free Space element.
 """
 
 from dataclasses import dataclass
-from .base import OpticalElement
+from .element import OpticalElement
 import autograd.numpy as np
+from ..graph import Parameter
 
 @dataclass(kw_only=True)
 class Space(OpticalElement):
@@ -19,8 +20,8 @@ class Space(OpticalElement):
         d (float): Physical distance of the propagation.
         n (float): Refractive index of the medium (default: 1.0).
     """
-    d: float
-    n: float = 1.0
+    d: float | Parameter
+    n: float | Parameter = 1.0
 
     @property
     def length_param_names(self):
@@ -43,5 +44,5 @@ class Space(OpticalElement):
             self.get_matrix,                # matrix function
             lambda d, n: d,                 # length function
             lambda d, n: n,                 # refractive index function
-            [float(self.d), float(self.n)]  # values: [d, n]
+            [self.d, self.n]  # values: [d, n]
         )

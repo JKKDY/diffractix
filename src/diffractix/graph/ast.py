@@ -84,6 +84,11 @@ class Node:
             raise Exception(f"self.value not implemented for {self.__class__}")
         return float(self.value)
 
+    @property
+    @abstractmethod
+    def is_constant(self):
+        pass
+
 
 
 class BinaryOp(Node):
@@ -108,6 +113,9 @@ class BinaryOp(Node):
     def value(self) -> float:
         return self.op.func(self.left.value, self.right.value) 
 
+    @property
+    def is_constant(self):
+        return self.left.is_constant and self.right.is_constant
 
 
 class UnaryOp(Node):
@@ -128,6 +136,11 @@ class UnaryOp(Node):
     def value(self) -> float:
         return self.op.func(self.operand.value) 
 
+    @property
+    def is_constant(self):
+        return self.operand.is_constant
+
+
 
 
 class Constant(Node):
@@ -139,6 +152,11 @@ class Constant(Node):
 
     def __repr__(self):
         return f"{self.value:.4g}"
+
+    @property
+    def is_constant(self):
+        return True
+
 
 
 class Parameter(Node):
@@ -182,3 +200,7 @@ class Parameter(Node):
     def __repr__(self):
         # tag = "[FIX]" if self.fixed else "[VAR]"
         return f"{self.full_name}={self.value:.4g}"
+
+    @property
+    def is_constant(self):
+        return self.fixed

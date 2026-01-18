@@ -3,7 +3,8 @@ Defines the DielectricInterface element.
 """
 from dataclasses import dataclass
 import autograd.numpy as np
-from .base import OpticalElement
+from .element import OpticalElement
+from ..graph import Parameter
 
 @dataclass(kw_only=True)
 class DielectricInterface(OpticalElement):
@@ -26,9 +27,9 @@ class DielectricInterface(OpticalElement):
         R (float): Radius of curvature of the interface (default: inf/flat).
                    R > 0 means the center of curvature is in the +z direction (Convex).
     """
-    n1: float
-    n2: float
-    R: float = np.inf
+    n1: float | Parameter
+    n2: float | Parameter
+    R: float | Parameter = np.inf
 
     @property
     def length_param_names(self):
@@ -55,5 +56,5 @@ class DielectricInterface(OpticalElement):
             self.get_matrix, 
             lambda n1, n2, R: 0.0, 
             lambda n1, n2, R: n2, 
-            [float(self.n1), float(self.n2), float(self.R)]
+            [self.n1, self.n2, self.R]
         )

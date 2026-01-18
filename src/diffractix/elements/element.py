@@ -40,9 +40,14 @@ class OpticalElement:
     _counts: ClassVar[dict] = {} # ClassVar so dataclasses doesn't treat this as an instance field
 
     # Track which parameters are optimizable (e.g., {'f'}, {'d'}, {'A', 'D'})
-    # By default, this is empty (everything is fixed)
-    _variable_params: set[str] = field(default_factory=set, repr=False)
-
+    @property
+    def variable_parameter_names(self):
+        names = []
+        for name in self.param_names: 
+            obj = getattr(self, name)
+            if not obj.is_constant:
+                names.append(name)
+        return names
 
     #-----------------------
     # DUNDER / MAGIC METHODS
@@ -91,7 +96,8 @@ class OpticalElement:
         header = f"{name:<15}{label_str:<20}L={self.length:.4g} {'[VAR]' if self.has_variable_length else '[FIX]'}"
         
         # parameters
-        _, _, _, current_vals = self.get_sim_data()
+        _, _, _, val_nodes = self.get_sim_data()
+        current_vals = [float(x) for x in val_nodes]
         names = self.param_names
         
         param_details = []
@@ -130,9 +136,11 @@ class OpticalElement:
                     f"Parameter '{p}' not found in {self.__class__.__name__}. "
                     f"Available: {self.param_names}"
                 )
-            self._variable_params.add(p)
-            obj = getattr(self, p)
-            obj.fixed = False
+
+            # if the nodes constness is derived from children
+            node = getattr(self, p)
+            if isinstance(node, Parameter):
+                node.fixed = False
 
         return self
 
@@ -140,10 +148,10 @@ class OpticalElement:
         """
         Fluent setter to mark all parameters as fixed (non-trainable) (default)
         """
-        self._variable_params.clear()
-        for p in variable_params:
-            obj = getattr(self, p)
-            obj.fixed = True
+        for p in self.variable_parameter_names:
+            node = getattr(self, p)
+            if isinstance(node, Parameter):
+                node.fixed = True
 
         return self
 
@@ -171,8 +179,10 @@ class OpticalElement:
           2. Explicit Fast-Path: Checks length_param_names (if provided).
           3. Implicit Fallback: autograd sensitivity check.
         """
+        variable_params = self.variable_parameter_names
+
         # Fast Fail: if all parameters fixed -> length is fixed
-        if not self._variable_params:
+        if not variable_params:
             return False
 
         # Fast-Path: check explicit length_param_names (if available)
@@ -180,18 +190,19 @@ class OpticalElement:
         if explicit_names is not None:
             # if any name in the list is variable, the length is variable
             for name in explicit_names:
-                if name in self._variable_params:
+                if name in variable_params:
                     return True
             # else if empty or non are variable we assume length is fixed
             return False
 
         # Fallback: use autograd to check sensitivity of length function
         # get the distance function + parameter values
-        _, len_func, _, vals = self.get_sim_data()
+        _, len_func, _, val_nodes = self.get_sim_data()
+        vals = [float(x) for x in val_nodes]
         
         # check sensitivity for each variable parameter     
         for i, name in enumerate(self.param_names):
-            if name in self._variable_params: 
+            if name in variable_params:
                 # grad with argnum requests: d(len_func) / d(Param_i)
                 sensitivity_func = grad(len_func, argnum=i)
                 g = sensitivity_func(*vals)
@@ -207,16 +218,18 @@ class OpticalElement:
         """
         Returns the physical length of this element at its current parameter values.
         """
-        _, len_func, _, args = self.get_sim_data()
-        return len_func(*args)
+        _, len_func, _, val_nodes = self.get_sim_data()
+        vals = [float(x) for x in val_nodes]
+        return len_func(*vals)
 
     @property
     def refractive_index(self) -> float:
         """
         Returns the physical length of this element at its current parameter values.
         """
-        _, _, index_func, args = self.get_sim_data()
-        return index_func(*args) if index_func is not None else None
+        _, _, index_func, val_nodes = self.get_sim_data()
+        vals = [float(x) for x in val_nodes]
+        return index_func(*vals) if index_func is not None else None
 
 
     #------------
@@ -248,14 +261,14 @@ class OpticalElement:
         raise NotImplementedError("Subclasses must implement get_matrix method.")
 
     @abstractmethod
-    def get_sim_data(self) -> tuple[callable, callable, callable, Iterable[float]]:
+    def get_sim_data(self) -> tuple[callable, callable, callable, Iterable[Parameter]]:
         """
         Return simulation data for the optical element.
         This should return a tuple of (matrix_function, length_function, parameter_value(s)).
           - matrix_function: A callable that returns the ABCD matrix given the parameter(s).
           - length_function: A callable that returns the effective length of the element given the parameter(s).
           - index_function:  A callable that returns the refractive index of the element given the parameter(s).
-          - parameter_value(s): The current value(s) of the parameter(s) (must be a single value or a flat iterable of values).
+          - parameter_value(s): The current value(s) of the parameter(s) (must be a flat iterable of Paramers).
 
         We return functions to enable auto differentiation over parameters
         Length and refractive index require their own functions because they cannot be derived from the ABCD matrix alone.

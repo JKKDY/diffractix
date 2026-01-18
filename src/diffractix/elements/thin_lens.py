@@ -3,8 +3,9 @@ Defines the Thin Lens element.
 """
 
 from dataclasses import dataclass
-from .base import OpticalElement
+from .element import OpticalElement
 import autograd.numpy as np
+from ..graph import Parameter
 
 
 
@@ -21,7 +22,7 @@ class ThinLens(OpticalElement):
         f (float): Focal length in meters. 
                    Positive for converging lenses, negative for diverging lenses.
     """
-    f: float
+    f: float | Parameter
 
     @property
     def length_param_names(self):
@@ -47,5 +48,5 @@ class ThinLens(OpticalElement):
             self.get_matrix, 
             lambda f: 0.0, 
             None,
-            [float(self.f)]
+            [self.f]
         )

@@ -3,7 +3,7 @@ Defines the ABCD 'Black Box' element.
 """
 from dataclasses import dataclass, field, InitVar
 import autograd.numpy as np
-from .base import OpticalElement
+from .element import OpticalElement
 
 
 @dataclass(kw_only=True)
@@ -77,5 +77,5 @@ class ABCD(OpticalElement):
             self.get_matrix, 
             lambda a, b, c, d, t, n: t,  # Length function just returns 't' (thickness)
             idx_func,  # Refractive index function
-            [float(A), float(B), float(C), float(D), self.thickness, val_n]
+            [A, B, C, D, self.thickness, val_n]
         )
