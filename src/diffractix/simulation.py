@@ -74,7 +74,7 @@ class Simulation:
                 length_steps: list[callable],
                 index_steps: list[callable],
                 param_indices: list[tuple], 
-                ambient_n: float,
+                environment,
                 initial_params: np.ndarray, 
                 input_beams: list['GaussianBeam'],
                 structure_metadata: list[dict],
@@ -93,7 +93,7 @@ class Simulation:
         self.param_indices = param_indices # List of tuples mapping steps to indices in params array
         self.initial_params = np.array(initial_params, dtype=float)
         self.input_beam = input_beams[0] 
-        self.ambient_n = ambient_n
+        self.environment = environment
 
         # Metadata & Optimization Hooks
         self.structure_metadata = structure_metadata
@@ -111,7 +111,7 @@ class Simulation:
         q = self.input_beam.q
         z = 0.0  # starting at z=0
         wavelength = self.input_beam.wavelength
-        current_n = self.ambient_n
+        current_n = self.environment.ambient_n.value
         
         # Initialize history with starting beam
         result = [(z, q, current_n)]

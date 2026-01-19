@@ -14,8 +14,9 @@ from dataclasses import dataclass, field
 from abc import abstractmethod
 from autograd import grad
 import autograd.numpy as np
+import itertools
 
-from ..graph import Node, Parameter
+from ..graph.ast import Node, Parameter, Constant, PlaceHolder, BinaryOp, UnaryOp
 
 
 @dataclass
@@ -36,8 +37,12 @@ class OpticalElement:
     """
 
     # housekeeping
+    id: int = field(init=False)
     label: str = None 
     _counts: ClassVar[dict] = {} # ClassVar so dataclasses doesn't treat this as an instance field
+    _source_info: dict = field(default_factory=dict, repr=False)
+
+    _id_counter: ClassVar[itertools.count] = itertools.count()
 
     # Track which parameters are optimizable (e.g., {'f'}, {'d'}, {'A', 'D'})
     @property
@@ -68,6 +73,8 @@ class OpticalElement:
 
        
     def __post_init__(self):
+        self.id = next(self._id_counter)
+
         # set label to *class_name*#instantaitions 
         if self.label is None:
             cls = self.__class__
@@ -80,13 +87,29 @@ class OpticalElement:
 
 
     def __setattr__(self, name, value):
-        # Intercept Physics Parameters -> Wrap in ast.Parameter node
-        if name in getattr(self.__class__, '_param_names', set()):
+        # only intercept access to parameters
+        if name not in getattr(self.__class__, '_param_names', set()):
+            super().__setattr__(name, value)
+            return
 
-            if not isinstance(value, Node) and value is not None:
-                value = Parameter(value=value, name=name, fixed=True, owner=self)
-        
-        super().__setattr__(name, value)
+        current_obj = self.__dict__.get(name)
+        if isinstance(current_obj, UnaryOp | BinaryOp):
+            # only allowed to replace leaves in the AST
+            raise TypeError(f"Cannot set '{name}' to {value}: It is bound to a formula {current_obj}. ")
+        elif isinstance(current_obj, Parameter):
+            # update the parameters value
+            current_obj.value = value
+        elif value is None:
+            # no value -> create placeholder
+            new_param = PlaceHolder(name=name, owner=self)
+            super().__setattr__(name, new_param)
+        elif isinstance(value, Node):
+            # value is a node -> just set it normally
+            super().__setattr__(name, value)
+        else: 
+            # create new Parameter
+            new_param = Parameter(value=value, name=name, fixed=True, owner=self)
+            super().__setattr__(name, new_param)
 
 
     def __str__(self):
@@ -235,6 +258,9 @@ class OpticalElement:
     #------------
     # OVERRIDABLE
     #------------
+    def init_placeholders(self, environment: "Environment"):
+        pass 
+
     @property
     def refractive_index_param_names(self) -> list[str] | None:
         """

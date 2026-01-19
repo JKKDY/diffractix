@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from .elements import OpticalElement, Space
 from .beams import GaussianBeam
 from .simulation import Simulation
+from .graph import Node, PlaceHolder, Parameter
 
 
 
@@ -22,6 +23,9 @@ class ParameterInfo:
     initial_value: float # Value at time of build
     is_variable: bool    # True if the user marked this for optimization
 
+@dataclass(frozen=True)
+class Environment: 
+    ambient_n: Parameter
 
 
 class System:
@@ -30,8 +34,10 @@ class System:
     It holds the 'Blueprints' before they are compiled into math.
     """
     def __init__(self, ambient_n: float = 1.0, ambient_n_variable: bool = False):
-        self.ambient_n = ambient_n;
-        self.ambient_n_variable = ambient_n_variable;
+        self.environment = Environment(
+            ambient_n = Parameter(value=ambient_n, name="PlaceHolder", fixed=not ambient_n_variable)
+        )
+
         self.elements: list[OpticalElement] = []
         self.input_beams: list[GaussianBeam] = []
         
@@ -97,12 +103,29 @@ class System:
         return self
 
 
+    def _ensure_context(self):
+        for i, el in enumerate(self.elements):
+            el.init_placeholders(self.environment)
+
     def _validate_layout(self):
         """
         Validates user input:
             1. Ensures that absolute positions increase monotonically
             2. Ensures that absolute positions do not conflict with the accumulated length of relative elements
         """
+        # ensure every parameter is an AST node. ensure they are all convertable to floats
+        for i, el in enumerate(self.elements):
+            for name in el.param_names:
+                param = getattr(el, name)
+
+                if not isinstance(param, Node):
+                    raise ValueError(f"Encountered a non Node parameter {name} of element {el}: {param}. Type: {type(param)}")
+
+                try: 
+                    float(param)
+                except Exception as e:
+                    raise ValueError(f"could not convert node {param} to float; encountered error {e}")
+
         # tracks our position in the simulation
         current_z = 0.0
         
@@ -132,7 +155,7 @@ class System:
             
             # Check for index mismatch between consecutive spaces
             if isinstance(el1, Space) and isinstance(el2, Space):
-                if not np.isclose(el1.n, el2.n):
+                if not np.isclose(el1.n.value, el2.n.value):
                     raise ValueError(
                         f"Refractive Index Mismatch at boundary between '{el1.label}' and '{el2.label}'.\n"
                         f"Medium 1: n={el1.n}, Medium 2: n={el2.n}.\n"
@@ -208,22 +231,12 @@ class System:
            
             if el.has_variable_length:
                 variable_length_block.append(el)
-        
-        return self._compiled_elements
-
 
 
     def _generate_metadata(self):
         pass
-
-
-    def build(self) -> 'Simulation':
-        """
-        Compiles the element list into a flat, differentiable Simulation.
-        """
-        self._validate_layout()
-        self._resolve_layout() 
-
+    
+    def _build_simulation(self):
         functions = []          # List of element step functions (returning ABCD matrices)
         length_functions = []   # List of element length functions
         index_functions = []    # List of element refractive index functions
@@ -238,6 +251,7 @@ class System:
         for el in  self._compiled_elements:
             if hasattr(el, 'get_sim_data'):
                 func, len_func, idx_func, vals = el.get_sim_data()
+                vals = [float(x) for x in vals]
              
                 # store Functions
                 functions.append(func)
@@ -259,11 +273,11 @@ class System:
                 for i, v in enumerate(vals):                    
                     param_defs.append(ParameterInfo(
                         index=current_param_idx + i,
-                        element_id=el.id,
+                        element_id=None,
                         element_label=el.label,
                         param_name=el.param_names[i],
                         initial_value=v,
-                        is_variable=(el.param_names[i] in el._variable_params)
+                        is_variable=(el.param_names[i] in el.variable_parameter_names)
                     ))
 
                 current_param_idx += len(vals)
@@ -276,7 +290,7 @@ class System:
             steps=functions, 
             length_steps=length_functions,
             index_steps=index_functions,
-            ambient_n = self.ambient_n,
+            environment = self.environment, # TODO replace with self.environment
             param_indices=indices, 
             initial_params=values,
             input_beams=self.input_beams, 
@@ -285,6 +299,16 @@ class System:
             constraints=self._generated_constraints # The Z-Locks
         )
 
+
+    def build(self) -> 'Simulation':
+        """
+        Compiles the element list into a flat, differentiable Simulation.
+        """
+        self._ensure_context()
+        self._validate_layout()
+        self._resolve_layout() 
+        return self._build_simulation()
+      
 
     def __str__(self):
         lines = []
@@ -310,54 +334,99 @@ class System:
         # 2. Components Table
         lines.append("\n--- Component Schedule ---")
         
-        # Added 'Z-Pos' column
         header = f"{'#':<4} {'Z-Pos':<10} {'Type':<15} {'Label':<20} {'Parameters':<50} {'Line'}"
         lines.append(header)
         lines.append("-" * len(header))
 
         current_z = 0.0
+        z_valid = True  # Track if we still know the absolute position
+
         for i, el in enumerate(target_list):
             # A. Basic Info
             el_type = el.__class__.__name__
             label = el.label if len(el.label) < 19 else el.label[:16] + "..."
             
-            # B. Z-Positioning
-            # Show current_z before adding the element's own length
-            z_str = f"{current_z:.4g}m"
+            # D. Parameters & Values (Resolved Safely)
+            params_str = ""
+            element_length = 0.0
             
-            # C. Source Metadata
-            line_num = str(el._source_info.get('line', '-'))
-            
-            # D. Parameters & Values
             if hasattr(el, 'get_sim_data'):
-                _, _, _, vals = el.get_sim_data()
-                names = el.param_names
+                # Extract functions and arguments (Nodes/Floats)
+                _, len_func, _, args = el.get_sim_data()
+                
+                # 1. Resolve Arguments for Display & Calculation
+                # We need two lists:
+                # - display_strs: strings for the table (e.g., "1.5", "<Ambient>")
+                # - clean_vals: floats for length calc (if possible)
+                
+                display_strs = []
+                clean_vals = []
+                can_compute_length = True
+
+                for arg in args:
+                    # Try to evaluate the Node to a number
+                    try:
+                        if isinstance(arg, (float, int)):
+                            val = arg
+                        elif hasattr(arg, 'value'): # It's a Node
+                            val = arg.value  # MIGHT RAISE RuntimeError for Ambient
+                        else:
+                            val = arg # Unknown object
+                        
+                        # If successful:
+                        clean_vals.append(val)
+                        display_strs.append(f"{float(val):.4g}")
+                        
+                    except (RuntimeError, TypeError, ValueError):
+                        # It is a Placeholder (Ambient) or Unresolved Formula
+                        clean_vals.append(None) # Can't use for math
+                        display_strs.append(str(arg)) # e.g. "<Ambient>"
+                        can_compute_length = False
+
+                # 2. Build Parameter String
+                # Try to map to names, fallback to p0, p1...
+                # (Assumes el.param_names matches args length, or close to it)
+                names = getattr(el, 'param_names', [f"p{k}" for k in range(len(args))])
                 
                 param_chunks = []
-                for j, p_val in enumerate(vals):
+                for j, val_str in enumerate(display_strs):
                     p_name = names[j] if j < len(names) else f"p{j}"
-                    is_var = p_name in el._variable_params
-                    val_str = f"{p_val:.4g}"
                     
+                    # Check optimization status on the original Node object
+                    original_arg = args[j]
                     status = ""
-                    if is_var:
-                        status = "[VAR]"
+                    if hasattr(original_arg, 'fixed') and not original_arg.fixed:
+                        status = " [VAR]"
                     
-                    # Highlight auto-generated logic
-                    if "AutoSpace" in label and p_name == 'd':
-                         status = "[AUTO-VAR]" if is_var else "[AUTO-FIX]"
-
                     param_chunks.append(f"{p_name}={val_str}{status}")
                 
                 params_str = ", ".join(param_chunks)
+
+                # 3. Calculate Element Length (for Z-Pos)
+                if can_compute_length and z_valid:
+                    try:
+                        # len_func typically expects raw floats
+                        element_length = float(len_func(*clean_vals))
+                    except Exception:
+                        # Function might fail if it strictly expects specific types
+                        z_valid = False
+                else:
+                    z_valid = False
+
             else:
                 params_str = "No Sim Data"
 
+            # B. Z-Positioning String
+            if z_valid:
+                z_str = f"{current_z:.4g}m"
+                current_z += element_length
+            else:
+                z_str = "---"
+
+            # C. Source Metadata
+            line_num = str(getattr(el, '_source_info', {}).get('line', '-'))
+
             # E. Append Row
             lines.append(f"{i:<4} {z_str:<10} {el_type:<15} {label:<20} {params_str:<50} {line_num}")
-            
-            # Increment Z for the next element in the table
-            current_z += el.length
 
         return "\n".join(lines) + "\n"
-

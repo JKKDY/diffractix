@@ -4,6 +4,7 @@ Defines the ABCD 'Black Box' element.
 from dataclasses import dataclass, field, InitVar
 import autograd.numpy as np
 from .element import OpticalElement
+from ..graph import Parameter, PlaceHolder
 
 
 @dataclass(kw_only=True)
@@ -24,34 +25,45 @@ class ABCD(OpticalElement):
         A, B, C, D (float): Individual matrix components (optional helpers).
 
     """
-    matrix: np.ndarray = field(default=None)
-    thickness: float = 0.0  # Physical length added to the layout
-    n = None  # optional
+    A: float | Parameter = 1.0
+    B: float | Parameter = 0.0
+    C: float | Parameter = 0.0
+    D: float | Parameter = 1.0
+    thickness: float | Parameter = 0.0  # Physical length added to the layout
+    n : float | None = None  # optional
 
-    # Helper init-vars to allow ABCD(A=1, ...) syntax
-    A: InitVar[float] = None
-    B: InitVar[float] = None
-    C: InitVar[float] = None
-    D: InitVar[float] = None
+    matrix_val: InitVar[np.ndarray] = None
+
 
     @property
     def length_param_names(self):
         """Explicitly links physical length to the 'thickness' parameter."""
         return ["thickness"]
 
-    def __post_init__(self, A, B, C, D):
-        # If matrix is explicitly provided, use it (ignoring scalar inputs)
-        if self.matrix is not None:
-            return
+    def __post_init__(self, matrix_val):
+        if matrix_val is not None:
+            self.matrix = matrix_val
+        super().__post_init__()
 
-        # If matrix is missing, build it from A, B, C, D scalars
-        # Default to identity matrix values if scalars are missing
-        val_A = A if A is not None else 1.0
-        val_B = B if B is not None else 0.0
-        val_C = C if C is not None else 0.0
-        val_D = D if D is not None else 1.0
-        
-        self.matrix = np.array([[val_A, val_B], [val_C, val_D]])
+    @property
+    def matrix(self):
+        """Getter: Reconstructs matrix from current params."""
+        # We assume self.A etc are Nodes or floats. 
+        # We allow reading the current state.
+        return np.array([[self.A, self.B], [self.C, self.D]])
+
+    @matrix.setter
+    def matrix(self, mat: np.ndarray):
+        assert mat.shape == (2,2), f"Mismatched matrix shape. Expected shape=(2,2), got {mat.shape}"
+        self.A = mat[0,0]
+        self.B = mat[0,1]
+        self.C = mat[1,0]
+        self.D = mat[1,1]
+
+    def init_placeholders(self, environment: "Environment"):
+        if isinstance(self.n, PlaceHolder):
+            self.n.value = environment.ambient_n.value
+            self.n.fixed = environment.ambient_n.fixed
 
     def get_matrix(self, A, B, C, D, thickness, n):
         """
@@ -61,21 +73,9 @@ class ABCD(OpticalElement):
         return np.array([[A, B], [C, D]])
 
     def get_sim_data(self):
-        A, B = self.matrix[0]
-        C, D = self.matrix[1]
-        
-        if self.n is None: 
-            # if no refractive index specified we specify a dummy value do satisfy return signature
-            # the ABCD balckbox will inherit refractive index from previous element in layout
-            idx_func = None
-            val_n = 1.0
-        else: 
-            idx_func = lambda a, b, c, d, t, n: n
-            val_n = float(self.n)
-        
         return (
             self.get_matrix, 
             lambda a, b, c, d, t, n: t,  # Length function just returns 't' (thickness)
-            idx_func,  # Refractive index function
-            [A, B, C, D, self.thickness, val_n]
+            lambda a, b, c, d, t, n: n,  # Refractive index function
+            [self.A, self.B, self.C, self.D, self.thickness, self.n]
         )

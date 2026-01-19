@@ -171,17 +171,23 @@ class Parameter(Node):
     # Global counter for unique IDs across the session
     _id_counter = itertools.count()
 
-    def __init__(self, value: float, name: str, fixed: bool, owner: "OpticalElement"):
+
+    def __init__(self, value: float, name: str, fixed: bool, owner: "OpticalElement" = None):
+        if (value is None):
+            pass
+
         self.id = next(Parameter._id_counter)
         self.value = float(value)
         self.name = name
         self.fixed = fixed
         # need a reference to the owner (a optical element) of this parameter to correctly get the name
         # any non referential methods introduce problems with dataclass and the initialization order of members in OpticalElement
-        self._owner_ref = weakref.ref(owner) # weakref to avoid any circular dependencies
+        if owner: self._owner_ref = weakref.ref(owner) # weakref to avoid any circular dependencies
 
     @property
     def owner(self):
+        if not hasattr(self, "_owner_ref"):
+            raise ValueError(f"This paremeter {self.name} has no owner")
         return self._owner_ref()
 
     def __hash__(self):
@@ -193,13 +199,33 @@ class Parameter(Node):
     @property
     def full_name(self):
         """Reconstructs the full name dynamically."""
-        if hasattr(self.owner, 'label') and self.owner.label:
-            return f"{self.owner.label}.{self.name}"
-        return self.name
+        return f"{self.owner.label}.{self.name}"
 
     def __repr__(self):
-        # tag = "[FIX]" if self.fixed else "[VAR]"
-        return f"{self.full_name}={self.value:.4g}"
+        return f"{self.full_name}{'(F)' if self.fixed else '(V)'}={self.value:.4g}"
+
+    @property
+    def is_constant(self):
+        return self.fixed
+
+
+class PlaceHolder(Node):
+    def __init__(self, owner : int, name: str):
+        self.value = None
+        self.name = name
+        self._owner_ref = weakref.ref(owner)
+        self.fixed = None
+
+    @property
+    def full_name(self):
+        """Reconstructs the full name dynamically."""
+        return f"Placeholder[{self.owner.label}.{self.name}]"
+
+    def __hash__(self):
+        return hash((PlaceHolder, self.owner.id, self.name))
+
+    def __repr__(self):
+        return self.full_name
 
     @property
     def is_constant(self):
