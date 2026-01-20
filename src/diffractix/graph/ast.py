@@ -117,17 +117,12 @@ class Node:
     def minimum(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.MIN, self, other)
 
-
-
     def __float__(self):
         if not hasattr(self, "value"):
             raise Exception(f"self.value not implemented for {self.__class__}")
         return float(self.value)
 
-    @property
-    @abstractmethod
-    def is_constant(self):
-        pass
+
 
 
 
@@ -137,8 +132,8 @@ class BinaryOp(Node):
     """
     def __init__(self, op: Op, left: Node | Scalar, right: Node | Scalar):
         self.op = op
-        self.left = left if hash(left) <= hash(right) else right 
-        self.right = right if hash(left) <= hash(right) else left  
+        self.left = left 
+        self.right = right 
 
     def __repr__(self) -> str:
         return f"({self.left} {self.op.unicode} {self.right})"
@@ -156,6 +151,25 @@ class BinaryOp(Node):
     @property
     def is_constant(self):
         return self.left.is_constant and self.right.is_constant
+
+    def __eq__(self, other):
+        if self is other: return True
+        if not isinstance(other, BinaryOp): return False
+        
+        # operators must match
+        if self.op != other.op:
+            return False
+            
+        # check operands
+        if self.op.is_commutative:
+            # for commutative ops, we check "cross" equality
+            return (
+                (self.left == other.left and self.right == other.right) or
+                (self.left == other.right and self.right == other.left)
+            )
+        else:
+            # Strict order for non-commutative
+            return self.left == other.left and self.right == other.right
 
 
 class UnaryOp(Node):
@@ -180,11 +194,17 @@ class UnaryOp(Node):
     def is_constant(self):
         return self.operand.is_constant
 
+    def __eq__(self, other):
+        if self is other: return True
+        if not isinstance(other, UnaryOp): return False
+        return self.op == other.op and self.operand == other.operand
 
 
-class InputNode:
+
+
+class InputNode(Node):
     def __init__(self, node: Paramter | Constant | Symbol): 
-        self.node = node
+        self.node = node.node if isinstance(node, InputNode) else node
 
     def __getattr__(self, name):
         return getattr(self.node, name)
@@ -197,53 +217,18 @@ class InputNode:
             # Redirect all other writes (e.g., .fixed, .value, .name) to the inner node
             setattr(self.node, name, value)
 
-    # ast interface
-    def __hash__(self): return hash(self)
-    def __eq__(self, other): return self is other
-    def __float__(self): return float(self.node.value)
-    def __repr__(self): return self.node.__repr__()
-    def __str__(self): return self.node.__str__()
+    def __repr__(self): 
+        return f"Input:{self.node}"
 
-    # unary
-    def __neg__(self): return -self.node
-    def __pos__(self): return +self.node
-    def __abs__(self): return abs(self.node)
+    @property
+    def is_constant(self):
+        return self.node.is_constant
 
-    # addition
-    def __add__(self, other): return self.node + other
-    def __radd__(self, other): return other + self.node
+    def __eq__(self, other):
+        return self is other
 
-    # subtraction   
-    def __sub__(self, other): return self.node - other
-    def __rsub__(self, other): return other - self.node
-
-    # multiplication    
-    def __mul__(self, other): return self.node * other
-    def __rmul__(self, other): return other * self.node
-
-    # true division 
-    def __truediv__(self, other): return self.node / other
-    def __rtruediv__(self, other): return other / self.node
-
-    # floor division
-    def __floordiv__(self, other): return self.node // other
-    def __rfloordiv__(self, other): return other // self.node
-
-    # modulo
-    def __mod__(self, other): return self.node % other
-    def __rmod__(self, other): return other % self.node
-
-    # power
-    def __pow__(self, other): return self.node ** other
-    def __rpow__(self, other): return other ** self.node
-
-
-    def maximum(self, other: Node | Scalar) -> BinaryOp:
-        return self.maximum(other)
-
-    def minimum(self, other: Node | Scalar) -> BinaryOp:
-        return self.minimum(other)
-
+    def __hash__(self):
+        return hash(self.node)
 
 
 
@@ -252,15 +237,21 @@ class Constant(Node):
         self.value = float(value)
 
     def __hash__(self):
-        return hash((Constant, self.value))
+        print("sjdkkjsdfn")
+        print(hash((Constant, hash(self.value))))
+        return hash((Constant, hash(self.value)))
 
     def __repr__(self):
-        return f"{self.value:.4g}"
+        return f"Const={self.value:.4g}"
 
     @property
     def is_constant(self):
         return True
 
+    def __eq__(self, other):
+        if self is other: return True
+        if not isinstance(other, Constant): return False
+        return self.value == other.value
 
 
 class Parameter(Node):
@@ -312,6 +303,9 @@ class Parameter(Node):
     def is_constant(self):
         return self.fixed
 
+    def __eq__(self, other):
+        return self is other
+
 
 class Symbol(Node):
     def __new__(cls, name: str):
@@ -336,13 +330,20 @@ class Symbol(Node):
     def __init__(self, name:str):
         self.name = name
         self.fixed = None
-        self.value = None
+        self.target = None
+
 
     @property
     def value(self):
         if self.target is None:
             raise ValueError(f"Symbol '{self.name}' has not been bound to a value yet.")
         return self.target.value
+
+    @value.setter
+    def value(self, v):
+        if self.target is None:
+            raise ValueError(f"Symbol '{self.name}' has not been bound to a value yet.")
+        self.target.value = v
 
     @property
     def is_constant(self):
@@ -357,7 +358,10 @@ class Symbol(Node):
     def __hash__(self):
         return hash((Symbol, self.name))
 
-
+    def __eq__(self, other):
+        if self is other: return True
+        if not isinstance(other, Symbol): return False
+        return self.name == other.name
 
 Scalar = int | float
-ASTNode = Node | InputNode
+ASTNode = Node

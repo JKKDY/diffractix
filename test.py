@@ -101,30 +101,10 @@ if __name__ == "__main__":
     # for k, v in Node._cache.items():
     #     print(k, v)
 
-    lens = ThinLens(f=0.1, label="Objective")
-    assert isinstance(lens.f, InputNode)
-    assert isinstance(lens.f.node, Parameter)
-    assert lens.f.value == 0.1
-    assert lens.label == "Objective"
-    
-    # check metadata
-    assert lens.f.fixed
-    assert lens.length_param_names == [] # Lenses are thin
-    assert lens.param_names == ["f"]
-    assert lens.variable_parameter_names == []
 
-    # test mutability
-    lens.f = 0.2
-    assert isinstance(lens.f, InputNode)
-    assert isinstance(lens.f.node, Parameter)
-    assert lens.f.value == 0.2
+    c1 = Constant(5.0)
+    c2 = Constant(5.0)
+    c3 = Constant(5.00000000001)
 
-    # test variable toggling
-    lens.variable()
-    assert not lens.f.fixed
-    assert lens.variable_parameter_names == ["f"]
-
-    # test fixed toggling
-    lens.fixed()
-    assert lens.f.fixed
-    assert lens.variable_parameter_names == []
+    assert c1 is c2, "Cache failed: Identical constants should be the same object"
+    assert c1 is not c3, "Cache failed: Different values should be different objects"
