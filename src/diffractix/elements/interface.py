@@ -1,5 +1,5 @@
 """
-Defines the DielectricInterface element.
+Defines the (Dielectric)Interface element.
 """
 from dataclasses import dataclass
 import autograd.numpy as np
@@ -7,7 +7,7 @@ from .element import OpticalElement
 from ..graph import Parameter
 
 @dataclass(kw_only=True)
-class DielectricInterface(OpticalElement):
+class Interface(OpticalElement):
     """
     A distinct boundary between two media with different refractive indices.
 
@@ -18,7 +18,7 @@ class DielectricInterface(OpticalElement):
         This element is **mandatory** whenever the refractive index changes 
         between two `Space` elements.
         
-        If you have `Space(n=1.0)` followed by `Space(n=1.5)`, you **must** insert a `DielectricInterface(n1=1.0, n2=1.5)` between them. 
+        If you have `Space(n=1.0)` followed by `Space(n=1.5)`, you **must** insert a `Interface(n1=1.0, n2=1.5)` between them. 
         Omitting this violates Snell's Law and renders the simulation physically invalid.
 
     Parameters:
@@ -51,10 +51,9 @@ class DielectricInterface(OpticalElement):
             [power_term, n1 / n2]
         ])
 
-    def get_sim_data(self):
+    def get_sim_functions(self):
         return (
             self.get_matrix, 
             lambda n1, n2, R: 0.0, 
             lambda n1, n2, R: n2, 
-            [self.n1, self.n2, self.R]
         )

@@ -5,7 +5,7 @@ Defines the Thick Lens element.
 import autograd.numpy as np
 from .sequence import ElementSequence
 from ..elements.space import Space
-from ..elements.dielectric_interface import DielectricInterface
+from ..elements.interface import Interface
 
 class ThickLens(ElementSequence):
     """
@@ -15,9 +15,9 @@ class ThickLens(ElementSequence):
                  n_ambient: float = 1.0, label: str = "ThickLens"):
         
         # A thick lens is modeled as two interfaces separated by a space
-        front = DielectricInterface(n1=n_ambient, n2=n, R=R1, label=f"{label}_front")
+        front = Interface(n1=n_ambient, n2=n, R=R1, label=f"{label}_front")
         body  = Space(d=d, n=n, label=f"{label}_body")
-        back  = DielectricInterface(n1=n, n2=n_ambient, R=R2, label=f"{label}_back")
+        back  = Interface(n1=n, n2=n_ambient, R=R2, label=f"{label}_back")
         
         elements = [front, body, back]
 

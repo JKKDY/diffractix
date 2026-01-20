@@ -14,7 +14,7 @@ dependencies = [
     "scipy"
 ]
 
-# This is your "down the road" testing framework
+# run uv pip install -e ".[dev]"
 [project.optional-dependencies]
 dev = [
     "pytest"

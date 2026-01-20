@@ -4,7 +4,7 @@ Defines the Slab factory function.
 import autograd.numpy as np
 from .sequence import ElementSequence
 from ..elements.space import Space
-from ..elements.dielectric_interface import DielectricInterface
+from ..elements.interface import Interface
 
 class Slab(ElementSequence):
     """
@@ -12,9 +12,9 @@ class Slab(ElementSequence):
     """
     def __init__(self, d: float, n: float, n_ambient: float = 1.0, label: str = "Slab"):
         
-        front = DielectricInterface(n1=n_ambient, n2=n, R=np.inf, label=f"{label}_In")
+        front = Interface(n1=n_ambient, n2=n, R=np.inf, label=f"{label}_In")
         body  = Space(d=d, n=n, label=f"{label}_Body")
-        back  = DielectricInterface(n1=n, n2=n_ambient, R=np.inf, label=f"{label}_Out")
+        back  = Interface(n1=n, n2=n_ambient, R=np.inf, label=f"{label}_Out")
 
         elements = [front, body, back]
 

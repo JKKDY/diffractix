@@ -4,7 +4,7 @@ from .element import OpticalElement
 from .space import Space
 from .thin_lens import ThinLens
 from .mirror import Mirror
-from .dielectric_interface import DielectricInterface
+from .interface import Interface
 from .abcd import ABCD
 
 
@@ -13,6 +13,6 @@ __all__ = [
     "Space", 
     "ThinLens", 
     "Mirror", 
-    "DielectricInterface", 
+    "Interface", 
     "ABCD",
 ]

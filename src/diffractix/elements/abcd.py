@@ -4,7 +4,7 @@ Defines the ABCD 'Black Box' element.
 from dataclasses import dataclass, field, InitVar
 import autograd.numpy as np
 from .element import OpticalElement
-from ..graph import Parameter, PlaceHolder
+from ..graph import Node, Parameter, Symbol
 
 
 @dataclass(kw_only=True)
@@ -25,12 +25,12 @@ class ABCD(OpticalElement):
         A, B, C, D (float): Individual matrix components (optional helpers).
 
     """
-    A: float | Parameter = 1.0
-    B: float | Parameter = 0.0
-    C: float | Parameter = 0.0
-    D: float | Parameter = 1.0
-    thickness: float | Parameter = 0.0  # Physical length added to the layout
-    n : float | None = None  # optional
+    A: float | Node = 1.0
+    B: float | Node = 0.0
+    C: float | Node = 0.0
+    D: float | Node = 1.0
+    thickness: float | Node = 0.0  # Physical length added to the layout
+    n : float | str | Node | None = None  # optional
 
     matrix_val: InitVar[np.ndarray] = None
 
@@ -72,10 +72,10 @@ class ABCD(OpticalElement):
         """
         return np.array([[A, B], [C, D]])
 
-    def get_sim_data(self):
+    def get_sim_functions(self):
+        n_func = (lambda a, b, c, d, t, n: n) if self.n is not None else None
         return (
             self.get_matrix, 
             lambda a, b, c, d, t, n: t,  # Length function just returns 't' (thickness)
-            lambda a, b, c, d, t, n: n,  # Refractive index function
-            [self.A, self.B, self.C, self.D, self.thickness, self.n]
+            n_func,  # Refractive index function
         )

@@ -16,7 +16,7 @@ from autograd import grad
 import autograd.numpy as np
 import itertools
 
-from ..graph.ast import Node, Parameter, Constant, PlaceHolder, BinaryOp, UnaryOp
+from ..graph.ast import Node, Parameter, Constant, Symbol, BinaryOp, UnaryOp, InputNode,ASTNode
 
 
 @dataclass
@@ -43,16 +43,6 @@ class OpticalElement:
     _source_info: dict = field(default_factory=dict, repr=False)
 
     _id_counter: ClassVar[itertools.count] = itertools.count()
-
-    # Track which parameters are optimizable (e.g., {'f'}, {'d'}, {'A', 'D'})
-    @property
-    def variable_parameter_names(self):
-        names = []
-        for name in self.param_names: 
-            obj = getattr(self, name)
-            if not obj.is_constant:
-                names.append(name)
-        return names
 
     #-----------------------
     # DUNDER / MAGIC METHODS
@@ -87,29 +77,48 @@ class OpticalElement:
 
 
     def __setattr__(self, name, value):
-        # only intercept access to parameters
+        def convertable_to_float(x):
+            try: float(x)
+            except (TypeError, ValueError): return False
+            return True
+
+        # only intercept access to parameters 
         if name not in getattr(self.__class__, '_param_names', set()):
             super().__setattr__(name, value)
             return
 
-        current_obj = self.__dict__.get(name)
-        if isinstance(current_obj, UnaryOp | BinaryOp):
-            # only allowed to replace leaves in the AST
-            raise TypeError(f"Cannot set '{name}' to {value}: It is bound to a formula {current_obj}. ")
-        elif isinstance(current_obj, Parameter):
-            # update the parameters value
-            current_obj.value = value
+
+        # get existing handle
+        current_handle = self.__dict__.get(name)
+
+        # 1. Handle Update (Handle already exists)
+        if isinstance(current_handle, InputNode):
+            if isinstance(value, Node):
+                # swap out the 'body'
+                current_handle.node = value
+            elif convertable_to_float(value):
+                # Swap the 'Body' to a new Parameter. 
+                current_handle.node = Parameter(value=value, name=name, fixed=True, owner=self)
+            else:
+                raise TypeError(f"Cannot assign {type(value)} to {name}")
+            return
+
+        # 2. Handle Initialization (First time)
+        # This occurs during __init__ or dataclass default assignment
+        if isinstance(value, Node):
+            # Already a node (e.g. Lens(f=Symbol("x")))
+            new_handle = InputNode(value)
+        elif convertable_to_float(value):
+            # Raw number (e.g. Lens(f=0.1))
+            new_node = Parameter(value=value, name=name, fixed=True, owner=self)
+            new_handle = InputNode(new_node)
         elif value is None:
-            # no value -> create placeholder
-            new_param = PlaceHolder(name=name, owner=self)
-            super().__setattr__(name, new_param)
-        elif isinstance(value, Node):
-            # value is a node -> just set it normally
-            super().__setattr__(name, value)
-        else: 
-            # create new Parameter
-            new_param = Parameter(value=value, name=name, fixed=True, owner=self)
-            super().__setattr__(name, new_param)
+            new_handle = None
+        else:
+            raise TypeError(f"Initial value for {self}.{name} must be Node or float, got {type(value)}")
+        
+        super().__setattr__(name, new_handle)
+
 
 
     def __str__(self):
@@ -119,78 +128,50 @@ class OpticalElement:
         header = f"{name:<15}{label_str:<20}L={self.length:.4g} {'[VAR]' if self.has_variable_length else '[FIX]'}"
         
         # parameters
-        _, _, _, val_nodes = self.get_sim_data()
-        current_vals = [float(x) for x in val_nodes]
-        names = self.param_names
+        current_vals = self.values
         
         param_details = []
-        for name, val in zip(names, current_vals):
-            # Tag variable parameters for the UI/CLI
-            status = "[VAR]" if name in self._variable_params else "[FIX]"
-            param_details.append(f"{name}={val:.4g} {status}")
+        for name, val in zip(self.param_names, current_vals):
+            # Handle formatting for None vs Float
+            val_str = f"{val:.4g}" if isinstance(val, (float, int)) else str(val)
+            
+            status = "[VAR]" if name in self.variable_parameter_names else "[FIX]"
+            param_details.append(f"{name}={val_str} {status}")
         
         params_str = " | " + " | ".join(param_details)
       
         return f"{header:<50} {params_str}"
   
 
-
-    #----
-    # API
-    #----
-    def variable(self, *variable_params: str):
+    #-----------
+    # PROPERTIES 
+    #-----------
+    @property
+    def variable_parameter_names(self):
         """
-        Fluent setter to mark a parameter as variable (e.e. trainable).
-        Usage: 
-            ThinLens(f=0.1).variable()    -> marks 'f'
-            ABCD(...).variable()          -> marks 'A', 'B', 'C', 'D'
-            ABCD(...).variable('A')       -> marks only 'A'
-            ABCD(...).variable('A', 'B')  -> marks only 'A', 'B'
-
+        Track which parameters are optimizable (e.g., {'f'}, {'d'}, {'A', 'D'})
         """
-        # no arg -> set all parameters as variable
-        if not variable_params:
-            variable_params = self.param_names
+        names = []
+        for name in self.param_names: 
+            obj = getattr(self, name)
+            if obj is not None and obj.is_constant is False:
+                names.append(name)
+        return names
 
-        # loop through all provided param names, set them as variable
-        for p in variable_params:
-            if p not in self.param_names:
-                raise ValueError(
-                    f"Parameter '{p}' not found in {self.__class__.__name__}. "
-                    f"Available: {self.param_names}"
-                )
-
-            # if the nodes constness is derived from children
-            node = getattr(self, p)
-            if isinstance(node, Parameter):
-                node.fixed = False
-
-        return self
-
-    def fixed(self):
-        """
-        Fluent setter to mark all parameters as fixed (non-trainable) (default)
-        """
-        for p in self.variable_parameter_names:
-            node = getattr(self, p)
-            if isinstance(node, Parameter):
-                node.fixed = True
-
-        return self
-
-    #------------------
-    # @PROPERTY METHODS
-    #------------------
     @property
     def param_names(self) -> list[str]:
         """
         Returns the list of parameter names corresponding to the simulation data.
-        The order mathes that of self.get_sim_data()'s returned parameters (4. return value).
+        The order mathes that of self.get_sim_functions()'s returned parameters (4. return value).
 
         e.g. Lens.get_matrix(self, f) -> returns ['f']
         e.g. ABCD.get_matrix(self, A, B, C, D) -> returns ['A', 'B', 'C', 'D']
         """
         return self.__class__._param_names
+
+    @property
+    def parameters(self) -> tuple[ASTNode]:
+        return (getattr(self, name) for name in self.param_names)
 
     @property
     def has_variable_length(self) -> bool:
@@ -220,15 +201,14 @@ class OpticalElement:
 
         # Fallback: use autograd to check sensitivity of length function
         # get the distance function + parameter values
-        _, len_func, _, val_nodes = self.get_sim_data()
-        vals = [float(x) for x in val_nodes]
+        _, len_func, _, val_nodes = self.get_sim_functions()
         
         # check sensitivity for each variable parameter     
         for i, name in enumerate(self.param_names):
             if name in variable_params:
                 # grad with argnum requests: d(len_func) / d(Param_i)
                 sensitivity_func = grad(len_func, argnum=i)
-                g = sensitivity_func(*vals)
+                g = sensitivity_func(*self.values)
                 
                 if abs(g) > 1e-9:
                     return True
@@ -241,18 +221,82 @@ class OpticalElement:
         """
         Returns the physical length of this element at its current parameter values.
         """
-        _, len_func, _, val_nodes = self.get_sim_data()
-        vals = [float(x) for x in val_nodes]
-        return len_func(*vals)
+        _, len_func, _ = self.get_sim_functions()
+        return len_func(*self.values)
 
     @property
     def refractive_index(self) -> float:
         """
         Returns the physical length of this element at its current parameter values.
         """
-        _, _, index_func, val_nodes = self.get_sim_data()
-        vals = [float(x) for x in val_nodes]
-        return index_func(*vals) if index_func is not None else None
+        _, _, index_func, val_nodes = self.get_sim_functions()
+        return index_func(*self.values) if index_func is not None else None
+
+    @property
+    def values(self) -> list[float | None]:
+        """
+        Returns the current float values of all parameters defined in get_matrix signature.
+        Useful for debugging, __str__, or evaluating matrices for non-differentiable checks.
+        """
+        ret = []
+        for name in self.param_names:
+            obj = getattr(self, name)
+            print(type(obj))
+            
+            # 1. Unwrap InputNode / Parameter / Symbol
+            if isinstance(obj, ASTNode):
+                ret.append(obj.value)
+            # 2. Pass None through (e.g. for ABCD.n=None)
+            elif obj is None:
+                ret.append(None)
+            # 3. Fallback: throw error 
+            else:
+                print()
+                raise ValueError(f"Unexpected type {type(obj)} of parameter value {obj} for parameter {self}.{name}")
+        return ret
+
+
+    #------------------
+    # PROGRAM INTERFACE
+    #------------------
+    def variable(self, *variable_params: str):
+        """
+        Fluent setter to mark a parameter as variable (e.e. trainable).
+        Usage: 
+            ThinLens(f=0.1).variable()    -> marks 'f'
+            ABCD(...).variable()          -> marks 'A', 'B', 'C', 'D'
+            ABCD(...).variable('A')       -> marks only 'A'
+            ABCD(...).variable('A', 'B')  -> marks only 'A', 'B'
+
+        """
+        # no arg -> set all parameters as variable
+        if not variable_params:
+            variable_params = self.param_names
+
+        # loop through all provided param names, set them as variable
+        for p in variable_params:
+            if p not in self.param_names:
+                raise ValueError(
+                    f"Parameter '{p}' not found in {self.__class__.__name__}. "
+                    f"Available: {self.param_names}"
+                )
+
+            node = getattr(self, p)
+            if isinstance(node, InputNode) and isinstance(node.node, Parameter): # only parameters have toggable constness
+                node.fixed = False
+
+        return self
+
+    def fixed(self):
+        """
+        Fluent setter to mark all parameters as fixed (non-trainable) (default)
+        """
+        for p in self.variable_parameter_names:
+            node = getattr(self, p)
+            if isinstance(node, InputNode) and isinstance(node.node, Parameter): # only parameters have toggable constness
+                node.fixed = True
+
+        return self
 
 
     #------------
@@ -282,21 +326,15 @@ class OpticalElement:
         return None
 
     @abstractmethod
-    def get_matrix(self) -> np.ndarray:
-        """Return the ABCD matrix of the optical element."""
-        raise NotImplementedError("Subclasses must implement get_matrix method.")
-
-    @abstractmethod
-    def get_sim_data(self) -> tuple[callable, callable, callable, Iterable[Parameter]]:
+    def get_sim_functions(self) -> tuple[callable, callable, callable]:
         """
         Return simulation data for the optical element.
         This should return a tuple of (matrix_function, length_function, parameter_value(s)).
           - matrix_function: A callable that returns the ABCD matrix given the parameter(s).
           - length_function: A callable that returns the effective length of the element given the parameter(s).
           - index_function:  A callable that returns the refractive index of the element given the parameter(s).
-          - parameter_value(s): The current value(s) of the parameter(s) (must be a flat iterable of Paramers).
 
         We return functions to enable auto differentiation over parameters
         Length and refractive index require their own functions because they cannot be derived from the ABCD matrix alone.
         """
-        raise NotImplementedError("Subclasses must implement get_sim_data method.")
+        raise NotImplementedError("Subclasses must implement get_sim_functions method.")

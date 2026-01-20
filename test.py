@@ -7,7 +7,7 @@ from diffractix.beams import GaussianBeam
 from diffractix.system import System
 from diffractix.beams import GaussianBeam
 from diffractix.composites import *
-from diffractix.graph.ast import BinaryOp, UnaryOp
+from diffractix.graph.ast import *
 
 
 if __name__ == "__main__":
@@ -91,76 +91,40 @@ if __name__ == "__main__":
     # # expect output beam to have w = 0.001 and R = 0.1 at z = 0.4
     # plot_simulation(result)
 
-    input_beam = GaussianBeam.from_waist(w0=1e-3, wavelength=1064e-9)
+    # L1 = ThinLens(f=0.1, label="L1").variable()
+    # L2 = ThinLens(f=0.1, label="L2").variable()
+    # # S1 = Space(d=L1.f + L2.f, label="S1")
+    # # S4 = Space(d=L1.f + L2.f, label="S1")
+    # # S2 = Space(d=2 * S1.d, label="S2")
+    # # S3 = Space(d= S2.d * L1.f, label="S3")
 
-    # 1. Initialize System
-    sys = System()
-    sys.add_input(input_beam)
+    # for k, v in Node._cache.items():
+    #     print(k, v)
 
-    # --- SECTION 1: Relative/Sequential ---
-    sys.add(Space(d=0.2, label="FixedEntry"))
-    sys.add(ThinLens(f=0.1, label="L1").variable()) 
+    lens = ThinLens(f=0.1, label="Objective")
+    assert isinstance(lens.f, InputNode)
+    assert isinstance(lens.f.node, Parameter)
+    assert lens.f.value == 0.1
+    assert lens.label == "Objective"
+    
+    # check metadata
+    assert lens.f.fixed
+    assert lens.length_param_names == [] # Lenses are thin
+    assert lens.param_names == ["f"]
+    assert lens.variable_parameter_names == []
 
-    # --- SECTION 2: The "Loose" Chain ---
-    sys.add(Space(d=0.3, label="Slider").variable()) 
-    sys.add(ABCD(A=5, C=1, label="BlackBox").variable('A'))
+    # test mutability
+    lens.f = 0.2
+    assert isinstance(lens.f, InputNode)
+    assert isinstance(lens.f.node, Parameter)
+    assert lens.f.value == 0.2
 
-    # --- SECTION 3: The Anchor ---
-    # Target Z = 1.5m
-    sys.add(ThinLens(f=0.2, label="L2").variable(), z=1.5)
+    # test variable toggling
+    lens.variable()
+    assert not lens.f.fixed
+    assert lens.variable_parameter_names == ["f"]
 
-    # --- SECTION 4: Final Anchor ---
-    # Target Z = 2.0m
-    sys.add(Space(d=0.1, label="Detector"), z=2.0)
-
-    print("--- BLUEPRINT ---")
-    # print(sys)
-
-    # 2. Build the Simulation
-    sim = sys.build()
-
-    print("--- COMPILED (RESOLVED) ---")
-    print(sys)
-
-    # 3. Structural Info
-    print(f"Total Constraints Generated: {len(sim.constraints)}")
-
-    # 4. DIRECT CONSTRAINT VERIFICATION
-    print("\n--- Manual Constraint Verification ---")
-
-    # Execute the math-heavy pass
-    # data shape: (N_steps + 1, 3) -> [z, w, R]
-    print(sim.__dict__.keys())
-    data = sim.run_for_optimizer()
-
-    # We expect L2 to be at index 5 (Input + FixedEntry + L1 + Slider + BlackBox + AutoSpace)
-    # We expect Detector to be at index 7 (Above + L2 + AutoSpace)
-    anchors = [
-        {"label": "L2 Anchor", "index": 5, "target": 1.5},
-        {"label": "Detector Anchor", "index": 7, "target": 2.0}
-    ]
-
-    all_passed = True
-    for anchor in anchors:
-        actual_z = data[anchor['index'], 0]
-        residual = (actual_z - anchor['target']) * 1e3 # convert to mm
-        
-        status = "✅" if abs(residual) < 1e-7 else "❌"
-        print(f"{status} {anchor['label']}: Actual Z = {actual_z:.4f}m | Target = {anchor['target']:.4f}m | Residual = {residual:.8e} mm")
-        
-        if abs(residual) > 1e-7:
-            all_passed = False
-
-    # 5. EXECUTE GENERATED CONSTRAINTS
-    # This tests if the lambda functions we built actually work
-    print("\n--- Lambda Constraint Verification ---")
-    for i, const_func in enumerate(sim.constraints):
-        res = const_func(sim.initial_params, data)
-        print(f"Lambda {i} Output: {res:.8f} mm")
-
-    # 6. Run Physics & Plot
-    result = sim.run()
-    plot_simulation(result)
-
-    if all_passed:
-        print("\nVERIFICATION COMPLETE: Layout logic and constraint generation are mathematically sound.")
+    # test fixed toggling
+    lens.fixed()
+    assert lens.f.fixed
+    assert lens.variable_parameter_names == []

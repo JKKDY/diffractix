@@ -39,10 +39,9 @@ class Space(OpticalElement):
         """
         return np.array([[1.0, d/n], [0.0, 1.0]])
 
-    def get_sim_data(self):
+    def get_sim_functions(self):
         return (
             self.get_matrix,                # matrix function
             lambda d, n: d,                 # length function
             lambda d, n: n,                 # refractive index function
-            [self.d, self.n]  # values: [d, n]
         )

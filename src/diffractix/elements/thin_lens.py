@@ -39,7 +39,7 @@ class ThinLens(OpticalElement):
         """
         return np.array([[1.0, 0.0], [-1.0/f, 1.0]])
 
-    def get_sim_data(self):
+    def get_sim_functions(self):
         """
         Provides the simulation engine with the matrix function, a constant 
         zero-length function, and the current focal length.
@@ -48,5 +48,5 @@ class ThinLens(OpticalElement):
             self.get_matrix, 
             lambda f: 0.0, 
             None,
-            [self.f]
         )
+

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from .elements import OpticalElement, Space
 from .beams import GaussianBeam
 from .simulation import Simulation
-from .graph import Node, PlaceHolder, Parameter
+from .graph import Node, Parameter
 
 
 
@@ -35,7 +35,7 @@ class System:
     """
     def __init__(self, ambient_n: float = 1.0, ambient_n_variable: bool = False):
         self.environment = Environment(
-            ambient_n = Parameter(value=ambient_n, name="PlaceHolder", fixed=not ambient_n_variable)
+            ambient_n = Parameter(value=ambient_n, name="ambient_n", fixed=not ambient_n_variable)
         )
 
         self.elements: list[OpticalElement] = []
@@ -310,123 +310,84 @@ class System:
         return self._build_simulation()
       
 
+
     def __str__(self):
-        lines = []
-        is_compiled = hasattr(self, '_compiled_elements') and self._compiled_elements
+        # 1. Determine Source
+        is_compiled = len(self._compiled_elements) > 0
+        elements_list = self._compiled_elements if is_compiled else self.elements
+
+        # 2. Header Formatting
+        status = "COMPILED/RESOLVED" if is_compiled else "BLUEPRINT (UNRESOLVED)"
+        title = f" Optical System State [{status}] "
         
-        if is_compiled:
-            target_list = self._compiled_elements
-            mode_label = "(Compiled / Resolved)"
-        else:
-            target_list = self.elements
-            mode_label = "(Blueprint)"
-
-        lines.append(f"=== Optical System Configuration {mode_label} ===")
+        # Added 'Z [mm]' column
+        header = f"{'ID':<4} | {'Z [m]':<12} | {'Type':<15} | {'Label':<20} | {'L [m]':<10} | {'n':<8} | {'Parameters'}"
+        divider = "-" * 125
         
-        # 1. Inputs Section
-        lines.append("\n--- Input Beams ---")
-        if self.input_beams:
-            for i, b in enumerate(self.input_beams):
-                lines.append(f"  [{i}] {b}")
-        else:
-            lines.append("  (None)")
+        lines = [
+            "",
+            f"{title:=^125}",
+            header,
+            divider
+        ]
 
-        # 2. Components Table
-        lines.append("\n--- Component Schedule ---")
+        # 3. Iterate and Format
+        current_z = 0.0 # Tracking cursor for compiled systems
         
-        header = f"{'#':<4} {'Z-Pos':<10} {'Type':<15} {'Label':<20} {'Parameters':<50} {'Line'}"
-        lines.append(header)
-        lines.append("-" * len(header))
-
-        current_z = 0.0
-        z_valid = True  # Track if we still know the absolute position
-
-        for i, el in enumerate(target_list):
-            # A. Basic Info
+        for i, el in enumerate(elements_list):
+            # --- Type & Label ---
             el_type = el.__class__.__name__
-            label = el.label if len(el.label) < 19 else el.label[:16] + "..."
-            
-            # D. Parameters & Values (Resolved Safely)
-            params_str = ""
-            element_length = 0.0
-            
-            if hasattr(el, 'get_sim_data'):
-                # Extract functions and arguments (Nodes/Floats)
-                _, len_func, _, args = el.get_sim_data()
-                
-                # 1. Resolve Arguments for Display & Calculation
-                # We need two lists:
-                # - display_strs: strings for the table (e.g., "1.5", "<Ambient>")
-                # - clean_vals: floats for length calc (if possible)
-                
-                display_strs = []
-                clean_vals = []
-                can_compute_length = True
+            el_label = (el.label[:17] + '..') if el.label and len(el.label) > 19 else (el.label or "")
 
-                for arg in args:
-                    # Try to evaluate the Node to a number
-                    try:
-                        if isinstance(arg, (float, int)):
-                            val = arg
-                        elif hasattr(arg, 'value'): # It's a Node
-                            val = arg.value  # MIGHT RAISE RuntimeError for Ambient
-                        else:
-                            val = arg # Unknown object
-                        
-                        # If successful:
-                        clean_vals.append(val)
-                        display_strs.append(f"{float(val):.4g}")
-                        
-                    except (RuntimeError, TypeError, ValueError):
-                        # It is a Placeholder (Ambient) or Unresolved Formula
-                        clean_vals.append(None) # Can't use for math
-                        display_strs.append(str(arg)) # e.g. "<Ambient>"
-                        can_compute_length = False
+            # --- Length ---
+            try:
+                l_val = el.length
+                l_str = f"{l_val:.4g}"
+            except Exception:
+                l_val = 0.0 # Fallback for Z calculation if length is broken
+                l_str = "Err"
 
-                # 2. Build Parameter String
-                # Try to map to names, fallback to p0, p1...
-                # (Assumes el.param_names matches args length, or close to it)
-                names = getattr(el, 'param_names', [f"p{k}" for k in range(len(args))])
-                
-                param_chunks = []
-                for j, val_str in enumerate(display_strs):
-                    p_name = names[j] if j < len(names) else f"p{j}"
-                    
-                    # Check optimization status on the original Node object
-                    original_arg = args[j]
-                    status = ""
-                    if hasattr(original_arg, 'fixed') and not original_arg.fixed:
-                        status = " [VAR]"
-                    
-                    param_chunks.append(f"{p_name}={val_str}{status}")
-                
-                params_str = ", ".join(param_chunks)
-
-                # 3. Calculate Element Length (for Z-Pos)
-                if can_compute_length and z_valid:
-                    try:
-                        # len_func typically expects raw floats
-                        element_length = float(len_func(*clean_vals))
-                    except Exception:
-                        # Function might fail if it strictly expects specific types
-                        z_valid = False
+            # --- Z Position Logic ---
+            if is_compiled:
+                # In compiled mode, we strictly trace the path
+                z_str = f"{current_z:.4f}"
+                current_z += l_val
+            else:
+                # In blueprint mode, we check for explicit intent
+                abs_z = getattr(el, 'z', None)
+                if abs_z is not None:
+                    z_str = f"@{abs_z:<.4g}" # Mark as absolute
                 else:
-                    z_valid = False
+                    z_str = "Rel"      # Mark as relative
 
-            else:
-                params_str = "No Sim Data"
+            # --- Refractive Index ---
+            try:
+                n_val = el.refractive_index
+                n_str = f"{n_val:.4f}" if n_val is not None else "-"
+            except Exception:
+                n_str = "?"
 
-            # B. Z-Positioning String
-            if z_valid:
-                z_str = f"{current_z:.4g}m"
-                current_z += element_length
-            else:
-                z_str = "---"
+            # --- Parameters ---
+            param_parts = []
+            try:
+                _, _, _, val_nodes = el.get_sim_data()
+                current_vals = [float(x) for x in val_nodes]
+                vars_set = set(el.variable_parameter_names)
 
-            # C. Source Metadata
-            line_num = str(getattr(el, '_source_info', {}).get('line', '-'))
+                for name, val in zip(el.param_names, current_vals):
+                    tag = "[VAR]" if name in vars_set else "" 
+                    param_parts.append(f"{name}={val:<.4g}{tag}")
+            except Exception:
+                param_parts.append("Uninitialized")
 
-            # E. Append Row
-            lines.append(f"{i:<4} {z_str:<10} {el_type:<15} {label:<20} {params_str:<50} {line_num}")
+            params_str = " ".join(param_parts)
 
-        return "\n".join(lines) + "\n"
+            # --- Row Assembly ---
+            lines.append(f"{i:<4} | {z_str:<12} | {el_type:<15} | {el_label:<20} | {l_str:<10} | {n_str:<8} | {params_str}")
+
+        lines.append(divider)
+        if is_compiled:
+            lines.append(f"Total System Length: {current_z:.4f} m")
+        lines.append("")
+        
+        return "\n".join(lines)

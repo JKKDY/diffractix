@@ -40,10 +40,9 @@ class Mirror(OpticalElement):
         power = -2.0 / R if not np.isinf(R) else 0.0
         return np.array([[1.0, 0.0], [power, 1.0]])
 
-    def get_sim_data(self):
+    def get_sim_functions(self):
         return (
             self.get_matrix, 
             lambda R: 0.0, 
             None, 
-            [self.R]
         )

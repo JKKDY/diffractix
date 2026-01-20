@@ -5,8 +5,6 @@ from .ops import Op
 import weakref
 import itertools
 
-Scalar = int | float
-
 
 class Node:
     """
@@ -14,7 +12,6 @@ class Node:
     Handles operator overloading to construct the graph dynamically.
     """
     _cache = weakref.WeakValueDictionary()
-
 
     @staticmethod 
     def _register(obj):
@@ -43,40 +40,83 @@ class Node:
         return Node._register(UnaryOp(op, operand))
       
 
+    # UNARY
+    def __neg__(self) -> UnaryOp:
+        return Node._make_unary_op(Op.NEG, self)
+
+    def __pos__(self) -> UnaryOp:
+        return Node._make_unary_op(Op.POS, self)
+
+    def __abs__(self) -> UnaryOp:
+        return Node._make_unary_op(Op.ABS, self)
+
+    def sigmoid(self) -> UnaryOp:
+        return Node._make_unary_op(Op.SIGMOID, self)
+
+
+    # ADDITION
     def __add__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.ADD, self, other)
 
-    def __sub__(self, other: Node | Scalar) -> BinaryOp:
-        return  Node._make_binary_op(Op.SUB, self, other)
-
-    def __mul__(self, other: Node | Scalar) -> BinaryOp:
-        return  Node._make_binary_op(Op.MUL, self, other)
-
-    def __truediv__(self, other: Node | Scalar) -> BinaryOp:
-        return  Node._make_binary_op(Op.DIV, self, other)
-
-    def __neg__(self) -> UnaryOp:
-        return  Node._make_unary_op(Op.NEG, self)
-
-
     def __radd__(self, other: Node | Scalar) -> BinaryOp:
-        return  Node._make_binary_op(Op.ADD, other, self)
+        return Node._make_binary_op(Op.ADD, other, self)
 
-    def __rmul__(self, other: Node | Scalar) -> BinaryOp:
-        return  Node._make_binary_op(Op.MUL, other, self)
+
+    # SUBTRACTION
+    def __sub__(self, other: Node | Scalar) -> BinaryOp:
+        return Node._make_binary_op(Op.SUB, self, other)
 
     def __rsub__(self, other: Node | Scalar) -> BinaryOp:
-        return  Node._make_binary_op(Op.SUB, other, self)
+        return Node._make_binary_op(Op.SUB, other, self)
+
+
+    # MULTIPLICATION
+    def __mul__(self, other: Node | Scalar) -> BinaryOp:
+        return Node._make_binary_op(Op.MUL, self, other)
+
+    def __rmul__(self, other: Node | Scalar) -> BinaryOp:
+        return Node._make_binary_op(Op.MUL, other, self)
+
+
+    # TRUE DIVISION
+    def __truediv__(self, other: Node | Scalar) -> BinaryOp:
+        return Node._make_binary_op(Op.DIV, self, other)
 
     def __rtruediv__(self, other: Node | Scalar) -> BinaryOp:
-        return  Node._make_binary_op(Op.DIV, other, self)
+        return Node._make_binary_op(Op.DIV, other, self)
 
 
-    def maximum(self, floor: float) -> BinaryOp: 
-        return  Node._make_binary_op(Op.MAX, self, floor)
+    # FLOOR DIVISION 
+    def __floordiv__(self, other: Node | Scalar) -> BinaryOp:
+        return Node._make_binary_op(Op.FLOORDIV, self, other)
 
-    def minimum(self, ceiling: float)-> BinaryOp: 
-        return  Node._make_binary_op(Op.MIN, self, ceiling)
+    def __rfloordiv__(self, other: Node | Scalar) -> BinaryOp:
+        return Node._make_binary_op(Op.FLOORDIV, other, self)
+
+
+    # MODULO
+    def __mod__(self, other: Node | Scalar) -> BinaryOp:
+        return Node._make_binary_op(Op.MOD, self, other)
+
+    def __rmod__(self, other: Node | Scalar) -> BinaryOp:
+        return Node._make_binary_op(Op.MOD, other, self)
+
+
+    # POWER
+    def __pow__(self, other: Node | Scalar) -> BinaryOp:
+        return Node._make_binary_op(Op.POW, self, other)
+
+    def __rpow__(self, other: Node | Scalar) -> BinaryOp:
+        return Node._make_binary_op(Op.POW, other, self)
+
+
+    # EXTREMA
+    def maximum(self, other: Node | Scalar) -> BinaryOp:
+        return Node._make_binary_op(Op.MAX, self, other)
+
+    def minimum(self, other: Node | Scalar) -> BinaryOp:
+        return Node._make_binary_op(Op.MIN, self, other)
+
 
 
     def __float__(self):
@@ -139,6 +179,70 @@ class UnaryOp(Node):
     @property
     def is_constant(self):
         return self.operand.is_constant
+
+
+
+class InputNode:
+    def __init__(self, node: Paramter | Constant | Symbol): 
+        self.node = node
+
+    def __getattr__(self, name):
+        return getattr(self.node, name)
+
+    def __setattr__(self, name, value):
+        # If we are changing the 'body' of the handle, do it normally
+        if name == "node":
+            super().__setattr__('node', value)
+        else:
+            # Redirect all other writes (e.g., .fixed, .value, .name) to the inner node
+            setattr(self.node, name, value)
+
+    # ast interface
+    def __hash__(self): return hash(self)
+    def __eq__(self, other): return self is other
+    def __float__(self): return float(self.node.value)
+    def __repr__(self): return self.node.__repr__()
+    def __str__(self): return self.node.__str__()
+
+    # unary
+    def __neg__(self): return -self.node
+    def __pos__(self): return +self.node
+    def __abs__(self): return abs(self.node)
+
+    # addition
+    def __add__(self, other): return self.node + other
+    def __radd__(self, other): return other + self.node
+
+    # subtraction   
+    def __sub__(self, other): return self.node - other
+    def __rsub__(self, other): return other - self.node
+
+    # multiplication    
+    def __mul__(self, other): return self.node * other
+    def __rmul__(self, other): return other * self.node
+
+    # true division 
+    def __truediv__(self, other): return self.node / other
+    def __rtruediv__(self, other): return other / self.node
+
+    # floor division
+    def __floordiv__(self, other): return self.node // other
+    def __rfloordiv__(self, other): return other // self.node
+
+    # modulo
+    def __mod__(self, other): return self.node % other
+    def __rmod__(self, other): return other % self.node
+
+    # power
+    def __pow__(self, other): return self.node ** other
+    def __rpow__(self, other): return other ** self.node
+
+
+    def maximum(self, other: Node | Scalar) -> BinaryOp:
+        return self.maximum(other)
+
+    def minimum(self, other: Node | Scalar) -> BinaryOp:
+        return self.minimum(other)
 
 
 
@@ -209,24 +313,51 @@ class Parameter(Node):
         return self.fixed
 
 
-class PlaceHolder(Node):
-    def __init__(self, owner : int, name: str):
-        self.value = None
+class Symbol(Node):
+    def __new__(cls, name: str):
+        # we check if this symbold is already in the class
+        # the logic here differs from the standard Node._register because we must ensurure that we dont
+        # override any bindings (i.e. set self.taget to None)
+        
+        # cehck cachse
+        key = hash((Symbol, name))
+        if key in Node._cache:
+            return Node._cache[key]
+        
+        # create New if missing
+        instance = super(Node, cls).__new__(cls)
+        instance.name = name
+        instance.target = None # The future input
+        
+        # and register explicitly
+        Node._cache[key] = instance
+        return instance
+
+    def __init__(self, name:str):
         self.name = name
-        self._owner_ref = weakref.ref(owner)
         self.fixed = None
+        self.value = None
 
     @property
-    def full_name(self):
-        """Reconstructs the full name dynamically."""
-        return f"Placeholder[{self.owner.label}.{self.name}]"
-
-    def __hash__(self):
-        return hash((PlaceHolder, self.owner.id, self.name))
-
-    def __repr__(self):
-        return self.full_name
+    def value(self):
+        if self.target is None:
+            raise ValueError(f"Symbol '{self.name}' has not been bound to a value yet.")
+        return self.target.value
 
     @property
     def is_constant(self):
-        return self.fixed
+        if self.target is None: return True # Default assumption until bound
+        return self.target.is_constant
+        
+    def __repr__(self):
+        if self.target:
+            return f"Symbol({self.name} -> {self.target.value})"
+        return f"Symbol({self.name} -> ?)"
+    
+    def __hash__(self):
+        return hash((Symbol, self.name))
+
+
+
+Scalar = int | float
+ASTNode = Node | InputNode

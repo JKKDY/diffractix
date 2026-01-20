@@ -1,8 +1,9 @@
 
-from .ast import Node, Parameter, PlaceHolder
+from .ast import Node, Parameter, Symbol, InputNode
 
 __all__ = [
     "Node", 
     "Parameter",
-    "PlaceHolder"
+    "Symbol", 
+    "InputNode"
 ]
