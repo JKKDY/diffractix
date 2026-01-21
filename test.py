@@ -100,17 +100,23 @@ if __name__ == "__main__":
 
     # for k, v in Node._cache.items():
     #     print(k, v)
-    import numpy as np
+    input_beam = GaussianBeam.from_waist(w0=1e-3, wavelength=1064e-9)
 
-    mat = np.array([[2.0, 0.5], [0.1, 1.0]])
-    el = ABCD(matrix_val=mat, thickness=0.1)
-
-    print(el.matrix)
-    
-    assert el.A.value == 2.0
-    assert el.B.value == 0.5
-    assert el.thickness.value == 0.1
-    np.testing.assert_array_equal(el.matrix, mat)
+    sys = System()
+    sys.add_input(input_beam)
+    sys.add(Space(d=0.2, ))
+    sys.add(ThinLens(f=0.1).variable())
+    sys.add(Space(d=0.3).variable())
+    sys.add(ABCD(A=5, C=1).variable('A'))
+    sys.add(Space(d=0.2))
+    sys.add(ThinLens(f=0.2).variable())
+    sys.add(Space(d=0.2, n=1.3))
+    sys.add(Slab(d=0.2, n = 1.5))
+    sys.add(Space(d=0.2))
+    sys.add(Mirror(R = 3))
+    sys.add(Space(d=0.2))
+    print(sys)
+    sim = sys.build()
 
 
  

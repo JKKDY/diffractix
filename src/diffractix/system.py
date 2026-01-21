@@ -1,12 +1,12 @@
 import inspect
 import autograd.numpy as np
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 
 from .elements import OpticalElement, Space
 from .beams import GaussianBeam
 from .simulation import Simulation
-from .graph import Node, Parameter
+from .graph import Node, Parameter, Symbol, InputNode
 
 
 
@@ -23,9 +23,14 @@ class ParameterInfo:
     initial_value: float # Value at time of build
     is_variable: bool    # True if the user marked this for optimization
 
+
 @dataclass(frozen=True)
-class Environment: 
+class Environment:
     ambient_n: Parameter
+
+    @property
+    def variables(self):
+        return tuple(f.name for f in fields(self))
 
 
 class System:
@@ -103,9 +108,16 @@ class System:
         return self
 
 
-    def _ensure_context(self):
-        for i, el in enumerate(self.elements):
-            el.init_placeholders(self.environment)
+    def _bind_environment_variables(self, elements):
+        for el in elements:
+            for param in el.param_names:
+                node = getattr(el, param)
+                if isinstance(node, InputNode):
+                    node = node.node
+
+                if isinstance(node, Symbol) and node.name in self.environment.variables:
+                    node.bind(getattr(self.environment, node.name))
+        
 
     def _validate_layout(self):
         """
@@ -113,18 +125,13 @@ class System:
             1. Ensures that absolute positions increase monotonically
             2. Ensures that absolute positions do not conflict with the accumulated length of relative elements
         """
-        # ensure every parameter is an AST node. ensure they are all convertable to floats
+        # ensure every parameter is an AST node or None. ensure they are all convertable to floats
         for i, el in enumerate(self.elements):
             for name in el.param_names:
                 param = getattr(el, name)
 
-                if not isinstance(param, Node):
+                if not isinstance(param, Node) and param is not None:
                     raise ValueError(f"Encountered a non Node parameter {name} of element {el}: {param}. Type: {type(param)}")
-
-                try: 
-                    float(param)
-                except Exception as e:
-                    raise ValueError(f"could not convert node {param} to float; encountered error {e}")
 
         # tracks our position in the simulation
         current_z = 0.0
@@ -249,41 +256,39 @@ class System:
         
         # Loop over compiled (i.e. finalized) elements
         for el in  self._compiled_elements:
-            if hasattr(el, 'get_sim_data'):
-                func, len_func, idx_func, vals = el.get_sim_data()
-                vals = [float(x) for x in vals]
-             
-                # store Functions
-                functions.append(func)
-                length_functions.append(len_func)
+            
+            func, len_func, idx_func = el.get_sim_functions()
+            vals = el.values
 
-                # normalize the index functions. We make these also depend on the refractive index of the previous element
-                if idx_func is not None:
-                    normalized_idx_func = lambda curr, *args, idx_func=idx_func: idx_func(*args)
-                else:
-                    normalized_idx_func = lambda curr, *args: curr
-                index_functions.append(normalized_idx_func)
+            # store Functions
+            functions.append(func)
+            length_functions.append(len_func)
 
-                # store Indices & parameter values
-                idxs = tuple(range(current_param_idx, current_param_idx + len(vals)))                    
-                indices.append(idxs)
-                values.extend(vals)
-                
-                # generate Metadata                
-                for i, v in enumerate(vals):                    
-                    param_defs.append(ParameterInfo(
-                        index=current_param_idx + i,
-                        element_id=None,
-                        element_label=el.label,
-                        param_name=el.param_names[i],
-                        initial_value=v,
-                        is_variable=(el.param_names[i] in el.variable_parameter_names)
-                    ))
-
-                current_param_idx += len(vals)
-
+            # normalize the index functions. We make these also depend on the refractive index of the previous element
+            if idx_func is not None:
+                normalized_idx_func = lambda curr, *args, idx_func=idx_func: idx_func(*args)
             else:
-                raise ValueError(f"Element {el} missing get_sim_data.")
+                normalized_idx_func = lambda curr, *args: curr
+            index_functions.append(normalized_idx_func)
+
+            # store Indices & parameter values
+            idxs = tuple(range(current_param_idx, current_param_idx + len(vals)))                    
+            indices.append(idxs)
+            values.extend(vals)
+            
+            # generate Metadata                
+            for i, v in enumerate(vals):                    
+                param_defs.append(ParameterInfo(
+                    index=current_param_idx + i,
+                    element_id=None,
+                    element_label=el.label,
+                    param_name=el.param_names[i],
+                    initial_value=v,
+                    is_variable=(el.param_names[i] in el.variable_parameter_names)
+                ))
+
+            current_param_idx += len(vals)
+
             
         # pass constraints and definitions to Simulation
         return Simulation(
@@ -304,7 +309,7 @@ class System:
         """
         Compiles the element list into a flat, differentiable Simulation.
         """
-        self._ensure_context()
+        self._bind_environment_variables(self.elements)
         self._validate_layout()
         self._resolve_layout() 
         return self._build_simulation()

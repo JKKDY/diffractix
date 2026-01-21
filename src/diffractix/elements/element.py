@@ -241,7 +241,6 @@ class OpticalElement:
         ret = []
         for name in self.param_names:
             obj = getattr(self, name)
-            print(type(obj))
             
             # 1. Unwrap InputNode / Parameter / Symbol
             if isinstance(obj, ASTNode):
@@ -251,7 +250,6 @@ class OpticalElement:
                 ret.append(None)
             # 3. Fallback: throw error 
             else:
-                print()
                 raise ValueError(f"Unexpected type {type(obj)} of parameter value {obj} for parameter {self}.{name}")
         return ret
 
