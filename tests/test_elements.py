@@ -3,7 +3,7 @@ import numpy as np
 import autograd.numpy as anp  # For consistency in checks
 from dataclasses import dataclass
 from diffractix.elements import ThinLens, Space, Mirror, Interface, ABCD
-from diffractix.graph import Parameter, InputNode
+from diffractix.graph import Parameter, InputNode, Symbol
 
 def assert_matrix_close(mat, expected, rtol=1e-5):
     """Helper to check if two 2x2 matrices are approximately equal."""
@@ -309,19 +309,80 @@ def test_abcd_init():
     assert el.variable_parameter_names == ["thickness"]
 
 
-def test_abcd_refractive_index_inheritance():
-    """Scenario 1: n=None. Element should inherit from the previous medium."""
-    el = ABCD(A=1, B=0, C=0, D=1, thickness=0, n=None)
+def test_abcd_init_matrix_override():
+    """Test initializing via the 'matrix' argument."""
+    mat = np.array([[2.0, 0.5], [0.1, 1.0]])
+    el = ABCD(matrix_val=mat, thickness=0.1)
     
+    assert el.A.value == 2.0
+    assert el.B.value == 0.5
+    assert el.thickness.value == 0.1
+    np.testing.assert_array_equal(el.matrix, mat)
+
+
+def test_abcd_inheritance_mode():
+    """
+    Scenario: n=None.
+    The element should have 'n' as a parameter (value None),
+    and return None for the index function (signaling inheritance).
+    """
+    el = ABCD(A=1, B=0, C=0, D=1, thickness=1.0, n=None)
+    
+    # 1. Verify Parameter Structure
+    # Static signature of get_matrix is (A, B, C, D, thickness, n) -> 6 params
+    assert len(el.parameters) == 6
+    assert el.n is None
+
+    # 2. Verify Simulation Wiring
     mat_func, len_func, idx_func = el.get_sim_functions()
-    vals = el.values
     
-    # In inheritance mode, the index function MUST take current_n as an argument
-    # and return it unchanged.
-
-    assert vals[-1] is None
+    # Args that the system will extract from el.parameters
+    # Since el.n is None, the last argument passed to functions will be None
+    args = [1.0, 0.0, 0.0, 1.0, 1.0, None]
     
+    # Matrix Function Check: Must handle n=None safely
+    mat = mat_func(*args)
+    assert np.allclose(mat, np.eye(2))
     
-    assert el.n is None  # Check that it didn't get wrapped in an InputNode
+    # Index Function Check: Must be None to trigger System Build inheritance logic
+    assert idx_func is None
 
 
+def test_abcd_explicit_mode():
+    """
+    Scenario: n=1.5.
+    The element should return a function that returns 'n'.
+    """
+    el = ABCD(A=1, B=0, C=0, D=1, thickness=1.0, n=1.5)
+    
+    # 1. Verify Parameter Structure
+    assert isinstance(el.n, InputNode)
+    assert el.n.value == 1.5
+    
+    # 2. Verify Simulation Wiring
+    mat_func, len_func, idx_func = el.get_sim_functions()
+    
+    args = [1.0, 0.0, 0.0, 1.0, 1.0, 1.5]
+    
+    # Index Function Check
+    # Your ABCD code returns: lambda a,b,c,d,t,n: n
+    # It receives 6 arguments.
+    assert idx_func is not None
+    assert idx_func(*args) == 1.5
+
+
+def test_abcd_symbolic_n():
+    """Test binding 'n' to a symbol."""
+    sym = Symbol("glass_n")
+    el = ABCD(n=sym)
+    
+    # Bind Symbol
+    sym.bind(1.5)
+    
+    # Check physics access
+    _, _, idx_func = el.get_sim_functions()
+    
+    # Args: ..., n=1.5
+    args = [1,0,0,1,0, 1.5] 
+    
+    assert idx_func(*args) == 1.5

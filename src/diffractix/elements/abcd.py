@@ -30,7 +30,7 @@ class ABCD(OpticalElement):
     C: float | Node = 0.0
     D: float | Node = 1.0
     thickness: float | Node = 0.0  # Physical length added to the layout
-    n : float | str | Node | None = None  # optional
+    n : float | Node | None = None  # optional
 
     matrix_val: InitVar[np.ndarray] = None
 
@@ -48,9 +48,7 @@ class ABCD(OpticalElement):
     @property
     def matrix(self):
         """Getter: Reconstructs matrix from current params."""
-        # We assume self.A etc are Nodes or floats. 
-        # We allow reading the current state.
-        return np.array([[self.A, self.B], [self.C, self.D]])
+        return np.array([[self.A.value, self.B.value], [self.C.value, self.D.value]])
 
     @matrix.setter
     def matrix(self, mat: np.ndarray):

@@ -100,11 +100,18 @@ if __name__ == "__main__":
 
     # for k, v in Node._cache.items():
     #     print(k, v)
+    import numpy as np
+
+    mat = np.array([[2.0, 0.5], [0.1, 1.0]])
+    el = ABCD(matrix_val=mat, thickness=0.1)
+
+    print(el.matrix)
+    
+    assert el.A.value == 2.0
+    assert el.B.value == 0.5
+    assert el.thickness.value == 0.1
+    np.testing.assert_array_equal(el.matrix, mat)
 
 
-    c1 = Constant(5.0)
-    c2 = Constant(5.0)
-    c3 = Constant(5.00000000001)
-
-    assert c1 is c2, "Cache failed: Identical constants should be the same object"
-    assert c1 is not c3, "Cache failed: Different values should be different objects"
+ 
+  

@@ -171,7 +171,7 @@ class OpticalElement:
 
     @property
     def parameters(self) -> tuple[ASTNode]:
-        return (getattr(self, name) for name in self.param_names)
+        return [getattr(self, name) for name in self.param_names]
 
     @property
     def has_variable_length(self) -> bool:

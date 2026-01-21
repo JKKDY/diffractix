@@ -1,6 +1,7 @@
 import pytest
 import math
 from diffractix.graph.ast import Node, Constant, Parameter, Symbol, InputNode, BinaryOp, UnaryOp
+import gc 
 
 # --------------------------
 # 1. BASIC ARITHMETIC CHECKS
@@ -151,7 +152,7 @@ def test_symbol_binding_resolution():
 
     # 2. Bind Symbol to a Parameter
     p = Parameter(100.0, name="f_optim", fixed=False)
-    sym.target = p  # Bind it!
+    sym.bind(p)  # Bind it!
 
     # 3. Check Resolution
     assert sym.value == 100.0
@@ -175,7 +176,7 @@ def test_symbol_leaf_boxing_integration():
     
     # 4. Bind the Symbol (System Build Phase)
     env_param = Constant(1.33)
-    sym.target = env_param
+    sym.bind(env_param)
     
     # 5. Verify Propagation
     # Output -> handle -> sym -> env_param
@@ -259,7 +260,7 @@ def test_symbol_binding_consistency():
     
     # Late binding
     p = Parameter(5.0, name="bound_val", fixed=True)
-    sym.target = p
+    sym.bind(p)
     
     # f1 = 5*2 = 10
     # f2 = 10+10 = 20
@@ -392,3 +393,115 @@ def test_commutativity_caching():
     op2 = b + a
     
     assert op1 is op2, "Cache failed: Commutative operations should be normalized"
+
+
+def test_symbol_aliasing_behavior():
+    """
+    Verifies that symbols with the same name are the same object 
+    and that rebinding one affects the other immediately.
+    """
+    # 1. Setup
+    x = Parameter(value=10.0, name="x", fixed=True)
+    y = Parameter(value=10.0, name="y", fixed=True)
+
+    # 2. Define Aliased Symbols
+    # Because the name "a" is the same, the cache returns the SAME instance.
+    a = Symbol("a")
+    b = Symbol("a")
+    
+    assert a is b, "Cache failed: Symbols with identical names must be the same object"
+
+    # 3. Define Math
+    z = x + y * x  # 10 + 100 = 110
+    w = y / x      # 10 / 10 = 1.0
+
+    c = a + b      # Symbol("a") + Symbol("a")
+
+    # 4. Bind 'a' -> 110
+    # c is now effectively 110 + 110 = 220
+    a.bind(z)
+    assert c.value == 220.0
+
+    # 5. Bind 'b' -> 1.0
+    # Since b IS a, this overwrites the previous binding.
+    # Symbol("a") now points to 1.0
+    b.bind(w)
+
+    # 6. Verify Equivalence
+    # (w + w) = 1.0 + 1.0 = 2.0
+    # c       = 1.0 + 1.0 = 2.0
+    print(f"\n(w + w).value = {(w + w).value}")
+    print(f"c.value       = {c.value}")
+
+    assert (w + w).value == c.value
+    assert c.value == 2.0
+
+
+
+# --------------------------
+# 11. SYMBOL LIFECYCLE & EDGE CASES
+# --------------------------
+
+def test_symbol_self_binding_cycle():
+    """
+    Edge Case: User binds a symbol to an expression containing itself.
+    Formula: x = x + 1
+    Expected: RecursionError (Infinite loop detection via Python stack depth)
+    """
+    s = Symbol("infinite")
+    
+    # Create expression: s + 1
+    expr = s + 1
+    
+    # Bind s -> (s + 1)
+    s.bind(expr)
+    
+    # Evaluation should spiral infinitely
+    with pytest.raises(RecursionError):
+        _ = s.value
+
+def test_distinct_symbols_independence():
+    """
+    Verify that symbols with DIFFERENT names are distinct objects,
+    even if they are bound to identical values.
+    """
+    s1 = Symbol("alpha")
+    s2 = Symbol("beta")
+    
+    assert s1 is not s2, "Symbols with different names must be unique instances"
+    
+    # Bind to same value
+    s1.bind(10.0)
+    s2.bind(10.0)
+    
+    assert s1.value == s2.value
+    
+    # Rebind s1, s2 should remain unchanged
+    s1.bind(20.0)
+    assert s1.value == 20.0
+    assert s2.value == 10.0
+
+def test_symbol_garbage_collection():
+    """
+    Stress: Verify that Symbols are correctly evicted from the cache 
+    when no longer referenced.
+    """
+    # 1. Create a symbol in a local scope
+    name = "transient_symbol"
+    s = Symbol(name)
+    
+    # Get the cache key
+    key = s.canonical_key()
+    
+    # It must be in the cache
+    assert key in Node._cache
+    
+    # 2. Delete the strong reference
+    del s
+    
+    # 3. Force Garbage Collection
+    gc.collect()
+    
+    # 4. Verify Eviction
+    # If this fails, you have a memory leak (Node._cache is holding a strong ref somewhere)
+    assert key not in Node._cache

@@ -15,7 +15,7 @@ class Node:
 
     @staticmethod 
     def _register(obj):
-        key = hash(obj)
+        key = obj.canonical_key()
 
         if key in Node._cache:
             return Node._cache[key]
@@ -25,7 +25,8 @@ class Node:
 
     @staticmethod
     def _make_constant(value: Scalar) -> Constant:
-        return Node._register(Constant(value))
+        # return Node._register(Constant(value))
+        return Constant(value)
 
     @staticmethod
     def _make_binary_op(op: Op, left: Node | Scalar, right: Node | Scalar):
@@ -122,6 +123,13 @@ class Node:
             raise Exception(f"self.value not implemented for {self.__class__}")
         return float(self.value)
 
+    @abstractmethod
+    def canonical_key(self) -> tuple:
+        pass
+
+    def __hash__(self):
+        return hash(self.canonical_key())
+
 
 
 
@@ -130,19 +138,23 @@ class BinaryOp(Node):
     """
     Represents an operation taking two operands (e.g., a + b).
     """
+    __hash__ = Node.__hash__
+
     def __init__(self, op: Op, left: Node | Scalar, right: Node | Scalar):
         self.op = op
         self.left = left 
         self.right = right 
+        self._left_hash = hash(self.left)
+        self._right_hash = hash(self.right)
 
     def __repr__(self) -> str:
         return f"({self.left} {self.op.unicode} {self.right})"
 
-    def __hash__(self):
-        l, r = hash(self.left), hash(self.right)
-        if self.op.is_commutative and l > r:
+    def canonical_key(self):
+        l, r = self.left, self.right
+        if self.op.is_commutative and self._left_hash > self._right_hash:
             l, r = r, l
-        return hash((BinaryOp, self.op, l, r))
+        return (BinaryOp, self.op, l, r)
 
     @property
     def value(self) -> float:
@@ -176,6 +188,8 @@ class UnaryOp(Node):
     """
     Represents an operation taking a single operand (e.g., -a).
     """
+    __hash__ = Node.__hash__
+
     def __init__(self, op: Op, operand: Node | Scalar):
         self.op = op
         self.operand = operand 
@@ -183,8 +197,8 @@ class UnaryOp(Node):
     def __repr__(self): 
         return f"{self.op.unicode}({self.operand})"
 
-    def __hash__(self):
-        return hash((UnaryOp, self.op, self.operand))
+    def canonical_key(self):
+        return (UnaryOp, self.op, self.operand)
 
     @property
     def value(self) -> float:
@@ -203,7 +217,10 @@ class UnaryOp(Node):
 
 
 class InputNode(Node):
+    __hash__ = Node.__hash__
+
     def __init__(self, node: Paramter | Constant | Symbol): 
+        # Unwrap nested InputNodes to avoid chains like In(In(In(P)))
         self.node = node.node if isinstance(node, InputNode) else node
 
     def __getattr__(self, name):
@@ -212,6 +229,8 @@ class InputNode(Node):
     def __setattr__(self, name, value):
         # If we are changing the 'body' of the handle, do it normally
         if name == "node":
+            # Unwrap if assigning an InputNode
+            real_val = value.node if isinstance(value, InputNode) else value
             super().__setattr__('node', value)
         else:
             # Redirect all other writes (e.g., .fixed, .value, .name) to the inner node
@@ -227,31 +246,38 @@ class InputNode(Node):
     def __eq__(self, other):
         return self is other
 
-    def __hash__(self):
-        return hash(self.node)
-
+    def canonical_key(self):
+        # use default object ID hashing.
+        # this ensures the hash never changes even if we hot-swap the node
+        return (InputNode, id(self))
 
 
 class Constant(Node):
-    def __init__(self, value: float):
-        self.value = float(value)
+    __hash__ = Node.__hash__
 
-    def __hash__(self):
-        print("sjdkkjsdfn")
-        print(hash((Constant, hash(self.value))))
-        return hash((Constant, hash(self.value)))
+    def __init__(self, value: float):
+        self._value = float(value)
+
+    def canonical_key(self):
+        return (Constant, self._value)
 
     def __repr__(self):
-        return f"Const={self.value:.4g}"
+        return f"Const={self._value:.4g}"
+
+    @property
+    def value(self):
+        return self._value
+
+    @value.setter
+    def value(self, _):
+        raise AttributeError("Constant.value is immutable")
 
     @property
     def is_constant(self):
         return True
 
     def __eq__(self, other):
-        if self is other: return True
-        if not isinstance(other, Constant): return False
-        return self.value == other.value
+       return isinstance(other, Constant) and self.value == other.value
 
 
 class Parameter(Node):
@@ -263,6 +289,8 @@ class Parameter(Node):
         - value: The current number (float).
         - fixed: If False, this parameter is added to the Optimizer Vector else if True treat it as a constant
     """
+
+    __hash__ = Node.__hash__
     # Global counter for unique IDs across the session
     _id_counter = itertools.count()
 
@@ -282,11 +310,11 @@ class Parameter(Node):
     @property
     def owner(self):
         if not hasattr(self, "_owner_ref"):
-            raise ValueError(f"This paremeter {self.name} has no owner")
+            return None
         return self._owner_ref()
 
-    def __hash__(self):
-        return self.id
+    def canonical_key(self):
+        return (Parameter, self.id)
     
     def __eq__(self, other):
         return self is other
@@ -294,10 +322,14 @@ class Parameter(Node):
     @property
     def full_name(self):
         """Reconstructs the full name dynamically."""
-        return f"{self.owner.label}.{self.name}"
+        if self.owner is None:
+            return f"<?>.{self.name}"
+        else:
+            return f"{self.owner.label}.{self.name}"
+
 
     def __repr__(self):
-        return f"{self.full_name}{'(F)' if self.fixed else '(V)'}={self.value:.4g}"
+        return f"{self.full_name}{'[F]' if self.fixed else '[V]'}={self.value:.4g}"
 
     @property
     def is_constant(self):
@@ -308,13 +340,15 @@ class Parameter(Node):
 
 
 class Symbol(Node):
+    __hash__ = Node.__hash__
+
     def __new__(cls, name: str):
-        # we check if this symbold is already in the class
+        # we check if this symbol already exists. IF yes we return it (deduplication)
         # the logic here differs from the standard Node._register because we must ensurure that we dont
         # override any bindings (i.e. set self.taget to None)
         
-        # cehck cachse
-        key = hash((Symbol, name))
+        # check cache
+        key = (Symbol, name)
         if key in Node._cache:
             return Node._cache[key]
         
@@ -329,34 +363,38 @@ class Symbol(Node):
 
     def __init__(self, name:str):
         self.name = name
-        self.fixed = None
-        self.target = None
+        self._target = None
 
+    def bind(self, value):
+        if isinstance(value, Scalar):
+            self._target = self._make_constant(value)
+        else:
+            self._target = value
 
     @property
     def value(self):
-        if self.target is None:
+        if self._target is None:
             raise ValueError(f"Symbol '{self.name}' has not been bound to a value yet.")
-        return self.target.value
+        return self._target.value
 
     @value.setter
     def value(self, v):
-        if self.target is None:
+        if self._target is None:
             raise ValueError(f"Symbol '{self.name}' has not been bound to a value yet.")
-        self.target.value = v
+        self._target.value = v
 
     @property
     def is_constant(self):
-        if self.target is None: return True # Default assumption until bound
-        return self.target.is_constant
+        if self._target is None: return True # Default assumption until bound
+        return self._target.is_constant
         
     def __repr__(self):
-        if self.target:
-            return f"Symbol({self.name} -> {self.target.value})"
+        if self._target:
+            return f"Symbol({self.name} -> {self._target.value})"
         return f"Symbol({self.name} -> ?)"
     
-    def __hash__(self):
-        return hash((Symbol, self.name))
+    def canonical_key(self):
+        return (Symbol, self.name)
 
     def __eq__(self, other):
         if self is other: return True

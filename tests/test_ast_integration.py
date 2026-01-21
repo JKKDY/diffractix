@@ -93,7 +93,7 @@ def test_element_symbol_resolution():
         
     # 5. Bind Symbol
     env_param = Constant(1.5)
-    n_env.target = env_param
+    n_env.bind(env_param)
     
     # 6. Verify Values
     assert s.n.value == 1.5
