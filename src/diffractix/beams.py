@@ -134,8 +134,9 @@ class GaussianBeam:
         inv_q1 = 1.0 / q1
         inv_q2 = 1.0 / q2
 
-        inv_q1_imag = np.imag(inv_q)
-        inv_q2_imag = np.imag(inv_q)
+        inv_q1_imag = np.imag(inv_q1)
+        inv_q2_imag = np.imag(inv_q2)
+        
         
         numerator = 4 * inv_q1_imag * inv_q2_imag
         denominator = abs(np.conj(inv_q1) + inv_q2)**2
@@ -206,6 +207,26 @@ class GaussianBeam:
         w0 = wavelength / (np.pi * theta * n)
         return cls.from_waist(w0, wavelength, z_waist_loc=0.0, n=n)
 
+    @classmethod
+    def from_fiber_tip(cls, wavelength: float, NA: float = None, MFD: float = None, n: float = 1.0) -> 'GaussianBeam':
+        """
+        Create a beam as it exits a fiber tip.
+        
+        You must provide either NA or MFD.
+        - If NA is provided: w0 = wavelength / (pi * NA)
+        - If MFD is provided: w0 = MFD / 2
+        """
+        if NA is not None:
+            # Physics: NA = n * sin(theta) approx n * theta. 
+            # In fiber optics, NA is usually defined such that w0 = wavelength / (pi * NA)
+            w0 = wavelength / (np.pi * NA)
+        elif MFD is not None:
+            w0 = MFD / 2.0
+        else:
+            raise ValueError("Must provide either 'NA' or 'MFD' to characterize the fiber tip.")
+
+        return cls.from_waist(w0, wavelength, z_waist_loc=0.0, n=n)
+        
 
     #----------
     # DEBUGGING
