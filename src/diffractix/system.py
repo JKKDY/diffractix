@@ -3,10 +3,10 @@ import autograd.numpy as np
 from collections.abc import Iterable
 from dataclasses import dataclass, fields
 
-from .elements import OpticalElement, Space
+from .elements import OpticalElement, Space, Interface, ABCD
 from .beams import GaussianBeam
 from .simulation import Simulation, SimulationStep
-from .graph import Node, Parameter, Symbol, InputNode, generate_parameter_transform, Constant
+from .graph import Node, Parameter, Symbol, InputNode, compile_parameter_transform, Constant
 
 
 
@@ -125,7 +125,7 @@ class System:
             1. Ensures that absolute positions increase monotonically
             2. Ensures that absolute positions do not conflict with the accumulated length of relative elements
         """
-        # ensure every parameter is an AST node or None. ensure they are all convertable to floats
+        # 1. step: ensure every parameter is an AST node or None. ensure they are all convertable to floats
         for i, el in enumerate(self.elements):
             for name in el.param_names:
                 param = getattr(el, name)
@@ -133,13 +133,12 @@ class System:
                 if not isinstance(param, Node) and param is not None:
                     raise ValueError(f"Encountered a non Node parameter {name} of element {el}: {param}. Type: {type(param)}")
 
-        # tracks our position in the simulation
+        # 2. step: validate absolute positions:
         current_z = 0.0
-        
-        # validate absolute positions
         for i, el in enumerate(self.elements):
             # if element has absolute position, make sure it is not behind the current cursor
             absolute_pos = getattr(el, 'z', None)
+
             if absolute_pos is not None:
                 # tolerance of 1nm to avoid floating point issues
                 if absolute_pos < current_z - 1e-9:
@@ -156,18 +155,29 @@ class System:
             current_z += el.length
 
         # validate refractive index transitions
-        for i in range(len(self.elements) - 1):
-            el1 = self.elements[i]
-            el2 = self.elements[i+1]
-            
-            # Check for index mismatch between consecutive spaces
-            if isinstance(el1, Space) and isinstance(el2, Space):
-                if not np.isclose(el1.n.value, el2.n.value):
-                    raise ValueError(
-                        f"Refractive Index Mismatch at boundary between '{el1.label}' and '{el2.label}'.\n"
-                        f"Medium 1: n={el1.n}, Medium 2: n={el2.n}.\n"
-                        "To change index, you must explicitly insert a 'DielectricInterface'."
+        current_index = self.environment.ambient_n.value
+
+        for i, el in enumerate(self.elements):
+            if isinstance(el, Space):
+                space_n = float(el.n.value)
+                
+                if not np.isclose(current_index, space_n):
+                     raise ValueError(
+                        f"Refractive Index Mismatch at Element #{i} ({el.label}).\n"
+                        f"Current Field Index: n={current_index:.4f}\n"
+                        f"Space Medium Index:  n={space_n:.4f}\n"
+                        "Physics Violation: Discontinuous index change detected.\n"
+                        "Solution: Insert an Interface(n1=..., n2=...) before this Space."
                     )
+            elif isinstance(el, Interface):
+                current_index = el.n2.value
+
+            elif isinstance(el, ABCD):
+                try:
+                    val = float(el.n.value) if hasattr(el.n, 'value') else float(el.n)
+                    current_index = val
+                except (TypeError, ValueError):
+                    pass # Inherited index, no update
 
 
     def _resolve_layout(self):
@@ -175,70 +185,45 @@ class System:
         Compiles the mixed Absolute/Relative list into a pure Sequential list.
           - Inserts AutoSpaces to reach Absolute Z positions.
           - Configures optimization for those spaces (Variable vs Fixed).
-          - Generates constraints if fixed anchors follow variable length Elements.
+          - shock absorber contraints (for absolute positioning) are baked into the graph topology during this step.
         """
         # clear any previous state
         self._compiled_elements = []
-        self._generated_constraints = [] 
-        
-        current_z = 0.0
-        variable_length_block = [] # all variable length elements since last fixed absolute
+
+        current_z_node = Constant(0.0)
         
         for el in self.elements:
             absolute_pos = getattr(el, 'z', None)
             opt_absolute_pos = getattr(el, 'optimize_z', False)
             
-            # if element has absolute position, we may need to insert a spacer
+            # if element has absolute position, we need to insert a spacer
+            # the width of the spacer is dependent on the position of the prevous element (given by current_z_node) 
+            # and the desired position of the new element. If the user selects to have the abs psotion variable
+            # the spacers length must be variable as well (i.e. Parameter with fixed = false)
             if absolute_pos is not None:
-                gap = absolute_pos - current_z
-
-                # spacer inserted right before the absolute element to fill gap
-                spacer = Space(d=gap, label=f"AutoSpace_to_{absolute_pos}")
-
-                # Check if chain is currently loose
-                upstream_is_variable = len(variable_length_block) > 0
-
+                
                 if opt_absolute_pos:
-                    # user explicitly requested optimization: spacer is variable & everything updstream is now loose 
-                    # i.e. will be moved if spacer length is adjusted
-                    spacer.variable('d')
-                    last_variable_length_elem = spacer
-                    variable_length_block.append(spacer)
-
-                elif not opt_absolute_pos and len(variable_length_block) > 0: # 
-                    # element is Fixed Absolute, but upstream is Variable -> we need to lock this position
-                    # shock absorber logic: This spacer must vary to absorb upstream changes
-                    spacer.variable('d')
-
-                    # we do this by adding a constraint: 
-                    # TODO instead of soft constraint, add hard constraint (spacer.d = gap - sum variable_length_block lengths)
-                    target_trace_idx = len(self._compiled_elements) + 1
-                    def make_z_constraint(idx, target_z, lbl):
-                        # Capture specific values in closure
-                        def z_lock(params, simulation_trace: list):
-                            # data shape is (Steps+1, 3) -> [z, w, R]
-                            actual_z = simulation_trace[idx, 0]
-                            return (actual_z - target_z) 
-                        return z_lock
-
-                    self._generated_constraints.append(
-                        make_z_constraint(target_trace_idx, absolute_pos, el.label)
-                    )
-                    
-                    # break the varible length block
-                    variable_length_block = []
-                    
-
+                    # position of the element is variable
+                    target_z_node = Parameter(absolute_pos, name=f"Anchor_{el.label}", fixed=False)
+                else:
+                    # Fixed Anchor.
+                    target_z_node = Constant(absolute_pos)
+                
+                # construct a hard constraint for the width of the spacer
+                # this links the spacer directly to all previous upstream nodes.
+                gap_node = target_z_node - current_z_node
+                spacer = Space(d=gap_node, label=f"AutoSpace_to_{absolute_pos}")
+                
                 self._compiled_elements.append(spacer)
-                current_z += gap
+                
+                # Update Cursor
+                # We add the spacer to our running totals. 
+                # Mathematically: New_Sum = Target_Z
+                current_z_node = current_z_node + spacer.element_length 
 
-            # add actual element
+            # add actual element and update cursor
             self._compiled_elements.append(el)
-            current_z += el.length
-
-           
-            if el.has_variable_length:
-                variable_length_block.append(el)
+            current_z_node = current_z_node + el.element_length
 
 
     def _generate_metadata(self):
