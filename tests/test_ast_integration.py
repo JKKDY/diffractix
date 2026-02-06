@@ -135,3 +135,43 @@ def test_hot_swap_preserves_external_graph():
     x.value = 4.0 # f becomes 8.0
     assert power_ast.value == 0.125
 
+
+# --------------------------
+# 5. COMPILER/OPTIMIZER VISIBILITY
+# --------------------------
+def test_constness_propagation():
+    """
+    Verify that 'is_constant' (fixed) status propagates correctly 
+    through the graph. This is critical for the Compiler to know 
+    which parameters to add to Theta.
+    """
+    # Case 1: All Fixed
+    p1 = Parameter(10.0, "p1", fixed=True)
+    p2 = Parameter(20.0, "p2", fixed=True)
+    
+    # Operations on fixed nodes should be constant
+    formula_fixed = p1 + p2
+    assert formula_fixed.is_constant is True
+    
+    # Case 2: One Variable
+    p_var = Parameter(5.0, "p_var", fixed=False)
+    
+    # Operation involving a variable should NOT be constant
+    formula_var = p1 + p_var
+    assert formula_var.is_constant is False
+    
+    # Case 3: Element Wrapper Propagation
+    lens = ThinLens(f=p_var)
+    # The InputNode wrapper must report the inner node's status
+    assert lens.f.is_constant is False
+    assert lens.f.fixed is False # InputNode forwards .fixed attribute
+    
+    # Case 4: Deep Propagation
+    # Space.d depends on Lens.f (variable)
+    space = Space(d=lens.f * 2, n=1.0)
+    assert space.d.is_constant is False
+    
+    # If we fix the source parameter, the whole chain should become fixed
+    p_var.fixed = True
+    assert lens.f.is_constant is True
+    assert space.d.is_constant is True
