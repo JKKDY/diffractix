@@ -5,8 +5,8 @@ from dataclasses import dataclass, fields
 
 from .elements import OpticalElement, Space
 from .beams import GaussianBeam
-from .simulation import Simulation
-from .graph import Node, Parameter, Symbol, InputNode
+from .simulation import Simulation, SimulationStep
+from .graph import Node, Parameter, Symbol, InputNode, generate_parameter_transform, Constant
 
 
 
@@ -211,6 +211,7 @@ class System:
                     spacer.variable('d')
 
                     # we do this by adding a constraint: 
+                    # TODO instead of soft constraint, add hard constraint (spacer.d = gap - sum variable_length_block lengths)
                     target_trace_idx = len(self._compiled_elements) + 1
                     def make_z_constraint(idx, target_z, lbl):
                         # Capture specific values in closure
@@ -244,63 +245,54 @@ class System:
         pass
     
     def _build_simulation(self):
-        functions = []          # List of element step functions (returning ABCD matrices)
-        length_functions = []   # List of element length functions
-        index_functions = []    # List of element refractive index functions
-        indices = []            # list of tuples of indices into parameter array. Each tuple corresponds to one element
-        values = []             # (initial) parameter values
-        param_defs = []         # parameter map: We need this so the Optimizer knows that Index 5 is "Lens 1 Focal Length"
-    
-        # track the number of variable parameters
-        current_param_idx = 0
+        def normalize_idx_func(idx_func):
+            # normalize the index functions. 
+            # The normalized index function depends on the refractive index of the previous element (curr)
+            if idx_func is not None: return lambda curr, *args, idx_func=idx_func: idx_func(*args)
+            else: return lambda curr, *args: curr
+
+        sim_steps = []
+        roots = []
         
-        # Loop over compiled (i.e. finalized) elements
-        for el in  self._compiled_elements:
+        # compile elements into steps
+        # We process elements linearly to build the "Physics Schedule"
+        current_param_idx = 0
+        for el in self._compiled_elements:
+            mat_func, len_func, idx_func = el.get_sim_functions()
             
-            func, len_func, idx_func = el.get_sim_functions()
-            vals = el.values
-
-            # store Functions
-            functions.append(func)
-            length_functions.append(len_func)
-
-            # normalize the index functions. We make these also depend on the refractive index of the previous element
-            if idx_func is not None:
-                normalized_idx_func = lambda curr, *args, idx_func=idx_func: idx_func(*args)
-            else:
-                normalized_idx_func = lambda curr, *args: curr
-            index_functions.append(normalized_idx_func)
-
-            # store Indices & parameter values
-            idxs = tuple(range(current_param_idx, current_param_idx + len(vals)))                    
-            indices.append(idxs)
-            values.extend(vals)
+            # Identify which slice of the full input list belongs to this element
+            num_params = len(el.parameters) # el.parameters is the list of InputNodes
+            idxs = tuple(range(current_param_idx, current_param_idx + num_params))
             
-            # generate Metadata                
-            for i, v in enumerate(vals):                    
-                param_defs.append(ParameterInfo(
-                    index=current_param_idx + i,
-                    element_id=None,
-                    element_label=el.label,
-                    param_name=el.param_names[i],
-                    initial_value=v,
-                    is_variable=(el.param_names[i] in el.variable_parameter_names)
-                ))
-
-            current_param_idx += len(vals)
-
+            step = SimulationStep(
+                matrix_func=mat_func,
+                length_func=len_func,
+                index_func=normalize_idx_func(idx_func),
+                param_indices=idxs
+            )
+            sim_steps.append(step)
             
+            # TODO temporary fix to ABCD.n = None problem
+            for name in el.param_names:
+                param = getattr(el, name)
+                if param is None:
+                    setattr(el, name, Constant(1))
+                    
+            roots.extend(el.parameters)
+            current_param_idx += num_params
+
+
+        # compile graph logic
+        transform_func, initial_values, variable_params = generate_parameter_transform(roots)
+
+
         # pass constraints and definitions to Simulation
         return Simulation(
-            steps=functions, 
-            length_steps=length_functions,
-            index_steps=index_functions,
-            environment = self.environment, # TODO replace with self.environment
-            param_indices=indices, 
-            initial_params=values,
-            input_beams=self.input_beams, 
-            structure_metadata=self._generate_metadata(),
-            param_definitions=param_defs,         # The Phonebook
+            steps=sim_steps, 
+            sources=self.input_beams, 
+            environment = self.environment,
+            initial_values=initial_values,
+            parameter_transform = transform_func,
             constraints=self._generated_constraints # The Z-Locks
         )
 

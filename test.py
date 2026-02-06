@@ -104,19 +104,21 @@ if __name__ == "__main__":
 
     sys = System()
     sys.add_input(input_beam)
-    sys.add(Space(d=0.2, ))
-    sys.add(ThinLens(f=0.1).variable())
-    sys.add(Space(d=0.3).variable())
+    # sys.add(Space(d=0.2, ))
+    # sys.add(ThinLens(f=0.1).variable())
+    # sys.add(Space(d=0.3).variable())
     sys.add(ABCD(A=5, C=1).variable('A'))
-    sys.add(Space(d=0.2))
-    sys.add(ThinLens(f=0.2).variable())
-    sys.add(Space(d=0.2, n=1.3))
-    sys.add(Slab(d=0.2, n = 1.5))
-    sys.add(Space(d=0.2))
-    sys.add(Mirror(R = 3))
-    sys.add(Space(d=0.2))
+    # sys.add(Space(d=0.2))
+    # sys.add(ThinLens(f=0.2).variable())
+    # sys.add(Space(d=0.2, n=1.3))
+    # sys.add(Slab(d=0.2, n = 1.5))
+    # sys.add(Space(d=0.2))
+    # sys.add(Mirror(R = 3))
+    # sys.add(Space(d=0.2))
     print(sys)
     sim = sys.build()
+
+    sim.run()
 
 
  

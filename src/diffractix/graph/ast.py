@@ -132,8 +132,6 @@ class Node:
 
 
 
-
-
 class BinaryOp(Node):
     """
     Represents an operation taking two operands (e.g., a + b).
@@ -184,6 +182,7 @@ class BinaryOp(Node):
             return self.left == other.left and self.right == other.right
 
 
+
 class UnaryOp(Node):
     """
     Represents an operation taking a single operand (e.g., -a).
@@ -215,11 +214,10 @@ class UnaryOp(Node):
 
 
 
-
 class InputNode(Node):
     __hash__ = Node.__hash__
 
-    def __init__(self, node: Paramter | Constant | Symbol): 
+    def __init__(self, node: Parameter | Constant | Symbol): 
         # Unwrap nested InputNodes to avoid chains like In(In(In(P)))
         self.node = node.node if isinstance(node, InputNode) else node
 
@@ -255,8 +253,9 @@ class InputNode(Node):
 class Constant(Node):
     __hash__ = Node.__hash__
 
-    def __init__(self, value: float):
-        self._value = float(value)
+    def __init__(self, value: float | int):
+        assert isinstance(value, (int, float)), "Constant value must be a number."
+        self._value = value
 
     def canonical_key(self):
         return (Constant, self._value)
@@ -280,6 +279,7 @@ class Constant(Node):
        return isinstance(other, Constant) and self.value == other.value
 
 
+
 class Parameter(Node):
     """
     Represents a physical property (d, f, n) of an optical element.
@@ -296,7 +296,7 @@ class Parameter(Node):
 
 
     def __init__(self, value: float, name: str, fixed: bool, owner: "OpticalElement" = None):
-        if (value is None):
+        if value is None:
             pass
 
         self.id = next(Parameter._id_counter)
@@ -327,7 +327,6 @@ class Parameter(Node):
         else:
             return f"{self.owner.label}.{self.name}"
 
-
     def __repr__(self):
         return f"{self.full_name}{'[F]' if self.fixed else '[V]'}={self.value:.4g}"
 
@@ -339,11 +338,12 @@ class Parameter(Node):
         return self is other
 
 
+
 class Symbol(Node):
     __hash__ = Node.__hash__
 
     def __new__(cls, name: str):
-        # we check if this symbol already exists. IF yes we return it (deduplication)
+        # we check if this symbol already exists. If yes we return it (deduplication)
         # the logic here differs from the standard Node._register because we must ensurure that we dont
         # override any bindings (i.e. set self.taget to None)
         
@@ -400,6 +400,8 @@ class Symbol(Node):
         if self is other: return True
         if not isinstance(other, Symbol): return False
         return self.name == other.name
+
+
 
 Scalar = int | float
 ASTNode = Node

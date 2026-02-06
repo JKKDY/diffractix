@@ -4,7 +4,7 @@ Defines the Mirror element.
 from dataclasses import dataclass
 import autograd.numpy as np
 from .element import OpticalElement
-from ..graph import Parameter
+from ..graph import Parameter, Constant, Symbol
 
 
 @dataclass(kw_only=True)
@@ -24,12 +24,17 @@ class Mirror(OpticalElement):
     """
     R: float | Parameter = np.inf
 
-    @property
-    def length_param_names(self):
-        """Mirrors are thin interfaces; they add no physical length."""
-        return []
+    @property   
+    def element_refractive_index(self):
+        # mirrors do not change the ambient index
+        return Symbol("inherit_n")
 
-    def get_matrix(self, R):
+    @property
+    def element_length(self):
+        # Mirrors are thin interfaces; they add no physical length.
+        return Constant(0.0)
+
+    def compute_matrix(self, R):
         """
         Returns the reflection matrix.
         Mathematically identical to a thin lens with f = R/2.
@@ -40,9 +45,3 @@ class Mirror(OpticalElement):
         power = -2.0 / R if not np.isinf(R) else 0.0
         return np.array([[1.0, 0.0], [power, 1.0]])
 
-    def get_sim_functions(self):
-        return (
-            self.get_matrix, 
-            lambda R: 0.0, 
-            None, 
-        )

@@ -25,20 +25,15 @@ class ABCD(OpticalElement):
         A, B, C, D (float): Individual matrix components (optional helpers).
 
     """
-    A: float | Node = 1.0
-    B: float | Node = 0.0
-    C: float | Node = 0.0
-    D: float | Node = 1.0
-    thickness: float | Node = 0.0  # Physical length added to the layout
-    n : float | Node | None = None  # optional
+    A: Node = 1.0
+    B: Node = 0.0
+    C: Node = 0.0
+    D: Node = 1.0
+    thickness: Node = 0.0 
+    n : Node = Symbol("inherit_n") 
 
     matrix_val: InitVar[np.ndarray] = None
 
-
-    @property
-    def length_param_names(self):
-        """Explicitly links physical length to the 'thickness' parameter."""
-        return ["thickness"]
 
     def __post_init__(self, matrix_val):
         if matrix_val is not None:
@@ -58,22 +53,19 @@ class ABCD(OpticalElement):
         self.C = mat[1,0]
         self.D = mat[1,1]
 
+    @property
+    def element_length(self):
+        return self.thickness
+
+    @property
+    def element_refractive_index(self):
+        return self.n
+
     def init_placeholders(self, environment: "Environment"):
         if isinstance(self.n, PlaceHolder):
             self.n.value = environment.ambient_n.value
             self.n.fixed = environment.ambient_n.fixed
 
-    def get_matrix(self, A, B, C, D, thickness, n):
-        """
-        Returns the matrix constructed from the current optimization parameters.
-        Note: 'thickness' and 'n' are passed to satisfy the signature but affect only layout and physical beam, not the matrix.
-        """
+    def compute_matrix(self, A, B, C, D):
         return np.array([[A, B], [C, D]])
 
-    def get_sim_functions(self):
-        n_func = (lambda a, b, c, d, t, n: n) if self.n is not None else None
-        return (
-            self.get_matrix, 
-            lambda a, b, c, d, t, n: t,  # Length function just returns 't' (thickness)
-            n_func,  # Refractive index function
-        )

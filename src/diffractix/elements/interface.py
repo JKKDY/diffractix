@@ -4,7 +4,7 @@ Defines the (Dielectric)Interface element.
 from dataclasses import dataclass
 import autograd.numpy as np
 from .element import OpticalElement
-from ..graph import Parameter
+from ..graph import Parameter, Constant
 
 @dataclass(kw_only=True)
 class Interface(OpticalElement):
@@ -27,15 +27,20 @@ class Interface(OpticalElement):
         R (float): Radius of curvature of the interface (default: inf/flat).
                    R > 0 means the center of curvature is in the +z direction (Convex).
     """
+
     n1: float | Parameter
     n2: float | Parameter
     R: float | Parameter = np.inf
 
     @property
-    def length_param_names(self):
-        return []
+    def element_length(self):
+        return Constant(0.0) 
 
-    def get_matrix(self, n1, n2, R):
+    @property
+    def element_refractive_index(self):
+        return self.n2 # The output index is n2
+
+    def compute_matrix(self, n1, n2, R):
         """
         Paraxial Snell's Law Matrix:
         [[ 1,           0      ],
@@ -51,9 +56,3 @@ class Interface(OpticalElement):
             [power_term, n1 / n2]
         ])
 
-    def get_sim_functions(self):
-        return (
-            self.get_matrix, 
-            lambda n1, n2, R: 0.0, 
-            lambda n1, n2, R: n2, 
-        )

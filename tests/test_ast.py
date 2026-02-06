@@ -300,7 +300,7 @@ def test_invalid_type_math():
     c = Constant(1)
     
     # Adding a string should fail conversion to float inside Constant.__init__
-    with pytest.raises(ValueError):
+    with pytest.raises(AssertionError):
         res = c + "not_a_number"
 
 def test_none_math_error():
@@ -309,7 +309,7 @@ def test_none_math_error():
     Expected: TypeError (float() argument must be a string or a number).
     """
     c = Constant(1)
-    with pytest.raises(TypeError):
+    with pytest.raises(AssertionError):
         res = c + None
 
 
@@ -505,3 +505,4 @@ def test_symbol_garbage_collection():
     # 4. Verify Eviction
     # If this fails, you have a memory leak (Node._cache is holding a strong ref somewhere)
     assert key not in Node._cache
+

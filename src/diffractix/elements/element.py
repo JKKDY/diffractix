@@ -51,21 +51,38 @@ class OpticalElement:
         super().__init_subclass__(**kwargs)
         
         # Perform signature inspection at class construction time
-        func = getattr(cls, "get_matrix", None)
+        func = getattr(cls, "compute_matrix", None)
         if func is None:
-            raise TypeError("Subclass must define get_matrix")
+            raise TypeError("Subclass must define compute_matrix")
 
         sig = inspect.signature(func)
+        cls._param_names = [name for name in sig.parameters if name != "self"]
 
-        cls._param_names = [
-            name for name in sig.parameters if name != "self"
-        ]
+        # ensure that the base class also has the members sepecified in the signature 
+        # (e.g. if compute_matrix(self, a, b) -> self.a, self.b)
+        annotations = getattr(cls, '__annotations__', {})
+        
+        for name, type_hint in annotations.items():
+            # Rough check: does the type hint string look like a Node?
+            # e.g. "float | Node", "Parameter", "InputNode"
+            type_hint = str(type_hint)
+            keywords = ("Node", "Parameter", "InputNode", "Symbol", "Constant")
+            if any(k in type_hint for k in keywords):
+                if name not in cls._param_names:
+                    cls._param_names.append(name)
 
-       
+        # validate that all parameter names in the signature have a corresponding member variable 
+        # (e.g. def compute_matrix(self, a, b) -> self.a, self.b)
+        for name in cls._param_names:
+            if not (hasattr(cls, name) or name in annotations):
+                 raise TypeError(f"Parameter '{name}' found in signature/hints but missing from fields.")
+
+
+
     def __post_init__(self):
         self.id = next(self._id_counter)
 
-        # set label to *class_name*#instantaitions 
+        # set label to *class_name*#instantaitions if no label was provided
         if self.label is None:
             cls = self.__class__
             
@@ -77,6 +94,10 @@ class OpticalElement:
 
 
     def __setattr__(self, name, value):
+        """ 
+        intercept attribute assignments to parameters; they must be wraped into AST nodes
+        """
+
         def convertable_to_float(x):
             try: float(x)
             except (TypeError, ValueError): return False
@@ -91,7 +112,7 @@ class OpticalElement:
         # get existing handle
         current_handle = self.__dict__.get(name)
 
-        # 1. Handle Update (Handle already exists)
+        # 1) Handle Update (Handle already exists)
         if isinstance(current_handle, InputNode):
             if isinstance(value, Node):
                 # swap out the 'body'
@@ -103,7 +124,7 @@ class OpticalElement:
                 raise TypeError(f"Cannot assign {type(value)} to {name}")
             return
 
-        # 2. Handle Initialization (First time)
+        # 2) Handle Initialization (First time)
         # This occurs during __init__ or dataclass default assignment
         if isinstance(value, Node):
             # Already a node (e.g. Lens(f=Symbol("x")))
@@ -112,8 +133,6 @@ class OpticalElement:
             # Raw number (e.g. Lens(f=0.1))
             new_node = Parameter(value=value, name=name, fixed=True, owner=self)
             new_handle = InputNode(new_node)
-        elif value is None:
-            new_handle = None
         else:
             raise TypeError(f"Initial value for {self}.{name} must be Node or float, got {type(value)}")
         
@@ -125,7 +144,7 @@ class OpticalElement:
         # Identity and length
         name = f"{self.__class__.__name__}"
         label_str = f" '{self.label}'" if self.label else ""
-        header = f"{name:<15}{label_str:<20}L={self.length:.4g} {'[VAR]' if self.has_variable_length else '[FIX]'}"
+        header = f"{name:<15}{label_str:<20}L={self.length:.4g} {'[VAR]' if not self.element_length.is_constant else '[FIX]'}"
         
         # parameters
         current_vals = self.values
@@ -161,91 +180,48 @@ class OpticalElement:
     @property
     def param_names(self) -> list[str]:
         """
-        Returns the list of parameter names corresponding to the simulation data.
-        The order mathes that of self.get_sim_functions()'s returned parameters (4. return value).
+        Returns the list of parameter names corresponding to the signature of self.compute_matrix.
 
-        e.g. Lens.get_matrix(self, f) -> returns ['f']
-        e.g. ABCD.get_matrix(self, A, B, C, D) -> returns ['A', 'B', 'C', 'D']
+        e.g. Lens.compute_matrix(self, f) -> returns ['f']
+        e.g. ABCD.compute_matrix(self, A, B, C, D) -> returns ['A', 'B', 'C', 'D']
         """
         return self.__class__._param_names
 
     @property
-    def parameters(self) -> tuple[ASTNode]:
+    def parameters(self) -> list[ASTNode]:
+        """
+        Returns the list of parameter nodes corresponding to the signature of self.compute_matrix.
+        """
         return [getattr(self, name) for name in self.param_names]
-
-    @property
-    def has_variable_length(self) -> bool:
-        """
-        Returns True if the physical length of this element changes when any of its currently variable parameters change.
-
-        Strategies:
-          1. Fast Fail: No parameters are variable.
-          2. Explicit Fast-Path: Checks length_param_names (if provided).
-          3. Implicit Fallback: autograd sensitivity check.
-        """
-        variable_params = self.variable_parameter_names
-
-        # Fast Fail: if all parameters fixed -> length is fixed
-        if not variable_params:
-            return False
-
-        # Fast-Path: check explicit length_param_names (if available)
-        explicit_names = self.length_param_names
-        if explicit_names is not None:
-            # if any name in the list is variable, the length is variable
-            for name in explicit_names:
-                if name in variable_params:
-                    return True
-            # else if empty or non are variable we assume length is fixed
-            return False
-
-        # Fallback: use autograd to check sensitivity of length function
-        # get the distance function + parameter values
-        _, len_func, _, val_nodes = self.get_sim_functions()
-        
-        # check sensitivity for each variable parameter     
-        for i, name in enumerate(self.param_names):
-            if name in variable_params:
-                # grad with argnum requests: d(len_func) / d(Param_i)
-                sensitivity_func = grad(len_func, argnum=i)
-                g = sensitivity_func(*self.values)
-                
-                if abs(g) > 1e-9:
-                    return True
-
-        return False
-
 
     @property
     def length(self) -> float:
         """
         Returns the physical length of this element at its current parameter values.
         """
-        _, len_func, _ = self.get_sim_functions()
-        return len_func(*self.values)
+        return self.element_length.value
 
     @property
     def refractive_index(self) -> float:
         """
         Returns the physical length of this element at its current parameter values.
         """
-        _, _, index_func, val_nodes = self.get_sim_functions()
-        return index_func(*self.values) if index_func is not None else None
+        return self.element_refractive_index.value
 
     @property
     def values(self) -> list[float | None]:
         """
-        Returns the current float values of all parameters defined in get_matrix signature.
+        Returns the current float values of all parameters defined in calculate_matrix signature.
         Useful for debugging, __str__, or evaluating matrices for non-differentiable checks.
         """
         ret = []
         for name in self.param_names:
             obj = getattr(self, name)
             
-            # 1. Unwrap InputNode / Parameter / Symbol
+            # if InputNode / Parameter / Symbol, get its value
             if isinstance(obj, ASTNode):
                 ret.append(obj.value)
-            # 2. Pass None through (e.g. for ABCD.n=None)
+            # else Pass None through (e.g. for ABCD.n=None)
             elif obj is None:
                 ret.append(None)
             # 3. Fallback: throw error 
@@ -254,9 +230,9 @@ class OpticalElement:
         return ret
 
 
-    #------------------
-    # PROGRAM INTERFACE
-    #------------------
+    #---------------------
+    # FUNCTIONAL INTERFACE
+    #---------------------
     def variable(self, *variable_params: str):
         """
         Fluent setter to mark a parameter as variable (e.e. trainable).
@@ -297,42 +273,26 @@ class OpticalElement:
         return self
 
 
-    #------------
-    # OVERRIDABLE
-    #------------
-    def init_placeholders(self, environment: "Environment"):
-        pass 
-
+    #-----------------
+    # ABSTRACT METHODS
+    #-----------------
     @property
-    def refractive_index_param_names(self) -> list[str] | None:
-        """
-        Explicitly lists parameters that affect refractive index (if refractive index relevant for ABCD matrix).
-        """
-        return None
-
-    @property
-    def length_param_names(self) -> list[str] | None:
-        """
-        Explicitly lists parameters that affect physical length.
-        - Return ['d', 'L', ...(any other parameters that influence the length)] to enable Fast-Path checking.
-        - Return [] to explicitly declare this as a Fixed-Length/Thin element.
-        - Return None (default) to fall back to use autodiff sensitivity checks.
-
-        .. warning::
-            It is recommended to override this property in subclasses for performance optimization.
-        """
-        return None
-
     @abstractmethod
-    def get_sim_functions(self) -> tuple[callable, callable, callable]:
-        """
-        Return simulation data for the optical element.
-        This should return a tuple of (matrix_function, length_function, parameter_value(s)).
-          - matrix_function: A callable that returns the ABCD matrix given the parameter(s).
-          - length_function: A callable that returns the effective length of the element given the parameter(s).
-          - index_function:  A callable that returns the refractive index of the element given the parameter(s).
+    def element_length(self) -> Node:
+        """Returns the AST Node representing physical length."""
+        pass
 
-        We return functions to enable auto differentiation over parameters
-        Length and refractive index require their own functions because they cannot be derived from the ABCD matrix alone.
+    @property
+    @abstractmethod
+    def element_refractive_index(self) -> Node:
+        """Returns the AST Node representing the OUTPUT refractive index."""
+        pass
+        
+    @abstractmethod
+    def compute_matrix(self, **kwargs) -> np.ndarray:
         """
-        raise NotImplementedError("Subclasses must implement get_sim_functions method.")
+        Returns the ABCD matrix given scalar inputs.
+        For each argument in the signature there must be a corresponding member variable 
+        with the same name (e.g. def get_matrix(self, a, b) -> self.a, self.b).
+        """
+        pass

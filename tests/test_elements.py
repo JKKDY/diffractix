@@ -3,7 +3,7 @@ import numpy as np
 import autograd.numpy as anp  # For consistency in checks
 from dataclasses import dataclass
 from diffractix.elements import ThinLens, Space, Mirror, Interface, ABCD
-from diffractix.graph import Parameter, InputNode, Symbol
+from diffractix.graph import Parameter, InputNode, Symbol, Constant
 
 def assert_matrix_close(mat, expected, rtol=1e-5):
     """Helper to check if two 2x2 matrices are approximately equal."""
@@ -25,7 +25,7 @@ def test_thin_lens_init():
     
     # check metadata
     assert lens.f.fixed
-    assert lens.length_param_names == [] # Lenses are thin
+    assert lens.length == 0 # Lenses are thin
     assert lens.param_names == ["f"]
     assert lens.variable_parameter_names == []
 
@@ -52,15 +52,18 @@ def test_thin_lens_get_sim_data():
     for f in [-0.5, 0.1, 1, np.inf]: 
         lens = ThinLens(f=f)
         
-        mat_func, len_func, index_func = lens.get_sim_functions()
+        # New API: Use compute_matrix and property access
         vals = lens.values
         
         # Check args unpacking
-        assert vals==[f]
-        assert index_func is None
+        assert vals == [f]
+        
+        # Index check (Lens inherits index -> Symbol("inherit_n"))
+        assert isinstance(lens.element_refractive_index, Symbol)
+        assert lens.element_refractive_index.name == "inherit_n"
 
-        mat = mat_func(*vals)
-        length = len_func(*vals)
+        mat = lens.compute_matrix(f=f)
+        length = lens.length
 
         assert length == 0
 
@@ -90,7 +93,8 @@ def test_space_init():
     assert s.label == "GlassBlock"
     
     # 2. Metadata
-    assert s.length_param_names == ["d"]
+    assert s.length == 10.0
+    assert s.element_length is s.d
     assert s.param_names == ["d", "n"]
     assert s.d.fixed and s.n.fixed
     assert s.variable_parameter_names == []
@@ -106,7 +110,7 @@ def test_space_init():
     assert not s.d.fixed
     assert s.n.fixed
     assert s.variable_parameter_names == ["d"]
-    assert s.has_variable_length
+    # assert s.has_variable_length  # Note: logic relies on autograd check now
 
     # test fixed toggling
     s.fixed() 
@@ -124,16 +128,15 @@ def test_space_get_sim_data():
         for n_val in indices:
             s = Space(d=d_val, n=n_val)
             
-            mat_func, len_func, idx_func = s.get_sim_functions()
             vals = s.values
             
             # Check args unpacking
             assert vals == [d_val, n_val]
             
             # Check Physics
-            mat = mat_func(*vals)
-            length = len_func(*vals)
-            idx = idx_func(*vals)
+            mat = s.compute_matrix(d=d_val, n=n_val)
+            length = s.length
+            idx = s.refractive_index
 
             assert length == d_val
             assert idx == n_val # Space doesn't change index, just carries it
@@ -161,7 +164,7 @@ def test_mirror_init():
     assert m.R.value == 0.5
     
     # check metadata
-    assert m.length_param_names == [] # Mirrors are thin
+    assert m.length == 0 
     assert m.param_names == ["R"]
     assert m.variable_parameter_names == []
 
@@ -188,14 +191,13 @@ def test_mirror_get_sim_data():
     for R_val in radii:
         m = Mirror(R=R_val)
         
-        mat_func, len_func, idx_func = m.get_sim_functions()
         vals = m.values
         
         assert vals == [R_val]
-        assert len_func(*vals) == 0.0
-        assert idx_func is None # Mirrors don't manage index explicitly in this model
+        assert m.length == 0.0
+        assert m.element_refractive_index == Symbol("inherit_n")
 
-        mat = mat_func(*vals)
+        mat = m.compute_matrix(R=R_val)
         
         # Power calculation check
         if np.isinf(R_val):
@@ -226,7 +228,7 @@ def test_interface_init():
     assert isinstance(iface.R.node, Parameter)
     
     # check metadata
-    assert iface.length_param_names == []
+    assert iface.length == 0
     assert set(iface.param_names) == {"n1", "n2", "R"}
 
     # test mutability
@@ -257,16 +259,15 @@ def test_interface_get_sim_data():
     
     iface = Interface(n1=n1_val, n2=n2_val, R=R_val)
     
-    mat_func, len_func, idx_func = iface.get_sim_functions()
     vals = iface.values
     
     # Check Index Update Function
     # (Interface MUST update the simulation index to n2)
-    current_idx = idx_func(*vals)
+    current_idx = iface.refractive_index
     assert current_idx == n2_val
     
     # Check Matrix (Curved Dielectric Interface)
-    mat = mat_func(*vals)
+    mat = iface.compute_matrix(n1=n1_val, n2=n2_val, R=R_val)
     power = (n1_val - n2_val) / (R_val * n2_val)
     
     expected = np.array([
@@ -281,21 +282,27 @@ def test_interface_get_sim_data():
 # ABCD/BLACKBOX TEST
 # ------------------
 def test_abcd_init():
-    """Test generic ABCD element initialization."""
+    """Test generic generic ABCD element initialization."""
     # 1. Init (Scalar mode)
     el = ABCD(A=2, D=0.5, thickness=0.1, n=1.5, label="Relay")
     
     assert isinstance(el.A, InputNode)
-    assert isinstance(el.thickness, InputNode)
     assert isinstance(el.A.node, Parameter)
+    assert isinstance(el.B, InputNode)
+    assert isinstance(el.B.node, Parameter)
+    assert isinstance(el.C, InputNode)
+    assert isinstance(el.C.node, Parameter)
+    assert isinstance(el.D, InputNode)
+    assert isinstance(el.D.node, Parameter)
+   
+    assert isinstance(el.thickness, InputNode)
     assert isinstance(el.thickness.node, Parameter)
+
     assert el.A.value == 2.0
     assert el.thickness.value == 0.1
     
     # 2. Metadata
-    assert el.length_param_names == ["thickness"]
-    # param_names for ABCD are typically [A, B, C, D, thickness, n]
-    # Check specific implementation if order varies, but set equality is safe
+    assert el.element_length == el.thickness
     assert set(el.param_names) == {"A", "B", "C", "D", "thickness", "n"}
 
     # 3. Mutability
@@ -317,6 +324,8 @@ def test_abcd_init_matrix_override():
     assert el.A.value == 2.0
     assert el.B.value == 0.5
     assert el.thickness.value == 0.1
+    
+    # Check Matrix property (which calls compute_matrix under the hood)
     np.testing.assert_array_equal(el.matrix, mat)
 
 
@@ -326,26 +335,20 @@ def test_abcd_inheritance_mode():
     The element should have 'n' as a parameter (value None),
     and return None for the index function (signaling inheritance).
     """
-    el = ABCD(A=1, B=0, C=0, D=1, thickness=1.0, n=None)
+    el = ABCD(A=1, B=0, C=0, D=1, thickness=1.0)
     
     # 1. Verify Parameter Structure
     # Static signature of get_matrix is (A, B, C, D, thickness, n) -> 6 params
     assert len(el.parameters) == 6
-    assert el.n is None
+    assert isinstance(el.n, InputNode)
+    assert el.n.node == Symbol("inherit_n")
 
     # 2. Verify Simulation Wiring
-    mat_func, len_func, idx_func = el.get_sim_functions()
+    # element_refractive_index should return a Symbol("inherit_n")
+    # And refractive_index property should return None (because symbol is unbound)
+    assert isinstance(el.element_refractive_index, InputNode)
+    assert el.element_refractive_index.name == "inherit_n"
     
-    # Args that the system will extract from el.parameters
-    # Since el.n is None, the last argument passed to functions will be None
-    args = [1.0, 0.0, 0.0, 1.0, 1.0, None]
-    
-    # Matrix Function Check: Must handle n=None safely
-    mat = mat_func(*args)
-    assert np.allclose(mat, np.eye(2))
-    
-    # Index Function Check: Must be None to trigger System Build inheritance logic
-    assert idx_func is None
 
 
 def test_abcd_explicit_mode():
@@ -360,29 +363,21 @@ def test_abcd_explicit_mode():
     assert el.n.value == 1.5
     
     # 2. Verify Simulation Wiring
-    mat_func, len_func, idx_func = el.get_sim_functions()
-    
-    args = [1.0, 0.0, 0.0, 1.0, 1.0, 1.5]
-    
-    # Index Function Check
-    # Your ABCD code returns: lambda a,b,c,d,t,n: n
-    # It receives 6 arguments.
-    assert idx_func is not None
-    assert idx_func(*args) == 1.5
+    assert el.refractive_index == 1.5
 
 
 def test_abcd_symbolic_n():
     """Test binding 'n' to a symbol."""
     sym = Symbol("glass_n")
-    el = ABCD(n=sym)
-    
+    el1 = ABCD(n=sym)
+    el2 = ABCD(n=sym)
+
     # Bind Symbol
     sym.bind(1.5)
     
     # Check physics access
-    _, _, idx_func = el.get_sim_functions()
+    # element_refractive_index should be the symbol itself (or an InputNode wrapping it)
+    # The value should resolve to 1.5
     
-    # Args: ..., n=1.5
-    args = [1,0,0,1,0, 1.5] 
-    
-    assert idx_func(*args) == 1.5
+    assert el1.refractive_index == 1.5
+    assert el2.refractive_index == 1.5

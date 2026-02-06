@@ -5,7 +5,7 @@ Defines the free Space element.
 from dataclasses import dataclass
 from .element import OpticalElement
 import autograd.numpy as np
-from ..graph import Parameter
+from ..graph import Parameter, Symbol
 
 @dataclass(kw_only=True)
 class Space(OpticalElement):
@@ -17,21 +17,22 @@ class Space(OpticalElement):
     divergence, scaled by the refractive index.
 
     Parameters:
-        d (float): Physical distance of the propagation.
-        n (float): Refractive index of the medium (default: 1.0).
+        d (float): Physical length of the object (not the optical length!).
+        n (float): Refractive index of the medium (default: ambient system index).
     """
+
     d: float | Parameter
-    n: float | Parameter = 1.0
+    n: float | Parameter = Symbol("ambient_n") 
 
     @property
-    def length_param_names(self):
-        """
-        Explicitly links length to 'd'. 
-        Note that 'n' affects the optical path length, but not the physical length.
-        """
-        return ['d'] 
+    def element_length(self):
+        return self.d
 
-    def get_matrix(self, d, n):
+    @property
+    def element_refractive_index(self):
+        return self.n
+
+    def compute_matrix(self, d, n):
         """
         Returns the standard translation matrix:
         [[1, d/n],
@@ -39,9 +40,4 @@ class Space(OpticalElement):
         """
         return np.array([[1.0, d/n], [0.0, 1.0]])
 
-    def get_sim_functions(self):
-        return (
-            self.get_matrix,                # matrix function
-            lambda d, n: d,                 # length function
-            lambda d, n: n,                 # refractive index function
-        )
+   

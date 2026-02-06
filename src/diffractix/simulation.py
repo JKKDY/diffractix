@@ -10,7 +10,6 @@ from .beams import GaussianBeam
 class SimulationResult:
     # List of (position, beam) tuples
     trace: List[Tuple[float, GaussianBeam]]
-    structure_metadata: List[Dict]
 
     @property
     def final_beam(self) -> GaussianBeam:
@@ -43,7 +42,7 @@ class SimulationResult:
             Rs.append(float(beam.R_at_z(0)))
 
         return {
-            "structure": self.structure_metadata,
+            "structure": None,
             "results": [{
                 "wavelength": wavelength,
                 "z": zs,
@@ -54,13 +53,12 @@ class SimulationResult:
 
 
 
-@dataclass
+@dataclass(frozen=True)
 class SimulationStep: 
-    matrix_func: callable
-    length_func: callable
-    index_func: callable
-    param_indices: callable
-
+    matrix_func: callable   # function returning ABCD matrices
+    length_func: callable   # function returning physical length
+    index_func: callable    # function returning refractive index
+    param_indices: np.array
 
 
 class Simulation:
@@ -70,61 +68,51 @@ class Simulation:
     It defines the TOPOLOGY of the system.
     """
     def __init__(self, 
-                steps: list[callable], 
-                length_steps: list[callable],
-                index_steps: list[callable],
-                param_indices: list[tuple], 
-                environment,
-                initial_params: np.ndarray, 
-                input_beams: list['GaussianBeam'],
-                structure_metadata: list[dict],
-                param_definitions: list['ParameterDef'],
+                steps: list[SimulationStep], 
+                sources: list['GaussianBeam'],
+                environment: 'Environment',
+                initial_values: np.array,
+                parameter_transform: callable,
                 constraints: list[callable] = None):
-        # validation
-        assert len(steps) == len(param_indices), "Steps and param_indices must align."
-        assert len(steps) == len(length_steps), "Steps and length_steps must align."
-        assert len(steps) == len(index_steps), "Steps and index_steps must align."
-        assert len(input_beams) == 1, "Currently only single input beam supported."
-        
+        assert len(sources) == 1, "Currently only single input beam supported."
+                        
         # Physics
-        self.steps = steps               # functions returning ABCD matrices
-        self.length_steps = length_steps # functions returning physical length
-        self.index_steps = index_steps   # functions returning refractive index
-        self.param_indices = param_indices # List of tuples mapping steps to indices in params array
-        self.initial_params = np.array(initial_params, dtype=float)
-        self.input_beam = input_beams[0] 
+        self.steps = steps              
+        self.initial_values = np.array(initial_values, dtype=float)
+        self.sources = sources[0] 
         self.environment = environment
 
         # Metadata & Optimization Hooks
-        self.structure_metadata = structure_metadata
-        self.param_definitions = param_definitions
+        self.parameter_transform = parameter_transform
         self.constraints = constraints if constraints is not None else []
 
 
     def _run(self, params:np.ndarray ) -> List[Tuple[float, complex]]:
         if params is None:
-            params = self.initial_params
-
+            params = self.initial_values
+        
+        # explode from canconical set to full parameter set
+        params = self.parameter_transform(params)
+        
         all_beams_history = []
 
         # initialize State
-        q = self.input_beam.q
+        q = self.sources.q
         z = 0.0  # starting at z=0
-        wavelength = self.input_beam.wavelength
+        wavelength = self.sources.wavelength
         current_n = self.environment.ambient_n.value
         
         # Initialize history with starting beam
         result = [(z, q, current_n)]
 
         # Propagation Loop
-        for func, len_func, idx_func, idx in zip(self.steps, self.length_steps, self.index_steps, self.param_indices):
-
-            step_params = params[list(idx)]
+        for step in self.steps:
+            step_params = params[list(step.param_indices)]
 
             # get current element properties
-            mat = func(*step_params)
-            step_z = len_func(*step_params)
-            current_n = idx_func(current_n, *step_params)
+            mat = step.matrix_func(*step_params)
+            step_z = step.length_func(*step_params)
+            current_n = step.index_func(current_n, *step_params)
         
             # propagate with möbius transform
             A, B = mat[0]
@@ -146,7 +134,7 @@ class Simulation:
         Returns: A numpy array of shape (N_steps, 3) -> [z, w, R]
         """
         raw_history = self._run(params)
-        wavelength = self.input_beam.wavelength
+        wavelength = self.sources.wavelength
         
         # Convert to a flat array for efficient slicing in loss functions
         # autograd loves numpy arrays, hates lists of tuples.
@@ -157,16 +145,17 @@ class Simulation:
             
         return np.stack(data) # Shape: (Steps, 3)
 
+
     def run(self, params: np.ndarray | None = None) -> 'SimulationResult':
         """
         User-Facing Forward Pass.
         Returns: Rich objects for the UI/Scripting.
         """
         raw_history = self._run(params)
-        wavelength = self.input_beam.wavelength
+        wavelength = self.sources.wavelength
         
         # Convert raw (z, q) -> (z, GaussianBeam) for the Result object
         trace = [(z, GaussianBeam(q, wavelength)) for z, q, n in raw_history]
 
-        return SimulationResult(trace, self.structure_metadata)
+        return SimulationResult(trace)
 

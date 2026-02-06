@@ -5,7 +5,7 @@ Defines the Thin Lens element.
 from dataclasses import dataclass
 from .element import OpticalElement
 import autograd.numpy as np
-from ..graph import Parameter
+from ..graph import Parameter, Constant, Symbol
 
 
 
@@ -25,13 +25,14 @@ class ThinLens(OpticalElement):
     f: float | Parameter
 
     @property
-    def length_param_names(self):
-        """
-        Explicitly declares that the lens has no variable thickness (it is always 0).
-        """
-        return []
+    def element_length(self):
+        return Constant(0.0) # Thin lenses are idealized as having no physical thickness
 
-    def get_matrix(self, f):
+    @property
+    def element_refractive_index(self):
+        return Symbol("inherit_n") # Lenses do not change the ambient index
+
+    def compute_matrix(self, f):
         """
         Returns the thin lens transformation matrix:
         [[ 1.0,  0.0],
@@ -39,14 +40,4 @@ class ThinLens(OpticalElement):
         """
         return np.array([[1.0, 0.0], [-1.0/f, 1.0]])
 
-    def get_sim_functions(self):
-        """
-        Provides the simulation engine with the matrix function, a constant 
-        zero-length function, and the current focal length.
-        """
-        return (
-            self.get_matrix, 
-            lambda f: 0.0, 
-            None,
-        )
 
