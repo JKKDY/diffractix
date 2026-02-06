@@ -273,6 +273,14 @@ class OpticalElement:
         return self
 
 
+    @property
+    def element_refractive_index(self) -> Node:
+        """
+        Returns the AST Node representing the OUTPUT refractive index.
+        For elements with zero length this should usually simply return the ambient index
+        """
+        return Symbol("ambient_n")
+
     #-----------------
     # ABSTRACT METHODS
     #-----------------
@@ -280,12 +288,6 @@ class OpticalElement:
     @abstractmethod
     def element_length(self) -> Node:
         """Returns the AST Node representing physical length."""
-        pass
-
-    @property
-    @abstractmethod
-    def element_refractive_index(self) -> Node:
-        """Returns the AST Node representing the OUTPUT refractive index."""
         pass
         
     @abstractmethod

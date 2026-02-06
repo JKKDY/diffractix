@@ -28,10 +28,6 @@ class ThinLens(OpticalElement):
     def element_length(self):
         return Constant(0.0) # Thin lenses are idealized as having no physical thickness
 
-    @property
-    def element_refractive_index(self):
-        return Symbol("inherit_n") # Lenses do not change the ambient index
-
     def compute_matrix(self, f):
         """
         Returns the thin lens transformation matrix:

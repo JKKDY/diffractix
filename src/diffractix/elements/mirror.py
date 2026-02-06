@@ -24,14 +24,8 @@ class Mirror(OpticalElement):
     """
     R: float | Parameter = np.inf
 
-    @property   
-    def element_refractive_index(self):
-        # mirrors do not change the ambient index
-        return Symbol("inherit_n")
-
     @property
     def element_length(self):
-        # Mirrors are thin interfaces; they add no physical length.
         return Constant(0.0)
 
     def compute_matrix(self, R):

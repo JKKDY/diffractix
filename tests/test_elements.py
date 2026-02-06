@@ -58,9 +58,8 @@ def test_thin_lens_get_sim_data():
         # Check args unpacking
         assert vals == [f]
         
-        # Index check (Lens inherits index -> Symbol("inherit_n"))
         assert isinstance(lens.element_refractive_index, Symbol)
-        assert lens.element_refractive_index.name == "inherit_n"
+        assert lens.element_refractive_index.name == "ambient_n"
 
         mat = lens.compute_matrix(f=f)
         length = lens.length
@@ -195,7 +194,7 @@ def test_mirror_get_sim_data():
         
         assert vals == [R_val]
         assert m.length == 0.0
-        assert m.element_refractive_index == Symbol("inherit_n")
+        assert m.element_refractive_index == Symbol("ambient_n")
 
         mat = m.compute_matrix(R=R_val)
         

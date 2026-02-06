@@ -28,9 +28,6 @@ class GaussianAperture(OpticalElement):
     def element_length(self):
         return Constant(0.0) # Apertures are assumed to have no physical thickness
 
-    @property
-    def element_refractive_index(self):
-        return Symbol("inherit_n")
 
     def calculate_matrix(self, a, wavelength):
         """
