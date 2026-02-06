@@ -228,58 +228,124 @@ class System:
 
     def _generate_metadata(self):
         pass
-    
-    def _build_simulation(self):
-        def normalize_idx_func(idx_func):
-            # normalize the index functions. 
-            # The normalized index function depends on the refractive index of the previous element (curr)
-            if idx_func is not None: return lambda curr, *args, idx_func=idx_func: idx_func(*args)
-            else: return lambda curr, *args: curr
 
-        sim_steps = []
-        roots = []
+    def _wire_refractive_indices(self):
+        """
+        Links 'inherit_n' symbols in the graph to the upstream refractive index node.
+        This creates the dependency chain: Ambient -> Space 1 -> Space 2 -> ...
+        """
+        # start the environment index
+        current_idx_node = self.environment.ambient_n
         
-        # compile elements into steps
-        # We process elements linearly to build the "Physics Schedule"
-        current_param_idx = 0
         for el in self._compiled_elements:
-            mat_func, len_func, idx_func = el.get_sim_functions()
+           
+            for p in el.parameters:
+                target = p.node if isinstance(p, InputNode) else p # unwrap node if needed
+
+                # if the parameter is a passthrough symbol ("inherit_n"), we bind it to the current index node                 
+                if isinstance(target, Symbol) and target.name == "inherit_n":
+                     target.bind(current_idx_node)
+
+            # get the refractive index node for this element (if the element can change the index)
+            if isinstance(el, Space) or isinstance(el, Interface) or isinstance(el, ABCD):
+                next_index = el.element_refractive_index
+                next_index = next_index.node if isinstance(next_index, InputNode) else next_index
+             
+                if not (isinstance(next_index, Symbol) and next_index.name == "inherit_n"):
+                    current_idx_node = next_index
+    
+
+    def _build_simulation(self):
+      
+        # 3. Compilation Phase: Gather roots and compile
+        roots = []
+        sim_steps = []
+        
+        def ensure_node(x):
+            return Constant(x) if not isinstance(x, Node) else x
+
+        for el in self._compiled_elements:
+            # ... (SimStep creation logic, same as before) ...
+            p_nodes = el.parameters 
+            l_node = ensure_node(el.element_length)
+            n_node = ensure_node(el.element_refractive_index)
             
-            # Identify which slice of the full input list belongs to this element
-            num_params = len(el.parameters) # el.parameters is the list of InputNodes
-            idxs = tuple(range(current_param_idx, current_param_idx + num_params))
+            start_idx = len(roots)
+            roots.extend(p_nodes)
+            roots.append(l_node)
+            roots.append(n_node)
             
             step = SimulationStep(
-                matrix_func=mat_func,
-                length_func=len_func,
-                index_func=normalize_idx_func(idx_func),
-                param_indices=idxs
+                element=el,
+                param_indices=slice(start_idx, start_idx + len(p_nodes)),
+                length_index=start_idx + len(p_nodes),
+                index_index=start_idx + len(p_nodes) + 1
             )
             sim_steps.append(step)
-            
-            # TODO temporary fix to ABCD.n = None problem
-            for name in el.param_names:
-                param = getattr(el, name)
-                if param is None:
-                    setattr(el, name, Constant(1))
-                    
-            roots.extend(el.parameters)
-            current_param_idx += num_params
 
-
-        # compile graph logic
-        transform_func, initial_values, variable_params = generate_parameter_transform(roots)
-
-
-        # pass constraints and definitions to Simulation
+        # 4. Compile Graph
+        transform_func, initial_theta, variable_params = compile_pure_transform(roots)
+        
         return Simulation(
-            steps=sim_steps, 
-            sources=self.input_beams, 
-            environment = self.environment,
-            initial_values=initial_values,
-            parameter_transform = transform_func,
-            constraints=self._generated_constraints # The Z-Locks
+            steps=sim_steps,
+            transform_func=transform_func,
+            initial_values=initial_theta,
+            variable_definitions=variable_params,
+            input_beams=self.input_beams,
+            constraints=self._generated_constraints
         )
+
+
+        # def normalize_idx_func(idx_func):
+        #     # normalize the index functions. 
+        #     # The normalized index function depends on the refractive index of the previous element (curr)
+        #     if idx_func is not None: return lambda curr, *args, idx_func=idx_func: idx_func(*args)
+        #     else: return lambda curr, *args: curr
+
+        # sim_steps = []
+        # roots = []
+        
+        # # compile elements into steps
+        # # We process elements linearly to build the "Physics Schedule"
+        # current_param_idx = 0
+        # for el in self._compiled_elements:
+        #     mat_func, len_func, idx_func = el.get_sim_functions()
+            
+        #     # Identify which slice of the full input list belongs to this element
+        #     num_params = len(el.parameters) # el.parameters is the list of InputNodes
+        #     idxs = tuple(range(current_param_idx, current_param_idx + num_params))
+            
+        #     step = SimulationStep(
+        #         matrix_func=mat_func,
+        #         length_func=len_func,
+        #         index_func=normalize_idx_func(idx_func),
+        #         param_indices=idxs
+        #     )
+        #     sim_steps.append(step)
+            
+        #     # TODO temporary fix to ABCD.n = None problem
+        #     for name in el.param_names:
+        #         param = getattr(el, name)
+        #         if param is None:
+        #             setattr(el, name, Constant(1))
+                    
+        #     roots.extend(el.parameters)
+        #     current_param_idx += num_params
+
+
+        # # compile graph logic
+        # transform_func, initial_values, variable_params = compile_parameter_transform(roots)
+
+
+        # # pass constraints and definitions to Simulation
+        # return Simulation(
+        #     steps=sim_steps, 
+        #     sources=self.input_beams, 
+        #     environment = self.environment,
+        #     initial_values=initial_values,
+        #     parameter_transform = transform_func,
+        #     constraints=self._generated_constraints # The Z-Locks
+        # )
 
 
     def build(self) -> 'Simulation':
