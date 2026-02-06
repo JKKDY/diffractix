@@ -1,6 +1,6 @@
 import autograd.numpy as np
 from typing import List, Tuple, Set, Dict, Callable
-from .ast import Node, Parameter, InputNode, Symbol, BinaryOp, UnaryOp
+from .ast import Node, Parameter, InputNode, Symbol, BinaryOp, UnaryOp, Constant
 
 
 

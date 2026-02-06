@@ -133,3 +133,54 @@ def test_transform_ordering_consistency():
     # The result should also match roots order
     assert res[0] == 10.0
     assert res[1] == 20.0
+
+
+
+def test_transform_is_pure_and_stateless():
+    """
+    Verify that running the transform function DOES NOT mutate 
+    the original Parameter objects (No side effects).
+    """
+    p = Parameter(10.0, "p", fixed=False)
+    root = p * 2.0
+    
+    transform, _, _ = compile_parameter_transform([root])
+    
+    # Run with a different value
+    new_theta = np.array([50.0])
+    result = transform(new_theta)
+    
+    # 1. Check Result is correct based on input
+    assert result[0] == 100.0
+    
+    # 2. Check Original Object is UNTOUCHED
+    # If this fails, your compiler is polluting the simulation state!
+    assert p.value == 10.0
+
+
+def test_diamond_topology_memoization():
+    """
+    Test a 'Diamond' graph where a shared node splits and recombines.
+    This ensures the compiler handles re-entrant logic correctly without 
+    double-counting or crashing.
+    
+      /-> B (x2) -\
+    A              -> D (B + C)
+      \-> C (x3) -/
+    """
+    a = Parameter(2.0, "A", fixed=False)
+    
+    # Split
+    b = a * 2.0  # 4.0
+    c = a * 3.0  # 6.0
+    
+    # Recombine
+    d = b + c    # 10.0
+    
+    transform, _, _ = compile_parameter_transform([d])
+    
+    # Test with A = 5.0
+    # B=10, C=15 -> D=25
+    res = transform(np.array([5.0]))
+    
+    assert res[0] == 25.0
