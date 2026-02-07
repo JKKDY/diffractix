@@ -110,8 +110,7 @@ class System:
 
     def _bind_environment_variables(self, elements):
         for el in elements:
-            for param in el.param_names:
-                node = getattr(el, param)
+            for node in el.parameters + [el.element_length, el.element_refractive_index]:
                 if isinstance(node, InputNode):
                     node = node.node
 
@@ -119,23 +118,23 @@ class System:
                     node.bind(getattr(self.environment, node.name))
         
 
-    def _validate_layout(self):
+    def _validate_layout(self, elements):
         """
         Validates user input:
             1. Ensures that absolute positions increase monotonically
             2. Ensures that absolute positions do not conflict with the accumulated length of relative elements
         """
         # 1. step: ensure every parameter is an AST node or None. ensure they are all convertable to floats
-        for i, el in enumerate(self.elements):
+        for i, el in enumerate(elements):
             for name in el.param_names:
                 param = getattr(el, name)
 
                 if not isinstance(param, Node) and param is not None:
-                    raise ValueError(f"Encountered a non Node parameter {name} of element {el}: {param}. Type: {type(param)}")
+                    raise Logic(f"Encountered a non Node parameter {name} of element {el}: {param}. Type: {type(param)}")
 
         # 2. step: validate absolute positions:
         current_z = 0.0
-        for i, el in enumerate(self.elements):
+        for i, el in enumerate(elements):
             # if element has absolute position, make sure it is not behind the current cursor
             absolute_pos = getattr(el, 'z', None)
 
@@ -154,33 +153,9 @@ class System:
             # (ensures that relative elements fit between absolute elements)
             current_z += el.length
 
-        # validate refractive index transitions
-        current_index = self.environment.ambient_n.value
-
-        for i, el in enumerate(self.elements):
-            if isinstance(el, Space):
-                space_n = float(el.n.value)
-                
-                if not np.isclose(current_index, space_n):
-                     raise ValueError(
-                        f"Refractive Index Mismatch at Element #{i} ({el.label}).\n"
-                        f"Current Field Index: n={current_index:.4f}\n"
-                        f"Space Medium Index:  n={space_n:.4f}\n"
-                        "Physics Violation: Discontinuous index change detected.\n"
-                        "Solution: Insert an Interface(n1=..., n2=...) before this Space."
-                    )
-            elif isinstance(el, Interface):
-                current_index = el.n2.value
-
-            elif isinstance(el, ABCD):
-                try:
-                    val = float(el.n.value) if hasattr(el.n, 'value') else float(el.n)
-                    current_index = val
-                except (TypeError, ValueError):
-                    pass # Inherited index, no update
 
 
-    def _resolve_layout(self):
+    def _resolve_layout(self, elements):
         """
         Compiles the mixed Absolute/Relative list into a pure Sequential list.
           - Inserts AutoSpaces to reach Absolute Z positions.
@@ -188,11 +163,11 @@ class System:
           - shock absorber contraints (for absolute positioning) are baked into the graph topology during this step.
         """
         # clear any previous state
-        self._compiled_elements = []
+        resolved_elements = []
 
         current_z_node = Constant(0.0)
         
-        for el in self.elements:
+        for el in elements:
             absolute_pos = getattr(el, 'z', None)
             opt_absolute_pos = getattr(el, 'optimize_z', False)
             
@@ -214,138 +189,115 @@ class System:
                 gap_node = target_z_node - current_z_node
                 spacer = Space(d=gap_node, label=f"AutoSpace_to_{absolute_pos}")
                 
-                self._compiled_elements.append(spacer)
+                resolved_elements.append(spacer)
                 
-                # Update Cursor
-                # We add the spacer to our running totals. 
-                # Mathematically: New_Sum = Target_Z
+                # Update Cursor: We add the spacer to our running totals. 
                 current_z_node = current_z_node + spacer.element_length 
 
             # add actual element and update cursor
-            self._compiled_elements.append(el)
+            resolved_elements.append(el)
             current_z_node = current_z_node + el.element_length
+
+        return resolved_elements
+
+
+
+    def _resolve_refractive_indices(self, elements, auto_insert_interface: bool = False):
+        """
+        Wires the refractive index graph.
+        1. Binds 'inherit' sockets (InputNode(Symbol(None))) to the upstream index.
+        2. Validates continuity for fixed-index elements (Spaces).
+        3. Auto-inserts Interfaces if requested/needed.
+        """
+        resolved_elements = []
+        
+        # State tracking: The AST Node representing the index at the current z-plane
+        # Start with the environment ambient index
+        current_index_node = self.environment.ambient_n
+        for i, el in enumerate(elements):
+            index_handle = el.element_refractive_index
+            
+            # InputNode(None) -> inherit from previous element
+            if isinstance(index_handle, InputNode) and index_handle.node is None:
+                el.element_refractive_index.node = current_index_node
+
+            # ABCD and Interfaces are allowed to change the index 
+            # (in the case of ABCD we trust the user knows what they are doing)
+            elif isinstance(el, (Interface, ABCD)):
+                current_index_node = index_handle
+
+            # element does not have `inherit` socekt + is not ABCD or Interface -> check for continuity
+            else:
+                target_val = index_handle.value
+                current_val = current_index_node.value
+                
+                # Check for physical violation
+                if not np.isclose(current_val, target_val):
+                    
+                    if auto_insert_interface:
+                        # Auto-Fix: Create an Interface to bridge the gap
+                        interface = Interface(n1=current_index_node, n2=index_handle)
+                        resolved_elements.append(interface)                        
+                    else:
+                        raise ValueError(
+                            f"Refractive Index Mismatch at Element #{i} ({el.label}).\n"
+                            f"System Flow: n={current_val:.4f}\n"
+                            f"Element Demand: n={target_val:.4f}\n"
+                            "Physics Violation: Discontinuous index change detected.\n"
+                            "Solution: Insert an Interface or enable auto_insert_interface."
+                        )
+                current_index_node = index_handle
+
+            resolved_elements.append(el)
+        
+        return resolved_elements
 
 
     def _generate_metadata(self):
         pass
 
-    def _wire_refractive_indices(self):
-        """
-        Links 'inherit_n' symbols in the graph to the upstream refractive index node.
-        This creates the dependency chain: Ambient -> Space 1 -> Space 2 -> ...
-        """
-        # start the environment index
-        current_idx_node = self.environment.ambient_n
-        
-        for el in self._compiled_elements:
-           
-            for p in el.parameters:
-                target = p.node if isinstance(p, InputNode) else p # unwrap node if needed
-
-                # if the parameter is a passthrough symbol ("inherit_n"), we bind it to the current index node                 
-                if isinstance(target, Symbol) and target.name == "inherit_n":
-                     target.bind(current_idx_node)
-
-            # get the refractive index node for this element (if the element can change the index)
-            if isinstance(el, Space) or isinstance(el, Interface) or isinstance(el, ABCD):
-                next_index = el.element_refractive_index
-                next_index = next_index.node if isinstance(next_index, InputNode) else next_index
-             
-                if not (isinstance(next_index, Symbol) and next_index.name == "inherit_n"):
-                    current_idx_node = next_index
-    
 
     def _build_simulation(self):
-      
-        # 3. Compilation Phase: Gather roots and compile
         roots = []
         sim_steps = []
         
-        def ensure_node(x):
-            return Constant(x) if not isinstance(x, Node) else x
-
+        # "compile" elements into simulation steps
         for el in self._compiled_elements:
-            # ... (SimStep creation logic, same as before) ...
-            p_nodes = el.parameters 
-            l_node = ensure_node(el.element_length)
-            n_node = ensure_node(el.element_refractive_index)
-            
             start_idx = len(roots)
+            p_nodes = el.parameters
             roots.extend(p_nodes)
-            roots.append(l_node)
-            roots.append(n_node)
+
+            if el.element_length in el.parameters:
+                length_idx = start_idx + p_nodes.index(el.element_length)
+            else:
+                length_idx = len(roots)
+                roots.append(el.element_length)
+
+                
+            if el.element_refractive_index in el.parameters:
+                index_idx = start_idx + p_nodes.index(el.element_refractive_index)
+            else:
+                index_idx = len(roots)
+                roots.append(el.element_refractive_index)
             
             step = SimulationStep(
-                element=el,
+                compute_matrix=el.compute_matrix,
                 param_indices=slice(start_idx, start_idx + len(p_nodes)),
-                length_index=start_idx + len(p_nodes),
-                index_index=start_idx + len(p_nodes) + 1
+                length_index=length_idx,
+                index_index=index_idx
             )
             sim_steps.append(step)
 
-        # 4. Compile Graph
-        transform_func, initial_theta, variable_params = compile_pure_transform(roots)
+        # compile parameter graph
+        transform_func, initial_theta, variable_params = compile_parameter_transform(roots)
         
         return Simulation(
             steps=sim_steps,
-            transform_func=transform_func,
+            sources=self.input_beams,
             initial_values=initial_theta,
-            variable_definitions=variable_params,
-            input_beams=self.input_beams,
+            parameter_transform=transform_func,
             constraints=self._generated_constraints
         )
-
-
-        # def normalize_idx_func(idx_func):
-        #     # normalize the index functions. 
-        #     # The normalized index function depends on the refractive index of the previous element (curr)
-        #     if idx_func is not None: return lambda curr, *args, idx_func=idx_func: idx_func(*args)
-        #     else: return lambda curr, *args: curr
-
-        # sim_steps = []
-        # roots = []
-        
-        # # compile elements into steps
-        # # We process elements linearly to build the "Physics Schedule"
-        # current_param_idx = 0
-        # for el in self._compiled_elements:
-        #     mat_func, len_func, idx_func = el.get_sim_functions()
-            
-        #     # Identify which slice of the full input list belongs to this element
-        #     num_params = len(el.parameters) # el.parameters is the list of InputNodes
-        #     idxs = tuple(range(current_param_idx, current_param_idx + num_params))
-            
-        #     step = SimulationStep(
-        #         matrix_func=mat_func,
-        #         length_func=len_func,
-        #         index_func=normalize_idx_func(idx_func),
-        #         param_indices=idxs
-        #     )
-        #     sim_steps.append(step)
-            
-        #     # TODO temporary fix to ABCD.n = None problem
-        #     for name in el.param_names:
-        #         param = getattr(el, name)
-        #         if param is None:
-        #             setattr(el, name, Constant(1))
-                    
-        #     roots.extend(el.parameters)
-        #     current_param_idx += num_params
-
-
-        # # compile graph logic
-        # transform_func, initial_values, variable_params = compile_parameter_transform(roots)
-
-
-        # # pass constraints and definitions to Simulation
-        # return Simulation(
-        #     steps=sim_steps, 
-        #     sources=self.input_beams, 
-        #     environment = self.environment,
-        #     initial_values=initial_values,
-        #     parameter_transform = transform_func,
-        #     constraints=self._generated_constraints # The Z-Locks
-        # )
 
 
     def build(self) -> 'Simulation':
@@ -353,8 +305,12 @@ class System:
         Compiles the element list into a flat, differentiable Simulation.
         """
         self._bind_environment_variables(self.elements)
-        self._validate_layout()
-        self._resolve_layout() 
+        self._validate_layout(self.elements)
+        resolved = self._resolve_layout(self.elements) 
+        resolved = self._resolve_refractive_indices(resolved) 
+
+        self._compiled_elements = resolved
+
         return self._build_simulation()
       
 

@@ -15,6 +15,7 @@ from abc import abstractmethod
 from autograd import grad
 import autograd.numpy as np
 import itertools
+from functools import cached_property
 
 from ..graph.ast import Node, Parameter, Constant, Symbol, BinaryOp, UnaryOp, InputNode,ASTNode
 
@@ -112,7 +113,22 @@ class OpticalElement:
         # get existing handle
         current_handle = self.__dict__.get(name)
 
-        # 1) Handle Update (Handle already exists)
+        # Handle Initialization (First time)
+        # This occurs during __init__ or dataclass default assignment
+        if isinstance(value, Node) and not isinstance(value, InputNode):
+            # Already a node (e.g. Lens(f=Symbol("x")))
+            new_handle = InputNode(value)
+        elif convertable_to_float(value):
+            # Raw number (e.g. Lens(f=0.1))
+            new_node = Parameter(value=value, name=name, fixed=True, owner=self)
+            new_handle = InputNode(new_node)
+        elif value is None:
+            new_handle = InputNode(None) # uninitialized, must be set later 
+        else:
+            raise TypeError(f"Initial value for {self.label}.{name} must be Node or float, got {type(value)}")
+
+
+        # Handle Update (Handle already exists)
         if isinstance(current_handle, InputNode):
             if isinstance(value, Node):
                 # swap out the 'body'
@@ -124,17 +140,6 @@ class OpticalElement:
                 raise TypeError(f"Cannot assign {type(value)} to {name}")
             return
 
-        # 2) Handle Initialization (First time)
-        # This occurs during __init__ or dataclass default assignment
-        if isinstance(value, Node):
-            # Already a node (e.g. Lens(f=Symbol("x")))
-            new_handle = InputNode(value)
-        elif convertable_to_float(value):
-            # Raw number (e.g. Lens(f=0.1))
-            new_node = Parameter(value=value, name=name, fixed=True, owner=self)
-            new_handle = InputNode(new_node)
-        else:
-            raise TypeError(f"Initial value for {self}.{name} must be Node or float, got {type(value)}")
         
         super().__setattr__(name, new_handle)
 
@@ -220,11 +225,11 @@ class OpticalElement:
             
             # if InputNode / Parameter / Symbol, get its value
             if isinstance(obj, ASTNode):
-                ret.append(obj.value)
-            # else Pass None through (e.g. for ABCD.n=None)
-            elif obj is None:
-                ret.append(None)
-            # 3. Fallback: throw error 
+                try:
+                    ret.append(obj.value)
+                except Exception as e:
+                    ret.append(None) # if value can't be evaluated (e.g. unbound Symbol), return None          
+            # Fallback: throw error 
             else:
                 raise ValueError(f"Unexpected type {type(obj)} of parameter value {obj} for parameter {self}.{name}")
         return ret
@@ -273,13 +278,13 @@ class OpticalElement:
         return self
 
 
-    @property
+    @cached_property
     def element_refractive_index(self) -> Node:
         """
         Returns the AST Node representing the OUTPUT refractive index.
-        For elements with zero length this should usually simply return the ambient index
         """
-        return Symbol("ambient_n")
+        return InputNode(None)
+
 
     #-----------------
     # ABSTRACT METHODS

@@ -2,9 +2,9 @@ import pytest
 from diffractix.graph.ast import Node, Constant, Parameter, Symbol, InputNode, BinaryOp
 from diffractix.elements import ThinLens, Space, ABCD
 
-# --------------------------
+# -------------------
 # 1. STRUCTURE CHECKS
-# --------------------------
+# -------------------
 def test_element_wraps_params_in_input_node():
     """
     Verify that initializing an element automatically wraps 
@@ -12,13 +12,33 @@ def test_element_wraps_params_in_input_node():
     """
     lens = ThinLens(f=100.0)
     
-    # 1. The public attribute should be an InputNode (The Handle)
+    # The public attribute should be an InputNode (The Handle)
     assert isinstance(lens.f, InputNode)
     
-    # 2. The internal node should be a Parameter (The Body)
+    # The internal node should be a Parameter (The Body)
     assert isinstance(lens.f.node, Parameter)
     assert lens.f.node.value == 100.0
     assert lens.f.node.fixed is True # Defaults to fixed
+
+    # also test for ABCD element
+    abcd = ABCD(A=1.0, B=2.0, C=3.0, D=4.0)
+    
+    assert isinstance(abcd.A, InputNode)
+    assert isinstance(abcd.B, InputNode)
+    assert isinstance(abcd.C, InputNode)
+    assert isinstance(abcd.D, InputNode)
+    assert isinstance(abcd.n, InputNode)
+    assert isinstance(abcd.thickness, InputNode)
+    
+    assert isinstance(lens.f.node, Parameter)
+    assert abcd.A.node.value == 1.0
+    assert abcd.B.node.value == 2.0
+    assert abcd.C.node.value == 3.0
+    assert abcd.D.node.value == 4.0
+    assert abcd.A.value == 1.0
+    assert abcd.B.value == 2.0
+    assert abcd.C.value == 3.0
+    assert abcd.D.value == 4.0
 
 
 def test_element_accepts_raw_nodes():
@@ -42,9 +62,31 @@ def test_element_accepts_raw_nodes():
     assert lens_sym.f.node is s
 
 
-# --------------------------
+def test_element_axcepts_nodes_and_floats_but_not_other_types():
+    """
+    Verify that initializing an element with invalid types raises errors.
+    Valid types: float, Parameter, Symbol
+    Invalid types: str, list, dict, etc.
+    """
+    a = ThinLens(f=100.0)  
+    b = ThinLens(f=Symbol("x")) 
+    c = ThinLens(f=Parameter(10, name="param", fixed=False))
+    d = ThinLens(f=a.f+b.f)  
+    e = ThinLens(f=None)
+
+    with pytest.raises(TypeError):
+        _ = ThinLens(f="not_a_number")
+    
+    with pytest.raises(TypeError):
+        _ = ThinLens(f=[1.0, 2.0])
+    
+    with pytest.raises(TypeError):
+        _ = ThinLens(f={"A": 1.0})
+
+
+# ---------------------
 # 2. INTER-ELEMENT MATH
-# --------------------------
+# ---------------------
 def test_linking_elements_via_formula():
     """
     Scenario: Lens2's focal length is defined as half of Lens1's.
@@ -69,40 +111,47 @@ def test_linking_elements_via_formula():
     assert l2.f.value == 100.0
 
 
-# --------------------------
+# -----------------------
 # 3. SYMBOLIC INTEGRATION
-# --------------------------
+# -----------------------
 def test_element_symbol_resolution():
     """
     Test the flow: Symbol -> Element -> Math -> Binding -> Value
     """
-    # 1. Create Symbol
+    # Create Symbol
     n_env = Symbol("n_environment")
     
-    # 2. Assign to Element (Space)
+    # Assign to Element (Space)
     # Space(d=10, n=Symbol)
     s = Space(d=10.0, n=n_env)
     
-    # 3. Use Element property in a formula
+    # Use Element property in a formula
     # Optical Path Length = d * n
     opl = s.d * s.n 
     
-    # 4. Verify crash before binding
+    # Verify crash before binding
     with pytest.raises(ValueError, match="bound"):
         _ = opl.value
         
-    # 5. Bind Symbol
-    env_param = Constant(1.5)
+    # Bind Symbol
+    env_param = Parameter(1.5, fixed=False, name="env_n")
     n_env.bind(env_param)
     
-    # 6. Verify Values
+    # verify
     assert s.n.value == 1.5
     assert opl.value == 15.0 # 10 * 1.5
+    assert opl.is_constant is False # Because n is variable
+
+    # now rebind
+    n_env.bind(2)
+    assert s.n.value == 2
+    assert opl.value == 20.0 # 10 * 2
+    assert opl.is_constant is True # Because n is variable
 
 
-# --------------------------
+# -------------------------------
 # 4. HOT-SWAPPING & AST STABILITY
-# --------------------------
+# -------------------------------
 def test_hot_swap_preserves_external_graph():
     """
     Verify that changing an Element's parameter updates 
@@ -127,6 +176,7 @@ def test_hot_swap_preserves_external_graph():
     lens.f = x * 2.0 # f is now 4.0
     
     assert lens.f.value == 4.0
+    assert lens.f.is_constant is False
     assert power_ast.value == 0.25 # 1 / 4.0
     
     # SWAP 3: Update the variable 'x'
@@ -136,14 +186,14 @@ def test_hot_swap_preserves_external_graph():
     assert power_ast.value == 0.125
 
 
-# --------------------------
+# --------------------------------
 # 5. COMPILER/OPTIMIZER VISIBILITY
-# --------------------------
+# --------------------------------
 def test_constness_propagation():
     """
     Verify that 'is_constant' (fixed) status propagates correctly 
     through the graph. This is critical for the Compiler to know 
-    which parameters to add to Theta.
+    which parameters to add to DOF (degrees of freedom) vector.
     """
     # Case 1: All Fixed
     p1 = Parameter(10.0, "p1", fixed=True)
@@ -175,3 +225,58 @@ def test_constness_propagation():
     p_var.fixed = True
     assert lens.f.is_constant is True
     assert space.d.is_constant is True
+
+
+
+def symbol_rebinding():
+    """
+    Verify that initializing an element with invalid types raises errors.
+    Valid types: float, Parameter, Symbol
+    Invalid types: str, list, dict, etc.
+    """
+    a = ThinLens(f=100.0)  
+    b = ThinLens(f=Symbol("x")) 
+    c = ThinLens(f=Parameter(10, name="param", fixed=False))
+    d = ThinLens(f=a.f+b.f)  
+    # e = ThinLens(f=None)
+
+    x = Symbol("x")
+    x.bind(5.0)
+
+    assert b.f.value == 5.0
+
+    x.bind(10.0)
+    assert b.f.value == 10.0
+
+
+def test_rebinding(): 
+    l1 = ThinLens(f=100.0)
+    l2 = ThinLens(f=50.0)
+    s = Space(d = l1.f + l2.f)
+
+    assert s.d.value == 150.0
+
+    l1.f = 200.0
+    assert s.d.value == 250.0
+
+    l2.f = l1.f
+    assert s.d.value == 400.0 # Because now l2.f is also 200.0
+
+
+    x = Parameter(10.0, "x", fixed=False)
+    x = x + x
+    l1.f = x
+
+    assert l1.f.value == 20.0
+    assert s.d.value == 40 
+
+    # 2. test
+    b = ThinLens(f=Symbol("x")) 
+    x = Symbol("x")
+    x.bind(5.0)
+
+    assert b.f.value == 5.0
+
+    x.bind(10.0)
+
+    assert b.f.value == 10.0

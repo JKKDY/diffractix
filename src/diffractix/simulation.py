@@ -53,12 +53,13 @@ class SimulationResult:
 
 
 
+
 @dataclass(frozen=True)
 class SimulationStep: 
-    matrix_func: callable   # function returning ABCD matrices
-    length_func: callable   # function returning physical length
-    index_func: callable    # function returning refractive index
-    param_indices: np.array
+    compute_matrix: callable   # function returning ABCD matrices
+    param_indices: tuple[int]  
+    length_index: int   
+    index_index: int    
 
 
 class Simulation:
@@ -70,7 +71,6 @@ class Simulation:
     def __init__(self, 
                 steps: list[SimulationStep], 
                 sources: list['GaussianBeam'],
-                environment: 'Environment',
                 initial_values: np.array,
                 parameter_transform: callable,
                 constraints: list[callable] = None):
@@ -80,7 +80,6 @@ class Simulation:
         self.steps = steps              
         self.initial_values = np.array(initial_values, dtype=float)
         self.sources = sources[0] 
-        self.environment = environment
 
         # Metadata & Optimization Hooks
         self.parameter_transform = parameter_transform

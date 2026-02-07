@@ -58,8 +58,8 @@ def test_thin_lens_get_sim_data():
         # Check args unpacking
         assert vals == [f]
         
-        assert isinstance(lens.element_refractive_index, Symbol)
-        assert lens.element_refractive_index.name == "ambient_n"
+        assert isinstance(lens.element_refractive_index, InputNode)
+        assert lens.element_refractive_index.node is None
 
         mat = lens.compute_matrix(f=f)
         length = lens.length
@@ -194,7 +194,9 @@ def test_mirror_get_sim_data():
         
         assert vals == [R_val]
         assert m.length == 0.0
-        assert m.element_refractive_index == Symbol("ambient_n")
+        
+        assert isinstance(m.element_refractive_index, InputNode)
+        assert m.element_refractive_index.node is None
 
         mat = m.compute_matrix(R=R_val)
         
@@ -337,16 +339,15 @@ def test_abcd_inheritance_mode():
     el = ABCD(A=1, B=0, C=0, D=1, thickness=1.0)
     
     # 1. Verify Parameter Structure
-    # Static signature of get_matrix is (A, B, C, D, thickness, n) -> 6 params
     assert len(el.parameters) == 6
     assert isinstance(el.n, InputNode)
-    assert el.n.node == Symbol("inherit_n")
+    assert el.n.node is None
 
     # 2. Verify Simulation Wiring
     # element_refractive_index should return a Symbol("inherit_n")
     # And refractive_index property should return None (because symbol is unbound)
     assert isinstance(el.element_refractive_index, InputNode)
-    assert el.element_refractive_index.name == "inherit_n"
+    assert el.element_refractive_index.node is None
     
 
 

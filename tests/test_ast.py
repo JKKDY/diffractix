@@ -506,3 +506,34 @@ def test_symbol_garbage_collection():
     # If this fails, you have a memory leak (Node._cache is holding a strong ref somewhere)
     assert key not in Node._cache
 
+
+
+# -----------------
+# 11. MULTI BINDINGS
+# -----------------
+def test_multi_bindings():
+    a = Symbol("x")
+    b = Symbol("x")
+
+    a.bind(10.0)
+    assert a.value == 10.0
+    assert b.value == 10.0
+    assert a._target is b._target # Both symbols should point to the same underlying node
+    assert a is b
+
+    x = 5 * a
+    assert x.value == 50.0
+    y = 5 * b
+    assert y.value == 50.0
+
+    a.bind(20.0)
+    assert a.value == 20.0
+    assert b.value == 20.0
+    assert x.value == 100.0
+    assert y.value == 100.0
+
+
+
+
+
+

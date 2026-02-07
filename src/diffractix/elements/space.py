@@ -22,7 +22,7 @@ class Space(OpticalElement):
     """
 
     d: float | Parameter
-    n: float | Parameter = Symbol("inherit_n") 
+    n: float | Parameter = None 
 
     @property
     def element_length(self):

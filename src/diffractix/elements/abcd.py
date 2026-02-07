@@ -30,14 +30,14 @@ class ABCD(OpticalElement):
     C: Node = 0.0
     D: Node = 1.0
     thickness: Node = 0.0 
-    n : Node = Symbol("inherit_n") 
+    n : Node = None 
 
     matrix_val: InitVar[np.ndarray] = None
 
 
     def __post_init__(self, matrix_val):
         if matrix_val is not None:
-            self.matrix = matrix_val
+            self.matrix = np.array(matrix_val)
         super().__post_init__()
 
     @property

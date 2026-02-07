@@ -25,8 +25,7 @@ class Node:
 
     @staticmethod
     def _make_constant(value: Scalar) -> Constant:
-        # return Node._register(Constant(value))
-        return Constant(value)
+        return Node._register(Constant(value))
 
     @staticmethod
     def _make_binary_op(op: Op, left: Node | Scalar, right: Node | Scalar):
@@ -163,23 +162,7 @@ class BinaryOp(Node):
         return self.left.is_constant and self.right.is_constant
 
     def __eq__(self, other):
-        if self is other: return True
-        if not isinstance(other, BinaryOp): return False
-        
-        # operators must match
-        if self.op != other.op:
-            return False
-            
-        # check operands
-        if self.op.is_commutative:
-            # for commutative ops, we check "cross" equality
-            return (
-                (self.left == other.left and self.right == other.right) or
-                (self.left == other.right and self.right == other.left)
-            )
-        else:
-            # Strict order for non-commutative
-            return self.left == other.left and self.right == other.right
+        return self is other
 
 
 
@@ -208,9 +191,7 @@ class UnaryOp(Node):
         return self.operand.is_constant
 
     def __eq__(self, other):
-        if self is other: return True
-        if not isinstance(other, UnaryOp): return False
-        return self.op == other.op and self.operand == other.operand
+        return self is other
 
 
 
@@ -218,8 +199,7 @@ class InputNode(Node):
     __hash__ = Node.__hash__
 
     def __init__(self, node: Parameter | Constant | Symbol): 
-        # Unwrap nested InputNodes to avoid chains like In(In(In(P)))
-        self.node = node.node if isinstance(node, InputNode) else node
+        self.node = node
 
     def __getattr__(self, name):
         return getattr(self.node, name)
@@ -227,8 +207,6 @@ class InputNode(Node):
     def __setattr__(self, name, value):
         # If we are changing the 'body' of the handle, do it normally
         if name == "node":
-            # Unwrap if assigning an InputNode
-            real_val = value.node if isinstance(value, InputNode) else value
             super().__setattr__('node', value)
         else:
             # Redirect all other writes (e.g., .fixed, .value, .name) to the inner node
@@ -323,12 +301,13 @@ class Parameter(Node):
     def full_name(self):
         """Reconstructs the full name dynamically."""
         if self.owner is None:
-            return f"<?>.{self.name}"
+            # return f"<?>.{self.name}"
+            return f"{self.name}"
         else:
             return f"{self.owner.label}.{self.name}"
 
     def __repr__(self):
-        return f"{self.full_name}{'[F]' if self.fixed else '[V]'}={self.value:.4g}"
+        return f"{self.full_name}={self.value:.4g}{'[F]' if self.fixed else '[V]'}"
 
     @property
     def is_constant(self):
@@ -348,24 +327,29 @@ class Symbol(Node):
         # override any bindings (i.e. set self.taget to None)
         
         # check cache
-        key = (Symbol, name)
+        key = (cls, name)
         if key in Node._cache:
             return Node._cache[key]
         
         # create New if missing
-        instance = super(Node, cls).__new__(cls)
+        instance = super().__new__(cls)
         instance.name = name
-        instance.target = None # The future input
         
         # and register explicitly
         Node._cache[key] = instance
         return instance
 
     def __init__(self, name:str):
+        if hasattr(self, "_initialized"):
+            return
+
         self.name = name
         self._target = None
+        self._initialized = True
 
     def bind(self, value):
+        # TODO cycle detection
+
         if isinstance(value, Scalar):
             self._target = self._make_constant(value)
         else:
