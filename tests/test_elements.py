@@ -142,7 +142,7 @@ def test_space_get_sim_data():
 
             # Matrix: [[1, d/n], [0, 1]]
             expected = np.array([
-                [1.0, d_val / n_val],
+                [1.0, d_val],
                 [0.0, 1.0]
             ])
             assert_matrix_close(mat, expected)

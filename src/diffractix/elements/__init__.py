@@ -5,6 +5,7 @@ from .space import Space
 from .thin_lens import ThinLens
 from .mirror import Mirror
 from .interface import Interface
+from .aperture import GaussianAperture
 from .abcd import ABCD
 
 
@@ -15,4 +16,5 @@ __all__ = [
     "Mirror", 
     "Interface", 
     "ABCD",
+    "GaussianAperture"
 ]

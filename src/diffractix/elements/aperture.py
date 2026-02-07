@@ -29,7 +29,7 @@ class GaussianAperture(OpticalElement):
         return Constant(0.0) # Apertures are assumed to have no physical thickness
 
 
-    def calculate_matrix(self, a, wavelength):
+    def compute_matrix(self, a, wavelength):
         """
         Returns the complex Gaussian aperture transformation matrix:
         [[ 1.0,           0.0 ],

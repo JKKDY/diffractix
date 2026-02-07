@@ -160,13 +160,13 @@ def test_overlap_defocus_mismatch():
     """
     Test coupling between two identical beams, but one is offset longitudinally (defocused).
     """
-    b_waist = GaussianBeam.from_waist(w0=W0, wavelength=LAMBDA)
+    b_waist = GaussianBeam.from_waist(w0=W0, wavelength=LAMBDA, n=1.0)
     
     # Create a beam that represents the SAME beam propagated by z_r
     # We are calculating the overlap integral between a Flat phase (waist)
     # and a Curved phase (at z_r). They should NOT couple 100%.
     z_offset = b_waist.z_r
-    b_shifted = GaussianBeam(q=b_waist.q + z_offset, wavelength=LAMBDA)
+    b_shifted = GaussianBeam(q=b_waist.q + z_offset, wavelength=LAMBDA, n=1.0)
     
     efficiency = b_waist.overlap_with(b_shifted)
     

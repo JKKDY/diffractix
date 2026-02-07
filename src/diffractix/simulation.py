@@ -18,9 +18,8 @@ class SimulationResult:
 
     def plot_data(self):
         """Helper for plotting libraries (matplotlib/plotly)."""
-        z_vals = [t[0] for t in self.trace]
-        # We assume n=1 for basic plotting, or could track n in history if needed
-        w_vals = [t[1].w0(n=1.0) for t in self.trace] 
+        z_vals = [z for (t, g) in self.trace]
+        w_vals = [g.w0 for (z, g) in self.trace] 
         return z_vals, w_vals
 
     def export(self) -> Dict[str, Any]:
@@ -71,6 +70,7 @@ class Simulation:
     def __init__(self, 
                 steps: list[SimulationStep], 
                 sources: list['GaussianBeam'],
+                environment: "Environment",
                 initial_values: np.array,
                 parameter_transform: callable,
                 constraints: list[callable] = None):
@@ -80,6 +80,7 @@ class Simulation:
         self.steps = steps              
         self.initial_values = np.array(initial_values, dtype=float)
         self.sources = sources[0] 
+        self.environment = environment
 
         # Metadata & Optimization Hooks
         self.parameter_transform = parameter_transform
@@ -87,45 +88,49 @@ class Simulation:
 
 
     def _run(self, params:np.ndarray ) -> List[Tuple[float, complex]]:
+        """
+        Core physics loop:
+        1. Expands optimization vars (params) to system state vector
+        2. Propagates the beam using ABCD matrices.
+        """
+        
         if params is None:
             params = self.initial_values
         
         # explode from canconical set to full parameter set
-        params = self.parameter_transform(params)
-        
-        all_beams_history = []
-
-        # initialize State
-        q = self.sources.q
-        z = 0.0  # starting at z=0
+        system_state = self.parameter_transform(params)
         wavelength = self.sources.wavelength
-        current_n = self.environment.ambient_n.value
         
-        # Initialize history with starting beam
-        result = [(z, q, current_n)]
+        history = []
 
+        # initialize loop state
+        q = self.sources.q
+        z = 0.0 
+        history = [(z, q, self.sources.n)]
+        
         # Propagation Loop
         for step in self.steps:
-            step_params = params[list(step.param_indices)]
-
-            # get current element properties
-            mat = step.matrix_func(*step_params)
-            step_z = step.length_func(*step_params)
-            current_n = step.index_func(current_n, *step_params)
+            mat_params = system_state[step.param_indices]
+            
+            L = system_state[step.length_index]
+            n = system_state[step.index_index]
+            M = step.compute_matrix(*mat_params)
+          
         
             # propagate with möbius transform
-            A, B = mat[0]
-            C, D = mat[1]
+            A, B = M[0, 0], M[0, 1]
+            C, D = M[1, 0], M[1, 1]
+
             numerator = A * q + B
             denominator = C * q + D
                      
             q = numerator / denominator
-            z += step_z
+            z += L
 
             # record state
-            result.append((z, q, current_n))
+            history.append((z, q, n))
 
-        return result
+        return history
 
     def run_for_optimizer(self, params: np.ndarray | None = None) -> np.ndarray:
         """
@@ -136,7 +141,6 @@ class Simulation:
         wavelength = self.sources.wavelength
         
         # Convert to a flat array for efficient slicing in loss functions
-        # autograd loves numpy arrays, hates lists of tuples.
         data = []
         for z, q, n in raw_history:
             w, R = GaussianBeam.w_R_from_q(q, wavelength, n)
@@ -154,7 +158,7 @@ class Simulation:
         wavelength = self.sources.wavelength
         
         # Convert raw (z, q) -> (z, GaussianBeam) for the Result object
-        trace = [(z, GaussianBeam(q, wavelength)) for z, q, n in raw_history]
+        trace = [(z, GaussianBeam(q, wavelength, n)) for z, q, n in raw_history]
 
         return SimulationResult(trace)
 

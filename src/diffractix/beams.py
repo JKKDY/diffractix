@@ -18,7 +18,7 @@ class GaussianBeam:
 
     q: complex
     wavelength: float
-    n: float = 1.0
+    n: float = None
 
 
     #-----------

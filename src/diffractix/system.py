@@ -24,9 +24,10 @@ class ParameterInfo:
     is_variable: bool    # True if the user marked this for optimization
 
 
-@dataclass(frozen=True)
+@dataclass(kw_only=True)
 class Environment:
-    ambient_n: Parameter
+    ambient_n: Parameter = None
+    ambient_wavelength: Constant = None
 
     @property
     def variables(self):
@@ -60,6 +61,7 @@ class System:
             self.input_beams.extend(beam_or_beams)
         else:
             self.input_beams.append(beam_or_beams)
+            self.environment.ambient_wavelength = Constant(self.input_beams[0].wavelength)
         return self 
 
 
@@ -290,11 +292,17 @@ class System:
 
         # compile parameter graph
         transform_func, initial_theta, variable_params = compile_parameter_transform(roots)
+
+
+        for beam in self.input_beams:
+            if beam.n is None:
+                beam.n = self.environment.ambient_n.value
         
         return Simulation(
             steps=sim_steps,
             sources=self.input_beams,
             initial_values=initial_theta,
+            environment = self.environment,
             parameter_transform=transform_func,
             constraints=self._generated_constraints
         )

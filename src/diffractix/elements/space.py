@@ -34,10 +34,18 @@ class Space(OpticalElement):
 
     def compute_matrix(self, d, n):
         """
-        Returns the standard translation matrix:
-        [[1, d/n],
-         [0, 1  ]]
+        Returns the standard translation matrix for (y, theta) convention.
+        
+        Physics Note: 
+        Even though the medium has index n, the B-element is simply 'd' (physical distance).
+        The refractive index 'n' affects the beam via the q-parameter definition, 
+        not the translation matrix itself in this convention.
+        
+        [[1, d],
+         [0, 1]]
         """
-        return np.array([[1.0, d/n], [0.0, 1.0]])
+        # FIX: 
+        #  d/n to d
+        return np.array([[1.0, d], [0.0, 1.0]])
 
    
