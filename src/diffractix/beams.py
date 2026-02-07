@@ -111,11 +111,14 @@ class GaussianBeam:
         Calculates the power coupling efficiency (0.0 to 1.0) between this beam 
         and another Gaussian beam (e.g., a fiber mode).
         
-        Formula: 4 * |(1/q1_conj + 1/q2)|^-2 * Im(1/q1) * Im(1/q2) 
+        Formula: 4 * Im(1/q1) * Im(1/q2) / |(1/q1)* - (1/q2)|^2
         (Requires both beams to be at the same z position and in the same n)
         """
         if abs(self.n - other.n) > 1e-6:
              raise ValueError("Cannot calculate overlap between beams in different media.")
+
+        if abs(self.wavelength - other.wavelength) > 1e-9: # Assuming .wvl attribute exists
+             raise ValueError("Cannot calculate overlap between beams of different wavelengths.")
 
         # Using the q-parameter mismatch formula for coupling efficiency
         q1 = self.q
@@ -128,7 +131,7 @@ class GaussianBeam:
         
         # Power Coupling = 4 / ( |(w1/w2) + (w2/w1)|^2 + ... )
         # A simpler complex form:
-        # eta = 4 * Im(1/q1) * Im(1/q2) / | 1/q1* + 1/q2 |^2
+        # eta = 4 * Im(1/q1) * Im(1/q2) / | 1/q1* - 1/q2 |^2
         # Note: q1* is complex conjugate.
         
         inv_q1 = 1.0 / q1
@@ -139,7 +142,7 @@ class GaussianBeam:
         
         
         numerator = 4 * inv_q1_imag * inv_q2_imag
-        denominator = abs(np.conj(inv_q1) + inv_q2)**2
+        denominator = abs(np.conj(inv_q1) - inv_q2)**2
         
         return numerator / denominator
 
