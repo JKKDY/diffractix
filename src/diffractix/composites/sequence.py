@@ -1,4 +1,3 @@
-from typing import Dict, List, Tuple
 from ..elements.element import OpticalElement
 
 class ElementSequence(list):
@@ -6,7 +5,7 @@ class ElementSequence(list):
     Base class for composite optical elements (like ThickLens, Slab).
     It behaves like a list of elements but supports fluent configuration via the aliases parameter.
     """
-    def __init__(self, elements: list, aliases: Dict[str, List[Tuple[int, str]]] = None):
+    def __init__(self, elements: list, aliases: dict[str, list[tuple[int, str]]] = None):
         super().__init__(elements)
         self.aliases = aliases or {}
 
