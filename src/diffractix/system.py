@@ -381,16 +381,17 @@ class System:
 
             # --- Parameters ---
             param_parts = []
+            current_vals = el.values
             try:
-                _, _, _, val_nodes = el.get_sim_data()
-                current_vals = [float(x) for x in val_nodes]
                 vars_set = set(el.variable_parameter_names)
 
                 for name, val in zip(el.param_names, current_vals):
-                    tag = "[VAR]" if name in vars_set else "" 
-                    param_parts.append(f"{name}={val:<.4g}{tag}")
-            except Exception:
-                param_parts.append("Uninitialized")
+                    tag = " [VAR]" if name in vars_set else "" 
+                    formatted = f"{val:.4g}" if val is not None else "?"
+                    param_parts.append(f"{name}={formatted}{tag}")
+            except Exception as e:
+                # Useful to print the error during debugging
+                param_parts.append(f"Uninitialized ({e})")
 
             params_str = " ".join(param_parts)
 

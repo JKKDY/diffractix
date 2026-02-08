@@ -178,7 +178,7 @@ class OpticalElement:
         names = []
         for name in self.param_names: 
             obj = getattr(self, name)
-            if obj is not None and obj.is_constant is False:
+            if obj is not None and hasattr(obj, "is_constant") and obj.is_constant is False:
                 names.append(name)
         return names
 

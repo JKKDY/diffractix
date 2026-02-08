@@ -44,8 +44,6 @@ class Space(OpticalElement):
         [[1, d],
          [0, 1]]
         """
-        # FIX: 
-        #  d/n to d
         return np.array([[1.0, d], [0.0, 1.0]])
 
    

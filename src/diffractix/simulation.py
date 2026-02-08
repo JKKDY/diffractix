@@ -50,6 +50,42 @@ class SimulationResult:
             }]
         }
 
+    def __str__(self) -> str:
+        """
+        Produces a readable ASCII table of the beam propagation trace.
+        Example:
+        Z [m]      | w [mm]     | R [m]          
+        -----------------------------------------
+        0.0000     | 1.0000     | Inf            
+        0.1000     | 1.0005     | 5.2000         
+        """
+        # Define column widths
+        col_z = 10
+        col_w = 10
+        col_r = 15
+        
+        # Header
+        header = f"{'Z [m]':<{col_z}} | {'w [mm]':<{col_w}} | {'R [m]':<{col_r}}"
+        separator = "-" * len(header)
+        
+        lines = [header, separator]
+        
+        for z, beam in self.trace:
+            # Convert w to mm for readability
+            w_mm = beam.w * 1000.0
+            
+            # Handle Infinity for R (Plane waves)
+            R_val = beam.R
+            if np.isinf(R_val) or abs(R_val) > 1e10:
+                r_str = "Inf"
+            else:
+                r_str = f"{R_val:.4f}"
+            
+            # Format row
+            lines.append(f"{z:<{col_z}.4f} | {w_mm:<{col_w}.4f} | {r_str:<{col_r}}")
+            
+        return "\n".join(lines)
+
 
 
 
