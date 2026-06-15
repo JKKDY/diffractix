@@ -3,7 +3,7 @@ import numpy as np
 from diffractix.composites import ElementSequence, Slab, ThickLens
 from diffractix.system import System
 from diffractix.elements import Space, Interface
-from diffractix.beams import GaussianBeam
+from diffractix.beam import GaussianBeam
 from diffractix.graph import Parameter
 
 # Helper for integration tests

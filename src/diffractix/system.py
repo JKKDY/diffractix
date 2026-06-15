@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, fields
 
 from .elements import OpticalElement, Space, Interface, ABCD
-from .beams import GaussianBeam
+from .beam import GaussianBeam
 from .simulation import Simulation, SimulationStep
 from .graph import Node, Parameter, Symbol, InputNode, compile_parameter_transform, Constant
 

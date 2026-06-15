@@ -13,7 +13,8 @@ class Op(Enum):
     FLOORDIV = auto()
     MOD = auto()
     POW = auto()
-
+    # TODO add log 
+    
     # unary arithmetic
     NEG = auto()
     POS = auto()

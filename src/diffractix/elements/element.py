@@ -20,6 +20,7 @@ from functools import cached_property
 from ..graph.ast import Node, Parameter, Constant, Symbol, BinaryOp, UnaryOp, InputNode,ASTNode
 
 
+#TODO should this be eq=False?
 @dataclass
 class OpticalElement:
     """
@@ -51,18 +52,19 @@ class OpticalElement:
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         
-        # Perform signature inspection at class construction time
-        func = getattr(cls, "compute_matrix", None)
+        # make sure the subclass has the method "compute_matrix"
+        func = getattr(cls, "compute_matrix", None) 
         if func is None:
             raise TypeError("Subclass must define compute_matrix")
-
+        
+        # get the parameters by inspecting the method "compute_matrix" 
         sig = inspect.signature(func)
         cls._param_names = [name for name in sig.parameters if name != "self"]
 
         # ensure that the base class also has the members sepecified in the signature 
-        # (e.g. if compute_matrix(self, a, b) -> self.a, self.b)
         annotations = getattr(cls, '__annotations__', {})
         
+        # TODO what is this actually for? 
         for name, type_hint in annotations.items():
             # Rough check: does the type hint string look like a Node?
             # e.g. "float | Node", "Parameter", "InputNode"
@@ -73,7 +75,7 @@ class OpticalElement:
                     cls._param_names.append(name)
 
         # validate that all parameter names in the signature have a corresponding member variable 
-        # (e.g. def compute_matrix(self, a, b) -> self.a, self.b)
+        # (e.g. if compute_matrix(self, a, b) then the class must have self.a, self.b defined)
         for name in cls._param_names:
             if not (hasattr(cls, name) or name in annotations):
                  raise TypeError(f"Parameter '{name}' found in signature/hints but missing from fields.")
@@ -83,7 +85,7 @@ class OpticalElement:
     def __post_init__(self):
         self.id = next(self._id_counter)
 
-        # set label to *class_name*#instantaitions if no label was provided
+        # set label to *class_name**#instantiations* if no label was provided
         if self.label is None:
             cls = self.__class__
             
@@ -113,7 +115,7 @@ class OpticalElement:
         # get existing handle
         current_handle = self.__dict__.get(name)
 
-        # Handle Initialization (First time)
+        # Handle Initialization (First time). Parameters must be Node types. 
         # This occurs during __init__ or dataclass default assignment
         if isinstance(value, Node) and not isinstance(value, InputNode):
             # Already a node (e.g. Lens(f=Symbol("x")))
@@ -123,7 +125,7 @@ class OpticalElement:
             new_node = Parameter(value=value, name=name, fixed=True, owner=self)
             new_handle = InputNode(new_node)
         elif value is None:
-            new_handle = InputNode(None) # uninitialized, must be set later 
+            new_handle = InputNode(None) # uninitialized, must be given a value later. We initialize with an InputNode
         else:
             raise TypeError(f"Initial value for {self.label}.{name} must be Node or float, got {type(value)}")
 
@@ -209,7 +211,7 @@ class OpticalElement:
     @property
     def refractive_index(self) -> float:
         """
-        Returns the physical length of this element at its current parameter values.
+        Returns the refractive index of this element at its current parameter values.
         """
         return self.element_refractive_index.value
 

@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-from diffractix.beams import GaussianBeam
+from diffractix.beam import GaussianBeam
 
 # Constants for testing
 LAMBDA = 1064e-9  # 1064 nm

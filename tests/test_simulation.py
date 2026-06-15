@@ -2,7 +2,7 @@ import pytest
 import numpy as np
 from diffractix.system import System
 from diffractix.elements import Space, ThinLens, Interface, GaussianAperture
-from diffractix.beams import GaussianBeam
+from diffractix.beam import GaussianBeam
 from autograd import grad
 
 # helper

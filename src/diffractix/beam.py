@@ -21,6 +21,7 @@ class GaussianBeam:
     n: float = None
 
 
+
     #-----------
     # PROPERTIES
     #-----------
@@ -91,6 +92,7 @@ class GaussianBeam:
         return 2 * self.z_r
     
 
+
     #--------------------
     # CALCULATION METHODS
     #--------------------
@@ -100,7 +102,7 @@ class GaussianBeam:
         _, R_new = self.w_R_from_q(q_z, self.wavelength, self.n) 
         return R_new
 
-    def w_at_z(self, z: float, n: float = None) -> float:
+    def w_at_z(self, z: float) -> float:
         """Calculate spot size w at distance z from current plane."""
         q_z = self.q + z
         w_new, _ = self.w_R_from_q(q_z, self.wavelength, self.n)
@@ -147,7 +149,7 @@ class GaussianBeam:
         return numerator / denominator
 
     @staticmethod
-    def w_R_from_q(q: complex, wavelength: float, n: float = 1.0) -> tuple[float, float]:
+    def w_R_from_q(q: complex, wavelength: float, n: float) -> tuple[float, float]:
         """
         Extracts beam width (w) and radius of curvature (R) from the complex q-parameter.
         
@@ -172,6 +174,7 @@ class GaussianBeam:
         w = np.sqrt(w_sq)
         
         return w, R
+
 
 
     #----------------
@@ -230,6 +233,7 @@ class GaussianBeam:
 
         return cls.from_waist(w0, wavelength, z_waist_loc=0.0, n=n)
         
+
 
     #----------
     # DEBUGGING

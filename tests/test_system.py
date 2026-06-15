@@ -3,7 +3,7 @@ import numpy as np
 from diffractix.system import System
 from diffractix.elements import Space, ThinLens, ABCD, Interface
 from diffractix.graph import Parameter, Constant, Symbol, InputNode
-from diffractix.beams import GaussianBeam
+from diffractix.beam import GaussianBeam
 
 # ==========================================
 # 1. TEST BINDING & ENVIRONMENT
