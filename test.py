@@ -3,9 +3,8 @@ import diffractix as dfx
 from diffractix.graph import Node, Parameter
 from diffractix.graph import ops
 from diffractix.elements import *
-from diffractix.beams import GaussianBeam
 from diffractix.system import System
-from diffractix.beams import GaussianBeam
+from diffractix.beam import GaussianBeam
 from diffractix.composites import *
 from diffractix.graph.ast import *
 

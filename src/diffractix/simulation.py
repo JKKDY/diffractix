@@ -109,6 +109,7 @@ class Simulation:
                 environment: "Environment",
                 initial_values: np.array,
                 parameter_transform: callable,
+                variable_params: list,
                 constraints: list[callable] = None):
         assert len(sources) == 1, "Currently only single input beam supported."
                         
@@ -120,6 +121,7 @@ class Simulation:
 
         # Metadata & Optimization Hooks
         self.parameter_transform = parameter_transform
+        self.variable_params = variable_params
         self.constraints = constraints if constraints is not None else []
 
 

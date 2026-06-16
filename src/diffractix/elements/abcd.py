@@ -66,6 +66,6 @@ class ABCD(OpticalElement):
             self.n.value = environment.ambient_n.value
             self.n.fixed = environment.ambient_n.fixed
 
-    def compute_matrix(self, A, B, C, D):
+    def compute_matrix(self, A, B, C, D, thickness, n):
         return np.array([[A, B], [C, D]])
 

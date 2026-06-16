@@ -64,7 +64,7 @@ class System:
             self.environment.ambient_wavelength = Constant(self.input_beams[0].wavelength)
         return self 
 
-
+    # TODO rename to add_element
     def add(self, element: OpticalElement | Iterable[OpticalElement], z: float = None, optimize_z: bool = False):
         """
         Add an element to the optical path.
@@ -113,9 +113,10 @@ class System:
     def _bind_environment_variables(self, elements):
         for el in elements:
             for node in el.parameters + [el.element_length, el.element_refractive_index]:
-                if isinstance(node, InputNode):
+                if isinstance(node, InputNode): # unwrap input node
                     node = node.node
 
+                # bind global symbols to values in self.environment
                 if isinstance(node, Symbol) and node.name in self.environment.variables:
                     node.bind(getattr(self.environment, node.name))
         
@@ -154,6 +155,8 @@ class System:
             # add length of this element to the cursor 
             # (ensures that relative elements fit between absolute elements)
             current_z += el.length
+        
+        return # no errors thrown. Everything in order
 
 
 
@@ -175,7 +178,7 @@ class System:
             
             # if element has absolute position, we need to insert a spacer
             # the width of the spacer is dependent on the position of the prevous element (given by current_z_node) 
-            # and the desired position of the new element. If the user selects to have the abs psotion variable
+            # and the desired position of the new element. If the user selects to have the abs position variable
             # the spacers length must be variable as well (i.e. Parameter with fixed = false)
             if absolute_pos is not None:
                 
@@ -207,9 +210,9 @@ class System:
     def _resolve_refractive_indices(self, elements, auto_insert_interface: bool = False):
         """
         Wires the refractive index graph.
-        1. Binds 'inherit' sockets (InputNode(Symbol(None))) to the upstream index.
-        2. Validates continuity for fixed-index elements (Spaces).
-        3. Auto-inserts Interfaces if requested/needed.
+          1. Binds 'inherit' sockets (InputNode(Symbol(None))) to the upstream index.
+          2. Validates continuity for fixed-index elements (Spaces).
+          3. Auto-inserts Interfaces if requested/needed.
         """
         resolved_elements = []
         
@@ -228,7 +231,7 @@ class System:
             elif isinstance(el, (Interface, ABCD)):
                 current_index_node = index_handle
 
-            # element does not have `inherit` socekt + is not ABCD or Interface -> check for continuity
+            # element does not have `inherit` socket + is not ABCD or Interface -> check for continuity
             else:
                 target_val = index_handle.value
                 current_val = current_index_node.value
@@ -304,6 +307,7 @@ class System:
             initial_values=initial_theta,
             environment = self.environment,
             parameter_transform=transform_func,
+            variable_params=variable_params,
             constraints=self._generated_constraints
         )
 

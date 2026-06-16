@@ -6,6 +6,8 @@ import weakref
 import itertools
 
 
+Scalar = int | float
+
 class Node:
     """
     Base class for all nodes in the Abstract Syntax Tree.
@@ -149,8 +151,11 @@ class BinaryOp(Node):
 
     def canonical_key(self):
         l, r = self.left, self.right
+
+        # ensure that commutative ops match to the same nodes e.g. a + b has the same hash as b + a
         if self.op.is_commutative and self._left_hash > self._right_hash:
             l, r = r, l
+
         return (BinaryOp, self.op, l, r)
 
     @property
@@ -313,8 +318,6 @@ class Parameter(Node):
     def is_constant(self):
         return self.fixed
 
-    def __eq__(self, other):
-        return self is other
 
 
 
@@ -386,6 +389,4 @@ class Symbol(Node):
         return self.name == other.name
 
 
-
-Scalar = int | float
 ASTNode = Node
