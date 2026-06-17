@@ -97,6 +97,18 @@ class Optimizer:
     def add_constraint(self, constraint: callable):
         self.constraint_funcs.append(constraint)
 
+
+    def _extract_bounds(self):
+        """Builds the 2-tuple of arrays required by scipy: ([lower...], [upper...])"""
+        lower_bounds = []
+        upper_bounds = []
+        
+        for param in self.sim.variable_params:
+            lower_bounds.append(param.min_val)
+            upper_bounds.append(param.max_val)
+            
+        return lower_bounds, upper_bounds
+
     def solve(self): 
         def residuals(theta):
             # Run simulation and unpack the complex state
@@ -105,11 +117,13 @@ class Optimizer:
             return np.array([func(zs, qs, ns, wvl, theta) for func in self.constraint_funcs])
 
         jac = jacobian(residuals)
+        bounds = self._extract_bounds()
         
         res = least_squares(
             residuals, 
             self.sim.initial_values, 
             jac=jac, 
+            bounds=bounds,
             method='trf' 
         )
         return res

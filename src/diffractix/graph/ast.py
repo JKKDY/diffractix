@@ -279,7 +279,7 @@ class Parameter(Node):
     _id_counter = itertools.count()
 
 
-    def __init__(self, value: float, name: str, fixed: bool, *, owner: "OpticalElement" = None):
+    def __init__(self, value: float, name: str, fixed: bool, *, min_val=-np.inf, max_val=np.inf, owner: "OpticalElement" = None):
         if value is None:
             pass
 
@@ -287,11 +287,16 @@ class Parameter(Node):
         self.value = float(value)
         self.name = name
         self.fixed = fixed
-        self.min_val = -np.inf
-        self.max_val = np.inf
-        # need a reference to the owner (a optical element) of this parameter to correctly get the name
+        self.min_val = min_val
+        self.max_val = max_val
+        # need a reference to the owner (an optical element) of this parameter to correctly get the name
         # any non referential methods introduce problems with dataclass and the initialization order of members in OpticalElement
         if owner: self._owner_ref = weakref.ref(owner) # weakref to avoid any circular dependencies
+
+    def bound(self, min_val=-np.inf, max_val=np.inf):
+        self.min_val = min_val
+        self.max_val = max_val
+        return self
 
     @property
     def owner(self):
@@ -358,7 +363,7 @@ class Symbol(Node):
 
         if isinstance(value, Scalar):
             self._target = self._make_constant(value)
-        else:
+        else: # TODO ensure its a node
             self._target = value
 
     @property

@@ -177,6 +177,8 @@ def test_optimizer():
 
     return
 
+
+
 def test_beam_expander():
     print("--- Setting up Galilean Beam Expander ---")
     sys = System()
@@ -184,26 +186,32 @@ def test_beam_expander():
     # 1. Input: 1mm waist, perfectly collimated (Plane wave)
     sys.add_input(GaussianBeam.from_waist(w0=1e-3, wavelength=1064e-9, z_waist_loc=0.0))
     
-    # 2. First Lens: Diverging (We give it a bad initial guess of -100mm)
-    f1_param = Parameter(value=-0.005, name='f1', fixed=False)
-    sys.add(ThinLens(f=f1_param))
+    # 2. First Lens: Diverging
+    # Updated guess places the system in the telescope regime (M=5x)
+    lens1 = ThinLens(f=-0.1).variable()
+    lens1.f.min_val = -1.0
+    lens1.f.max_val = -0.01
     
-    # 3. The Expander Tube: Fixed at 20cm
+    # 3. Second Lens: Converging
+    # Updated guess matches the 0.2m spacing (-0.05 + 0.25 = 0.2)
+    lens2 = ThinLens(f=0.1).variable()
+    lens2.f.min_val = 0.01
+    lens2.f.max_val = 1.0
+
+    sys.add(lens1)
     sys.add(Space(d=0.2))
-    
-    # 4. Second Lens: Converging (Bad initial guess of 100mm)
-    f2_param = Parameter(name='f2', value=0.015, fixed=False)
-    sys.add(ThinLens(f=f2_param))
-    
-    # 5. Output Propagation (We check the beam 50cm after the second lens)
-    # Total system length = 0.7m
-    sys.add(Space(d=0.5))
+    sys.add(lens2)
+    sys.add(Space(d=0.5)) # Target z will be at 0.7m
+
+    print(f"Initial Guess for Lens 1 f: {lens1.f.value:.4f} m")
+    print(f"Initial Guess for Lens 2 f: {lens2.f.value:.4f} m")
+
     sim = sys.build()
-    final_res = sim.run()
-    final_res.plot()
+    res = sim.run()
+    print(sys)
+    print(res)
 
-
-    print(f"Initial Guess -> f1: {f1_param.value:.4f} m, f2: {f2_param.value:.4f} m")
+    res.plot()
 
     print("\n--- Running Optimizer ---")
     opt = Optimizer(sys)
@@ -211,33 +219,29 @@ def test_beam_expander():
     # Target 1: Expand to 4mm
     opt.constrain_beam(z=0.7, w=4e-3, weight=1.0, kind='exact')
     
-    # Target 2: Must be perfectly collimated (R = infinity)
+    # Target 2: Must be perfectly collimated. 
     opt.constrain_beam(z=0.7, R=np.inf, weight=100.0, kind='exact')
 
-    # Solve
     result = opt.solve()
-    
+
     print("\n--- Optimization Results ---")
     print(f"Success: {result.success}")
+    print(f"Message: {result.message}")
     print(f"Cost (Loss): {result.cost:.2e}")
+    print(f"Optimized Lens 1 f: {result.x[0]:.4f} m")
+    print(f"Optimized Lens 2 f: {result.x[1]:.4f} m")
     
-    # Update system with optimized values
-    f1_param.value = result.x[0]
-    f2_param.value = result.x[1]
-    
-    print(f"Optimized f1: {f1_param.value * 1000:.1f} mm")
-    print(f"Optimized f2: {f2_param.value * 1000:.1f} mm")
-    
-    # Verify and Plot
+    # Update system parameters with the optimized array results
+    lens1.f.value = result.x[0]
+    lens2.f.value = result.x[1]
+
     sim = sys.build()
-    final_res = sim.run()
-    
-    output_beam = final_res.trace[-1][1]
-    print(f"\nFinal Beam Output:")
-    print(f"  Waist: {output_beam.w * 1000:.2f} mm (Target: 4.00 mm)")
-    print(f"  Curvature: {output_beam.R:.2f} m (Target: Inf)")
-    
-    final_res.plot()
+    res = sim.run()
+    print(sys)
+    print(res)
+
+    res.plot()
+
 
 if __name__ == "__main__":
     test_beam_expander()
