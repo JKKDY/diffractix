@@ -16,31 +16,53 @@ class Optimizer:
         self.constraint_funcs = []
 
 
-    def constrain_beam(self, *, z: float, w: float = None, R: float = None,  weight: float = 1.0, kind: str = 'exact'): 
-        """Generates a callable constraint and adds it to the solver."""
-        def beam_residual(hist, theta):
-            # find closest z
-            idx = np.abs(hist[:, 0] - z).argmin()
-            actual_w = hist[idx, 1]
-            actual_R = hist[idx, 2]
-            
-            err = 0.0
-            # Calculate error
-            if w is not None: diff = actual_w - w
-            elif R is not None: diff = actual_R - R
-            else: raise ValueError("neither R nor w were set")
+    def constrain_beam(self, *, z: float, w: float = None, R: float = None, weight: float = 1.0, kind: str = 'exact'): 
+        """Generates callable constraints and adds them to the solver."""
+        if w is None and R is None:
+            raise ValueError("You must specify either w or R.")
 
-            if kind == 'exact': err += diff
-            elif kind == 'min': err += np.maximum(0.0, -diff)
-            elif kind == 'max': err += np.maximum(0.0, diff)
+        # Register Waist Constraint
+        if w is not None:
+            def w_residual(hist, theta):
+                idx = np.abs(hist[:, 0] - z).argmin()
+                actual_w = hist[idx, 1]
+                
+                diff = (actual_w - w) * 1e3 # Scale to mm to prevent premature termination
+                
+                if kind == 'exact': err = diff
+                elif kind == 'min': err = np.maximum(0.0, -diff)
+                elif kind == 'max': err = np.maximum(0.0, diff)
+                else: err = 0.0
+                
+                return err * weight
             
-            return err * weight
+            self.constraint_funcs.append(w_residual)
 
-        self.constraint_funcs.append(beam_residual)
+        # Register Curvature Constraint
+        if R is not None:
+            def R_residual(hist, theta):
+                idx = np.abs(hist[:, 0] - z).argmin()
+                actual_R = hist[idx, 2]
+                
+                # Convert to curvature to handle R = infinity safely
+                actual_curv = 1.0 / actual_R if actual_R != 0 else 0.0
+                target_curv = 1.0 / R if (R is not None and not np.isinf(R) and R != 0) else 0.0
+                
+                diff = actual_curv - target_curv
+                
+                if kind == 'exact': err = diff
+                elif kind == 'min': err = np.maximum(0.0, -diff)
+                elif kind == 'max': err = np.maximum(0.0, diff)
+                else: err = 0.0
+                
+                return err * weight
+                
+            self.constraint_funcs.append(R_residual)
+
         return self
         
 
-    def constrain_parameter(self, param_node: Parameter, min_val=None, max_val=None, weight=1.0):
+    def constrain_parameter(self, param_node , min_val=None, max_val=None, weight=1.0):
         # param is an AST Node (e.g., lens.f)
 
         # look up the index in the theta vector (degrees of freedom) using object identity
