@@ -4,6 +4,7 @@ import weakref
 from .ops import Op
 import weakref
 import itertools
+import autograd.numpy as np
 
 
 Scalar = int | float
@@ -278,7 +279,7 @@ class Parameter(Node):
     _id_counter = itertools.count()
 
 
-    def __init__(self, value: float, name: str, fixed: bool, owner: "OpticalElement" = None):
+    def __init__(self, value: float, name: str, fixed: bool, *, owner: "OpticalElement" = None):
         if value is None:
             pass
 
@@ -286,6 +287,8 @@ class Parameter(Node):
         self.value = float(value)
         self.name = name
         self.fixed = fixed
+        self.min_val = -np.inf
+        self.max_val = np.inf
         # need a reference to the owner (a optical element) of this parameter to correctly get the name
         # any non referential methods introduce problems with dataclass and the initialization order of members in OpticalElement
         if owner: self._owner_ref = weakref.ref(owner) # weakref to avoid any circular dependencies

@@ -16,11 +16,55 @@ class SimulationResult:
         """Helper to get the output beam quickly."""
         return self.trace[-1][1]
 
-    def plot_data(self):
-        """Helper for plotting libraries (matplotlib/plotly)."""
-        z_vals = [z for (t, g) in self.trace]
-        w_vals = [g.w0 for (z, g) in self.trace] 
-        return z_vals, w_vals
+    def plot(self, points_per_segment: int = 50):
+        """
+        Generates a smooth matplotlib visualization of the beam propagation.
+        """
+        import matplotlib.pyplot as plt
+        import numpy as np # Use standard numpy for plotting, not autograd
+        
+        if not self.trace:
+            print("No trace data to plot.")
+            return
+
+        fig, ax = plt.subplots(figsize=(10, 4))
+        
+        # Get wavelength from the first beam for the plot title and color
+        wavelength = self.trace[0][1].wavelength
+        color = 'red' if wavelength > 600e-9 else 'blue'
+        
+        # We look at pairs of points: (current, next)
+        for i in range(len(self.trace) - 1):
+            z_start, beam_start = self.trace[i]
+            z_end, _ = self.trace[i+1]
+            
+            # If z doesn't change, it's a thin element (lens/interface) -> Skip
+            if np.isclose(z_start, z_end):
+                
+                # Optional: draw a vertical line to indicate optical elements
+                ax.axvline(z_start, color='k', linestyle='--', alpha=0.3)
+                continue
+                
+            # Interpolate points across the propagation segment
+            z_local = np.linspace(0, z_end - z_start, points_per_segment)
+            
+            # Calculate width at these local offsets 
+            w_dense = np.array([beam_start.w_at_z(z) for z in z_local])
+            z_global = z_start + z_local
+            
+            # Plot beam envelope
+            ax.plot(z_global, w_dense * 1e3, color=color, alpha=0.8, lw=1) 
+            ax.plot(z_global, -w_dense * 1e3, color=color, alpha=0.8, lw=1) 
+            ax.fill_between(z_global, w_dense * 1e3, -w_dense * 1e3, color=color, alpha=0.1)
+   
+        # Formatting
+        ax.set_xlabel("Position Z (m)")
+        ax.set_ylabel("Beam Radius w(z) (mm)")
+        ax.set_title(f"Gaussian Beam Propagation (\u03bb={wavelength*1e9:.0f} nm)")
+        ax.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        plt.show()
 
     def export(self) -> Dict[str, Any]:
         """
