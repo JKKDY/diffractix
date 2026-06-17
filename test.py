@@ -185,14 +185,14 @@ def test_beam_expander():
     sys.add_input(GaussianBeam.from_waist(w0=1e-3, wavelength=1064e-9, z_waist_loc=0.0))
     
     # 2. First Lens: Diverging (We give it a bad initial guess of -100mm)
-    f1_param = Parameter(value=-0.1, name='f1', fixed=False)
+    f1_param = Parameter(value=-0.005, name='f1', fixed=False)
     sys.add(ThinLens(f=f1_param))
     
     # 3. The Expander Tube: Fixed at 20cm
     sys.add(Space(d=0.2))
     
     # 4. Second Lens: Converging (Bad initial guess of 100mm)
-    f2_param = Parameter(name='f2', value=0.1, fixed=False)
+    f2_param = Parameter(name='f2', value=0.015, fixed=False)
     sys.add(ThinLens(f=f2_param))
     
     # 5. Output Propagation (We check the beam 50cm after the second lens)
@@ -212,7 +212,7 @@ def test_beam_expander():
     opt.constrain_beam(z=0.7, w=4e-3, weight=1.0, kind='exact')
     
     # Target 2: Must be perfectly collimated (R = infinity)
-    opt.constrain_beam(z=0.7, R=np.inf, weight=1.0, kind='exact')
+    opt.constrain_beam(z=0.7, R=np.inf, weight=100.0, kind='exact')
 
     # Solve
     result = opt.solve()
@@ -239,10 +239,10 @@ def test_beam_expander():
     
     final_res.plot()
 
-# if __name__ == "__main__":
-#     test_beam_expander()
+if __name__ == "__main__":
+    test_beam_expander()
     
   
-if __name__ == "__main__":
-    test_optimizer()
+# if __name__ == "__main__":
+#     test_optimizer()
   

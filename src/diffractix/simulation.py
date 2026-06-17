@@ -222,13 +222,11 @@ class Simulation:
         raw_history = self._run(params)
         wavelength = self.sources.wavelength
         
-        # Convert to a flat array for efficient slicing in loss functions
-        data = []
-        for z, q, n in raw_history:
-            w, R = GaussianBeam.w_R_from_q(q, wavelength, n)
-            data.append([z, w, R])
-            
-        return np.stack(data) # Shape: (Steps, 3)
+        zs = np.array([item[0] for item in raw_history])
+        qs = np.array([item[1] for item in raw_history]) # Complex array!
+        ns = np.array([item[2] for item in raw_history])
+        
+        return zs, qs, ns, self.sources.wavelength
 
 
     def run(self, params: np.ndarray | None = None) -> 'SimulationResult':
