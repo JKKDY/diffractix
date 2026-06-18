@@ -169,6 +169,16 @@ class OpticalElement:
         return f"{header:<50} {params_str}"
   
 
+    def __add__(self, other):
+        if isinstance(other, (int, float)):
+            return (self, float(other))
+        return NotImplemented
+
+    def __sub__(self, other):
+        if isinstance(other, (int, float)):
+            return (self, -float(other))
+        return NotImplemented
+
     #-----------
     # PROPERTIES 
     #-----------

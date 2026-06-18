@@ -179,72 +179,76 @@ def test_optimizer():
 
 
 
-def test_beam_expander():
-    print("--- Setting up Galilean Beam Expander ---")
+def test_fiber_coupler():
+    print("--- Setting up Diode-to-Fiber Coupler ---")
     sys = System()
     
-    # 1. Input: 1mm waist, perfectly collimated (Plane wave)
-    sys.add_input(GaussianBeam.from_waist(w0=1e-3, wavelength=1064e-9, z_waist_loc=0.0))
+    # 1. Input: 850nm Laser Diode (5um waist)
+    sys.add_input(GaussianBeam.from_waist(w0=5e-6, wavelength=850e-9, z_waist_loc=0.0))
     
-    # 2. First Lens: Diverging
-    # Updated guess places the system in the telescope regime (M=5x)
-    lens1 = ThinLens(f=-0.1).variable()
-    lens1.f.min_val = -1.0
-    lens1.f.max_val = -0.01
+    # 2. Fixed space from diode to lens (20 mm)
+    sys.add(Space(d=0.02, label="Diode_Gap"))
     
-    # 3. Second Lens: Converging
-    # Updated guess matches the 0.2m spacing (-0.05 + 0.25 = 0.2)
-    lens2 = ThinLens(f=0.1).variable()
-    lens2.f.min_val = 0.01
-    lens2.f.max_val = 1.0
+    # 3. Variable Thick Lens
+    lens = ThickLens(d=0.01, n=1.51, R1=0.015, R2=-0.015).variable('R1', 'R2')
+    lens[0].R.min_val = 0.005
+    lens[2].R.max_val = -0.005
+    sys.add(lens)
+    
+    # 4. The Translation Stage (Variable Space)
+    # We allow the solver to slide the fiber anywhere from 10mm to 150mm away
+    fiber_gap = Space(d=0.07, label="Translation_Stage").variable('d')
+    fiber_gap.d.min_val = 0.01
+    fiber_gap.d.max_val = 0.25
+    sys.add(fiber_gap)
+    
+    # 5. Dummy Element for Targeting
+    # This element has 0 thickness, so it just tracks the Z-plane after the variable gap
+    fiber_face = Space(d=0.0, label="Fiber_Face")
+    sys.add(fiber_face)
 
-    sys.add(lens1)
-    sys.add(Space(d=0.2))
-    sys.add(lens2)
-    sys.add(Space(d=0.5)) # Target z will be at 0.7m
-
-    print(f"Initial Guess for Lens 1 f: {lens1.f.value:.4f} m")
-    print(f"Initial Guess for Lens 2 f: {lens2.f.value:.4f} m")
-
-    sim = sys.build()
-    res = sim.run()
-    print(sys)
-    print(res)
-
-    res.plot()
+    print(f"Initial Guess R1: {lens[0].R.value * 1000:.2f} mm")
+    print(f"Initial Guess R2: {lens[2].R.value * 1000:.2f} mm")
+    print(f"Initial Guess Gap: {fiber_gap.d.value * 1000:.2f} mm")
 
     print("\n--- Running Optimizer ---")
     opt = Optimizer(sys)
     
-    # Target 1: Expand to 4mm
-    opt.constrain_beam(z=0.7, w=4e-3, weight=1.0, kind='exact')
-    
-    # Target 2: Must be perfectly collimated. 
-    opt.constrain_beam(z=0.7, R=np.inf, weight=100.0, kind='exact')
+    # Dynamic Targeting: The solver dynamically tracks 'fiber_face' 
+    # even as 'fiber_gap' expands and contracts during optimization.
+    opt.constrain_beam(z=fiber_face, w=40e-6, weight=1.0, kind='exact')
+    opt.constrain_beam(z=fiber_face, R=np.inf, weight=1.0, kind='exact')
 
     result = opt.solve()
 
     print("\n--- Optimization Results ---")
     print(f"Success: {result.success}")
-    print(f"Message: {result.message}")
     print(f"Cost (Loss): {result.cost:.2e}")
-    print(f"Optimized Lens 1 f: {result.x[0]:.4f} m")
-    print(f"Optimized Lens 2 f: {result.x[1]:.4f} m")
     
-    # Update system parameters with the optimized array results
-    lens1.f.value = result.x[0]
-    lens2.f.value = result.x[1]
+    # Theta vector order: [R1, R2, fiber_gap.d]
+    opt_R1 = result.x[0]
+    opt_R2 = result.x[1]
+    opt_gap = result.x[2]
+    
+    print(f"Optimized R1: {opt_R1 * 1000:.2f} mm")
+    print(f"Optimized R2: {opt_R2 * 1000:.2f} mm")
+    print(f"Optimized Gap: {opt_gap * 1000:.2f} mm")
+    
+    # Update AST
+    lens[0].R.value = opt_R1
+    lens[2].R.value = opt_R2
+    fiber_gap.d.value = opt_gap
 
     sim = sys.build()
-    res = sim.run()
+    final_res = sim.run()
+    
+    print("\nFinal State (After Optimization):")
     print(sys)
-    print(res)
 
-    res.plot()
-
+    final_res.plot()
 
 if __name__ == "__main__":
-    test_beam_expander()
+    test_fiber_coupler()
     
   
 # if __name__ == "__main__":

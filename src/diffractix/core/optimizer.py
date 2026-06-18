@@ -4,6 +4,7 @@ from autograd import jacobian
 
 from ..simulation import Simulation
 from ..beam import GaussianBeam 
+from ..elements import OpticalElement
 
 import autograd.numpy as np
 from autograd import jacobian
@@ -20,25 +21,46 @@ class Optimizer:
         if w is None and R is None:
             raise ValueError("You must specify either w or R.")
 
+        # parse beam constraint location
+        target_element = None
+        offset = 0.0
+
+        if isinstance(z, OpticalElement):
+            target_element = z
+        elif isinstance(z, tuple):
+            target_element = z[0]
+            offset = z[1]
+        elif isinstance(z, (int, float)):
+            offset = float(z) # Absolute z constraint
+        else:
+            raise TypeError("z must be a float, OpticalElement, or element + offset")
+
+        # resolve index in compiled system
+        element_idx = None
+        if target_element is not None:
+            try:
+                element_idx = self.system._compiled_elements.index(target_element)
+            except ValueError:
+                raise ValueError(f"Element {target_element.label} not found in compiled system.")
+
         # Helper to find the correct state and propagate
         def get_interpolated_q_and_n(zs, qs, ns):
-            # Find the last element that is BEFORE or AT our target z
-            # np.where returns indices where the condition is true
-            valid_indices = np.where(zs <= z)[0]
-            if len(valid_indices) == 0:
-                idx = 0 # Fallback if z is negative/before start
+            # Calculate absolute Z for this specific solver iteration
+            if element_idx is not None:
+                target_z = zs[element_idx] + offset
             else:
-                idx = valid_indices[-1]
+                target_z = offset 
+
+            # Find the closest upstream element to interpolate from
+            valid_indices = np.where(zs <= target_z)[0]
+            idx = valid_indices[-1] if len(valid_indices) > 0 else 0
             
-            z_start = zs[idx]
-            q_start = qs[idx]
-            n_start = ns[idx]
+            z_base = zs[idx]
+            q_base = qs[idx]
+            n_base = ns[idx]
             
-            # Analytical free-space propagation to exact target z
-            dz = z - z_start
-            q_target = q_start + dz
-            
-            return q_target, n_start
+            dz = target_z - z_base
+            return q_base + dz, n_base
 
         if w is not None:
             def w_residual(zs, qs, ns, wavelength, theta):
@@ -55,7 +77,7 @@ class Optimizer:
                 else: err = 0.0
                 
                 return err * weight
-            self.constraint_funcs.append(w_residual)
+            self.add_constraint(w_residual)
 
         if R is not None:
             def R_residual(zs, qs, ns, wavelength, theta):
@@ -74,7 +96,7 @@ class Optimizer:
                 else: err = 0.0
                 
                 return err * weight
-            self.constraint_funcs.append(R_residual)
+            self.add_constraint(R_residual)
 
         return self
         
@@ -91,7 +113,40 @@ class Optimizer:
             if max_val is not None: err += np.maximum(0.0, val - max_val)
             return err * weight
             
-        self.constraint_funcs.append(param_residual)
+        self.add_constraint(param_residual)
+        return self
+
+    def constrain_path_waist(self, min_w: float, weight: float = 1.0):
+        """
+        Path Constraint: Prevents the beam from focusing tighter than min_w 
+        anywhere in the physical layout.
+        """
+        # Pre-allocate fractional steps to ensure Autograd compatibility
+        fractions = np.linspace(0, 1.0, 1000) 
+        
+        def path_residual(zs, qs, ns, wvl, theta):
+            penalty = 0.0
+            for i in range(len(zs) - 1):
+                L = zs[i+1] - zs[i]
+                if L <= 1e-6: # Skip thin elements like lenses
+                    continue
+                
+                # 1. Propagate q to 10 points along this specific segment
+                dz = fractions * L
+                q_z = qs[i] + dz
+                
+                # 2. Extract w for all 10 points
+                # np.minimum protects against divide-by-zero on perfectly collimated beams
+                inv_q_imag = np.minimum(np.imag(1.0 / q_z), -1e-16)
+                w_vals = np.sqrt(-wvl / (np.pi * ns[i] * inv_q_imag))
+                
+                # 3. Penalize any point where w is less than the minimum allowed waist
+                violations = np.maximum(0.0, min_w - w_vals)
+                penalty += np.sum(violations)
+                
+            return penalty * weight * 1e3 # Scale to mm for healthy gradients
+            
+        self.add_constraint(path_residual)
         return self
 
     def add_constraint(self, constraint: callable):
