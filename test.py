@@ -191,7 +191,12 @@ def test_fiber_coupler():
     
     # 3. Variable Thick Lens
     lens = ThickLens(d=0.01, n=1.51, R1=0.015, R2=-0.015).variable('R1', 'R2')
-    lens[0].R.min_val = 0.005
+    # R1: Must be convex, between 5mm and 500mm
+    lens[0].R.min_val = 0.005  
+    lens[0].R.max_val = 0.500  
+    
+    # R2: Must be convex (negative), between -500mm and -5mm
+    lens[2].R.min_val = -0.500 
     lens[2].R.max_val = -0.005
     sys.add(lens)
     
@@ -219,7 +224,7 @@ def test_fiber_coupler():
     opt.constrain_beam(z=fiber_face, w=40e-6, weight=1.0, kind='exact')
     opt.constrain_beam(z=fiber_face, R=np.inf, weight=1.0, kind='exact')
 
-    result = opt.solve()
+    result = opt.solve(True)
 
     print("\n--- Optimization Results ---")
     print(f"Success: {result.success}")
@@ -244,7 +249,7 @@ def test_fiber_coupler():
     
     print("\nFinal State (After Optimization):")
     print(sys)
-
+    print(final_res)
     final_res.plot()
 
 if __name__ == "__main__":

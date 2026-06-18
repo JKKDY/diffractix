@@ -7,8 +7,6 @@ from ..beam import GaussianBeam
 from ..elements import OpticalElement
 
 import autograd.numpy as np
-from autograd import jacobian
-from scipy.optimize import least_squares
 
 class Optimizer: 
     def __init__(self, system): 
@@ -164,21 +162,57 @@ class Optimizer:
             
         return lower_bounds, upper_bounds
 
-    def solve(self): 
+    def solve(self, global_search: bool = False): 
         def residuals(theta):
             # Run simulation and unpack the complex state
             zs, qs, ns, wvl = self.sim.run_for_optimizer(theta)
             # Pass all required args to the callables
             return np.array([func(zs, qs, ns, wvl, theta) for func in self.constraint_funcs])
 
-        jac = jacobian(residuals)
         bounds = self._extract_bounds()
+        if not global_search:
+            from autograd import jacobian
+            from scipy.optimize import least_squares
+
+
+            jac = jacobian(residuals)
         
-        res = least_squares(
-            residuals, 
-            self.sim.initial_values, 
-            jac=jac, 
-            bounds=bounds,
-            method='trf' 
-        )
-        return res
+            res = least_squares(
+                residuals, 
+                self.sim.initial_values, 
+                jac=jac, 
+                bounds=bounds,
+                method='trf' 
+            )
+            return res
+
+        else:
+            from scipy.optimize import differential_evolution
+
+            # DE requires a scalar objective function (Sum of Squared Errors)
+            def scalar_cost(theta):
+                res_vec = residuals(theta)
+                return np.sum(res_vec**2)
+
+            # Sanitize bounds: DE cannot randomly sample across infinite space
+            de_bounds = []
+            for mn, mx in zip(bounds[0], bounds[1]):
+                safe_min = -1e4 if np.isinf(mn) else mn
+                safe_max =  1e4 if np.isinf(mx) else mx
+                de_bounds.append((safe_min, safe_max))
+
+            # Run the evolutionary algorithm
+            res = differential_evolution(
+                scalar_cost, 
+                bounds=de_bounds,
+                strategy='best1bin',
+                maxiter=1000,
+                popsize=15,       # 15 mutated clones per variable per generation
+                mutation=(0.5, 1.0), 
+                recombination=0.7,
+                tol=1e-6
+            )
+            
+            # Map .fun to .cost so the return object matches least_squares API
+            res.cost = res.fun 
+            return res
