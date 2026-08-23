@@ -1,4 +1,5 @@
 from enum import Enum, auto
+from collections.abc import Callable
 
 import autograd.numpy as np
 
@@ -33,63 +34,84 @@ class Op(Enum):
 
     @property
     def arity(self) -> int:
-        return {
-            Op.NEG: 1,
-            Op.POS: 1,
-            Op.ABS: 1,
-            Op.SIGMOID: 1,
-            Op.EXP: 1,
-            Op.LOG: 1,
-            Op.SQRT: 1,
-        }.get(self, 2)
+        return OP_ARITY[self]
 
     @property
     def is_commutative(self) -> bool:
-        return self in {
-            Op.ADD,
-            Op.MUL,
-            Op.MAX,
-            Op.MIN,
-        }
+        return self in COMMUTATIVE_OPS
 
     @property
     def unicode(self) -> str:
-        return {
-            Op.ADD: "＋",
-            Op.SUB: "−",
-            Op.MUL: "×",
-            Op.DIV: "÷",
-            Op.FLOORDIV: "⌊÷⌋",
-            Op.MOD: "mod",
-            Op.POW: "^",
-            Op.NEG: "−",
-            Op.POS: "+",
-            Op.ABS: "|·|",
-            Op.SIGMOID: "σ",
-            Op.EXP: "exp",
-            Op.LOG: "log",
-            Op.SQRT: "√",
-            Op.MAX: "max",
-            Op.MIN: "min",
-        }[self]
+        return OP_UNICODE[self]
 
     @property
-    def func(self) -> callable:
-        return {
-            Op.ADD: np.add,
-            Op.SUB: np.subtract,
-            Op.MUL: np.multiply,
-            Op.DIV: np.divide,
-            Op.FLOORDIV: np.floor_divide,
-            Op.MOD: np.mod,
-            Op.POW: np.power,
-            Op.NEG: np.negative,
-            Op.POS: lambda x: x,
-            Op.ABS: np.abs,
-            Op.SIGMOID: lambda x: 1.0 / (1.0 + np.exp(-x)),
-            Op.EXP: np.exp,
-            Op.LOG: np.log,
-            Op.SQRT: np.sqrt,
-            Op.MAX: np.maximum,
-            Op.MIN: np.minimum,
-        }[self]
+    def func(self) -> Callable:
+        return OP_FUNCTIONS[self]
+
+
+OP_ARITY = {
+    Op.ADD: 2,
+    Op.SUB: 2,
+    Op.MUL: 2,
+    Op.DIV: 2,
+    Op.FLOORDIV: 2,
+    Op.MOD: 2,
+    Op.POW: 2,
+    Op.NEG: 1,
+    Op.POS: 1,
+    Op.ABS: 1,
+    Op.SIGMOID: 1,
+    Op.EXP: 1,
+    Op.LOG: 1,
+    Op.SQRT: 1,
+    Op.MAX: 2,
+    Op.MIN: 2,
+}
+
+
+COMMUTATIVE_OPS = {
+    Op.ADD,
+    Op.MUL,
+    Op.MAX,
+    Op.MIN,
+}
+
+
+OP_UNICODE = {
+    Op.ADD: "＋",
+    Op.SUB: "−",
+    Op.MUL: "×",
+    Op.DIV: "÷",
+    Op.FLOORDIV: "⌊÷⌋",
+    Op.MOD: "mod",
+    Op.POW: "^",
+    Op.NEG: "−",
+    Op.POS: "+",
+    Op.ABS: "|·|",
+    Op.SIGMOID: "σ",
+    Op.EXP: "exp",
+    Op.LOG: "log",
+    Op.SQRT: "√",
+    Op.MAX: "max",
+    Op.MIN: "min",
+}
+
+
+OP_FUNCTIONS = {
+    Op.ADD: np.add,
+    Op.SUB: np.subtract,
+    Op.MUL: np.multiply,
+    Op.DIV: np.divide,
+    Op.FLOORDIV: np.floor_divide,
+    Op.MOD: np.mod,
+    Op.POW: np.power,
+    Op.NEG: np.negative,
+    Op.POS: lambda x: x,
+    Op.ABS: np.abs,
+    Op.SIGMOID: lambda x: 1.0 / (1.0 + np.exp(-x)),
+    Op.EXP: np.exp,
+    Op.LOG: np.log,
+    Op.SQRT: np.sqrt,
+    Op.MAX: np.maximum,
+    Op.MIN: np.minimum,
+}

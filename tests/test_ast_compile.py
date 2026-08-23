@@ -4,7 +4,7 @@ from autograd import grad
 import autograd.numpy as anp
 
 from diffractix.graph.ast import Literal, Parameter, SystemVar, InputNode
-from diffractix.graph.compile import CompiledAST, compile_ast
+from diffractix.graph.compile import CompiledAST, compile_ast, Opcode
 from diffractix.graph.utils import (
     ASTCycleError,
     UnresolvedInputError,
@@ -360,3 +360,123 @@ def test_compiled_ast_is_differentiable():
     result = derivative(anp.array([4.0]))
 
     np.testing.assert_allclose(result, [11.0])
+
+
+# --------------------
+# PROGRAM OPTIMIZATION
+# --------------------
+def test_constant_folding():
+    """
+    Expressions containing only constants should be evaluated at compile time.
+    """
+    x = Parameter(2, name="x").variable()
+    compiled = compile_ast([(Literal(2) + 3) * x])
+
+    # The constant subtree 2 + 3 should collapse to one constant value.
+    const_values = [
+        instruction.value
+        for instruction in compiled.program.instructions
+        if instruction.opcode is Opcode.CONST
+    ]
+
+    assert const_values == [5]
+    assert compiled.evaluate(np.array([4.0]))[0] == 20.0
+
+
+def test_common_subexpression_elimination():
+    """
+    Structurally equivalent compiled expressions should share one result value.
+
+    This optimization happens during compilation, even though the declarative
+    AST deliberately does not intern equivalent expressions.
+    """
+    x = Parameter(2, name="x").variable()
+
+    a = x + 1
+    b = x + 1
+
+    compiled = compile_ast([a, b])
+
+    assert a is not b
+    assert compiled.program.root_indices[0] == compiled.program.root_indices[1]
+
+    np.testing.assert_array_equal(
+        compiled.evaluate(np.array([5.0])),
+        [6.0, 6.0],
+    )
+
+
+def test_common_subexpression_elimination_does_not_merge_distinct_variables():
+    """
+    CSE must never merge independent Parameter objects merely because their
+    values or metadata happen to match.
+    """
+    a = Parameter(1, name="x").variable()
+    b = Parameter(1, name="x").variable()
+
+    compiled = compile_ast([a, b])
+
+    assert compiled.variables == (a, b)
+    assert compiled.program.root_indices[0] != compiled.program.root_indices[1]
+
+    np.testing.assert_array_equal(
+        compiled.evaluate(np.array([10.0, 20.0])),
+        [10.0, 20.0],
+    )
+
+
+def test_dead_code_removed_after_constant_folding():
+    """
+    Intermediate instructions made obsolete by constant folding should not
+    remain in the optimized program.
+    """
+    compiled = compile_ast([(Literal(2) + 3) * 4])
+
+    # The entire expression should reduce to one constant instruction.
+    assert len(compiled.program.instructions) == 1
+    assert compiled.program.instructions[0].opcode is Opcode.CONST
+    assert compiled.program.instructions[0].value == 20
+
+    np.testing.assert_array_equal(
+        compiled.evaluate(np.array([])),
+        [20.0],
+    )
+
+
+def test_duplicate_roots_are_preserved():
+    """
+    Root deduplication may reuse one computed value, but output multiplicity
+    and ordering must remain unchanged.
+    """
+    x = Parameter(2, name="x").variable()
+    expr = x * 3
+
+    compiled = compile_ast([expr, expr, expr])
+
+    assert compiled.program.root_indices == (
+        compiled.program.root_indices[0],
+        compiled.program.root_indices[0],
+        compiled.program.root_indices[0],
+    )
+
+    np.testing.assert_array_equal(
+        compiled.evaluate(np.array([4.0])),
+        [12.0, 12.0, 12.0],
+    )
+
+
+def test_optimized_program_remains_differentiable():
+    """
+    Constant folding and CSE must not interfere with Autograd differentiation.
+    """
+    x = Parameter(2, name="x").variable()
+
+    # Both constant folding and CSE have opportunities here.
+    a = x * (Literal(2) + 3)
+    b = x * (Literal(2) + 3)
+    compiled = compile_ast([a + b])
+
+    derivative = grad(lambda values: compiled.evaluate(values)[0])
+    result = derivative(anp.array([4.0]))
+
+    np.testing.assert_allclose(result, [10.0])
