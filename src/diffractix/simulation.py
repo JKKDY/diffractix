@@ -179,7 +179,7 @@ class Simulation:
         if params is None:
             params = self.initial_values
         
-        # explode from canconical set to full parameter set
+        # expand from canconical set to full parameter set
         system_state = self.parameter_transform(params)
         wavelength = self.sources.wavelength
         

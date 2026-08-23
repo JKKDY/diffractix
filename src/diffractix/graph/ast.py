@@ -1,49 +1,56 @@
 from __future__ import annotations
-from abc import abstractmethod
+
 import weakref
-from .ops import Op
-import weakref
-import itertools
 import autograd.numpy as np
+
+from .ops import Op
 
 
 Scalar = int | float
 
+
 class Node:
     """
-    Base class for all nodes in the Abstract Syntax Tree.
-    Handles operator overloading to construct the graph dynamically.
+    Base class for all nodes in the parameter AST.
+
+    Nodes use normal Python object identity. Structurally equivalent
+    expressions are not deduplicated during graph construction.
     """
-    _cache = weakref.WeakValueDictionary()
-
-    @staticmethod 
-    def _register(obj):
-        key = obj.canonical_key()
-
-        if key in Node._cache:
-            return Node._cache[key]
-            
-        Node._cache[key] = obj
-        return obj
 
     @staticmethod
-    def _make_constant(value: Scalar) -> Constant:
-        return Node._register(Constant(value))
+    def _make_literal(value: Scalar) -> Literal:
+        if not isinstance(value, (int, float)):
+            raise TypeError(f"Expected numeric scalar, got {type(value)}")
+        return Literal(value)
 
     @staticmethod
-    def _make_binary_op(op: Op, left: Node | Scalar, right: Node | Scalar):
-        if not isinstance(left, Node): left = Node._make_constant(left)
-        if not isinstance(right, Node): right = Node._make_constant(right)
+    def _make_binary_op(
+        op: Op,
+        left: Node | Scalar,
+        right: Node | Scalar,
+    ) -> BinaryOp:
+        if not isinstance(left, Node):
+            left = Node._make_literal(left)
 
-        return Node._register(BinaryOp(op, left, right))
+        if not isinstance(right, Node):
+            right = Node._make_literal(right)
+
+        return BinaryOp(op, left, right)
 
     @staticmethod
-    def _make_unary_op(op: Op, operand: Node | Scalar):
-        if not isinstance(operand, Node): operand = Node._make_constant(operand)
-        return Node._register(UnaryOp(op, operand))
-      
+    def _make_unary_op(
+        op: Op,
+        operand: Node | Scalar,
+    ) -> UnaryOp:
+        if not isinstance(operand, Node):
+            operand = Node._make_literal(operand)
 
-    # UNARY
+        return UnaryOp(op, operand)
+
+    # ----------------
+    # Unary operations
+    # ----------------
+
     def __neg__(self) -> UnaryOp:
         return Node._make_unary_op(Op.NEG, self)
 
@@ -56,345 +63,328 @@ class Node:
     def sigmoid(self) -> UnaryOp:
         return Node._make_unary_op(Op.SIGMOID, self)
 
+    # --------
+    # Addition
+    # --------
 
-    # ADDITION
     def __add__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.ADD, self, other)
 
     def __radd__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.ADD, other, self)
 
+    # -----------
+    # Subtraction
+    # -----------
 
-    # SUBTRACTION
     def __sub__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.SUB, self, other)
 
     def __rsub__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.SUB, other, self)
 
+    # --------------
+    # Multiplication
+    # --------------
 
-    # MULTIPLICATION
     def __mul__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.MUL, self, other)
 
     def __rmul__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.MUL, other, self)
 
+    # -------------
+    # True division
+    # -------------
 
-    # TRUE DIVISION
     def __truediv__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.DIV, self, other)
 
     def __rtruediv__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.DIV, other, self)
 
+    # --------------
+    # Floor division
+    # --------------
 
-    # FLOOR DIVISION 
     def __floordiv__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.FLOORDIV, self, other)
 
     def __rfloordiv__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.FLOORDIV, other, self)
 
+    # ------
+    # Modulo
+    # ------
 
-    # MODULO
     def __mod__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.MOD, self, other)
 
     def __rmod__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.MOD, other, self)
 
+    # -----
+    # Power
+    # -----
 
-    # POWER
     def __pow__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.POW, self, other)
 
     def __rpow__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.POW, other, self)
 
+    # -------
+    # Extrema
+    # -------
 
-    # EXTREMA
     def maximum(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.MAX, self, other)
 
     def minimum(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.MIN, self, other)
 
+    # ----------
+    # Conversion
+    # ----------
+
     def __float__(self):
         if not hasattr(self, "value"):
-            raise Exception(f"self.value not implemented for {self.__class__}")
+            raise TypeError(f"{self.__class__.__name__} does not provide a value")
         return float(self.value)
-
-    @abstractmethod
-    def canonical_key(self) -> tuple:
-        pass
-
-    def __hash__(self):
-        return hash(self.canonical_key())
-
 
 
 class BinaryOp(Node):
-    """
-    Represents an operation taking two operands (e.g., a + b).
-    """
-    __hash__ = Node.__hash__
+    """Expression containing a binary operation such as a + b."""
 
-    def __init__(self, op: Op, left: Node | Scalar, right: Node | Scalar):
+    def __init__(self, op: Op, left: Node, right: Node):
         self.op = op
-        self.left = left 
-        self.right = right 
-        self._left_hash = hash(self.left)
-        self._right_hash = hash(self.right)
+        self.left = left
+        self.right = right
 
     def __repr__(self) -> str:
         return f"({self.left} {self.op.unicode} {self.right})"
 
-    def canonical_key(self):
-        l, r = self.left, self.right
-
-        # ensure that commutative ops match to the same nodes e.g. a + b has the same hash as b + a
-        if self.op.is_commutative and self._left_hash > self._right_hash:
-            l, r = r, l
-
-        return (BinaryOp, self.op, l, r)
+    @property
+    def value(self):
+        return self.op.func(self.left.value, self.right.value)
 
     @property
-    def value(self) -> float:
-        return self.op.func(self.left.value, self.right.value) 
-
-    @property
-    def is_constant(self):
-        return self.left.is_constant and self.right.is_constant
-
-    def __eq__(self, other):
-        return self is other
-
+    def is_variable(self):
+        return self.left.is_variable or self.right.is_variable
 
 
 class UnaryOp(Node):
-    """
-    Represents an operation taking a single operand (e.g., -a).
-    """
-    __hash__ = Node.__hash__
+    """Expression containing a unary operation such as -a."""
 
-    def __init__(self, op: Op, operand: Node | Scalar):
+    def __init__(self, op: Op, operand: Node):
         self.op = op
-        self.operand = operand 
-    
-    def __repr__(self): 
+        self.operand = operand
+
+    def __repr__(self) -> str:
         return f"{self.op.unicode}({self.operand})"
 
-    def canonical_key(self):
-        return (UnaryOp, self.op, self.operand)
+    @property
+    def value(self):
+        return self.op.func(self.operand.value)
 
     @property
-    def value(self) -> float:
-        return self.op.func(self.operand.value) 
-
-    @property
-    def is_constant(self):
-        return self.operand.is_constant
-
-    def __eq__(self, other):
-        return self is other
-
+    def is_variable(self):
+        return self.operand.is_variable
 
 
 class InputNode(Node):
-    __hash__ = Node.__hash__
+    """
+    Stable handle to another AST node.
 
-    def __init__(self, node: Parameter | Constant | Symbol): 
+    The underlying node may be replaced without invalidating expressions
+    that already reference this InputNode.
+    """
+
+    def __init__(self, node: Node | None):
         self.node = node
 
     def __getattr__(self, name):
+        if self.node is None:
+            raise AttributeError(
+                f"InputNode is empty and has no attribute '{name}'"
+            )
         return getattr(self.node, name)
 
     def __setattr__(self, name, value):
-        # If we are changing the 'body' of the handle, do it normally
         if name == "node":
-            super().__setattr__('node', value)
-        else:
-            # Redirect all other writes (e.g., .fixed, .value, .name) to the inner node
-            setattr(self.node, name, value)
+            super().__setattr__("node", value)
+            return
 
-    def __repr__(self): 
+        if self.node is None:
+            raise AttributeError(
+                f"Cannot set '{name}' on an empty InputNode"
+            )
+
+        setattr(self.node, name, value)
+
+    def __repr__(self):
         return f"Input:{self.node}"
 
     @property
-    def is_constant(self):
-        return self.node.is_constant
-
-    def __eq__(self, other):
-        return self is other
-
-    def canonical_key(self):
-        # use default object ID hashing.
-        # this ensures the hash never changes even if we hot-swap the node
-        return (InputNode, id(self))
+    def is_variable(self):
+        return self.node.is_variable if self.node is not None else False
 
 
-class Constant(Node):
-    __hash__ = Node.__hash__
+class Literal(Node):
+    """
+    Immutable numeric literal embedded in an expression.
 
-    def __init__(self, value: float | int):
-        assert isinstance(value, (int, float)), "Constant value must be a number."
+    Example:
+        y = 2 * x
+
+    The value 2 is represented by a Literal rather than a Parameter.
+    """
+
+    def __init__(self, value: Scalar):
+        if not isinstance(value, (int, float)):
+            raise TypeError("Literal value must be numeric.")
+
         self._value = value
-
-    def canonical_key(self):
-        return (Constant, self._value)
-
-    def __repr__(self):
-        return f"Const={self._value:.4g}"
 
     @property
     def value(self):
         return self._value
 
-    @value.setter
-    def value(self, _):
-        raise AttributeError("Constant.value is immutable")
-
     @property
-    def is_constant(self):
-        return True
+    def is_variable(self):
+        return False
 
-    def __eq__(self, other):
-       return isinstance(other, Constant) and self.value == other.value
-
+    def __repr__(self):
+        return f"{self._value:g}"
 
 
 class Parameter(Node):
     """
-    Represents a physical property (d, f, n) of an optical element.
-    It is a Node in the graph that holds a value.
-    
-    State:
-        - value: The current number (float).
-        - fixed: If False, this parameter is added to the Optimizer Vector else if True treat it as a constant
+    Mutable scalar design value.
+
+    Parameters may exist independently or originate from an OpticalElement.
+    A variable Parameter becomes a degree of freedom during compilation.
+    A fixed Parameter remains mutable but is excluded from the optimizer.
     """
 
-    __hash__ = Node.__hash__
-    # Global counter for unique IDs across the session
-    _id_counter = itertools.count()
+    def __init__(
+        self,
+        value: float,
+        name: str | None = None,
+        *,
+        variable: bool = False,
+        min_val: float = -np.inf,
+        max_val: float = np.inf,
+        owner: "OpticalElement | None" = None,
+    ):
+        if min_val > max_val:
+            raise ValueError("min_val must be <= max_val.")
 
+        if value < min_val or value > max_val:
+            raise ValueError(
+                f"Parameter value {value} lies outside bounds "
+                f"[{min_val}, {max_val}]."
+            )
 
-    def __init__(self, value: float, name: str, fixed: bool, *, min_val=-np.inf, max_val=np.inf, owner: "OpticalElement" = None):
-        if value is None:
-            pass
-
-        self.id = next(Parameter._id_counter)
         self.value = float(value)
         self.name = name
-        self.fixed = fixed
+        self._variable = variable
         self.min_val = min_val
         self.max_val = max_val
-        # need a reference to the owner (an optical element) of this parameter to correctly get the name
-        # any non referential methods introduce problems with dataclass and the initialization order of members in OpticalElement
-        if owner: self._owner_ref = weakref.ref(owner) # weakref to avoid any circular dependencies
+        self._owner_ref = weakref.ref(owner) if owner is not None else None
 
-    def bound(self, min_val=-np.inf, max_val=np.inf):
+    @property
+    def is_variable(self) -> bool:
+        return self._variable
+
+    def variable(self):
+        self._variable = True
+        return self
+
+    def fixed(self):
+        self._variable = False
+        return self
+
+    def bound(
+        self,
+        min_val: float = -np.inf,
+        max_val: float = np.inf,
+    ):
+        if min_val > max_val:
+            raise ValueError("min_val must be <= max_val.")
+
+        if self.value < min_val or self.value > max_val:
+            raise ValueError(
+                f"Current value {self.value} lies outside bounds "
+                f"[{min_val}, {max_val}]."
+            )
+
         self.min_val = min_val
         self.max_val = max_val
         return self
 
     @property
     def owner(self):
-        if not hasattr(self, "_owner_ref"):
+        if self._owner_ref is None:
             return None
         return self._owner_ref()
 
-    def canonical_key(self):
-        return (Parameter, self.id)
-    
-    def __eq__(self, other):
-        return self is other
-
     @property
     def full_name(self):
-        """Reconstructs the full name dynamically."""
-        if self.owner is None:
-            # return f"<?>.{self.name}"
-            return f"{self.name}"
-        else:
-            return f"{self.owner.label}.{self.name}"
+        owner = self.owner
+
+        if owner is not None:
+            if self.name is not None:
+                return f"{owner.label}.{self.name}"
+            return owner.label
+
+        return self.name or "<parameter>"
 
     def __repr__(self):
-        return f"{self.full_name}={self.value:.4g}{'[F]' if self.fixed else '[V]'}"
+        status = "V" if self.is_variable else "F"
+        return f"{self.full_name}={self.value:.4g}[{status}]"
+
+
+class SystemVar(Node):
+    """
+    Immutable reference to a value supplied by the System compilation context.
+
+    SystemVars are not optimization variables and do not contain mutable
+    bindings. The compiler resolves them against the current System.
+    """
+
+    def __init__(self, name: str, *, namespace: str = "system"):
+        if not isinstance(name, str) or not name:
+            raise ValueError("SystemVar name must be a non-empty string.")
+
+        self._name = name
+        self._namespace = namespace
 
     @property
-    def is_constant(self):
-        return self.fixed
+    def name(self):
+        return self._name
 
+    @property
+    def namespace(self):
+        return self._namespace
 
-
-
-class Symbol(Node):
-    __hash__ = Node.__hash__
-
-    def __new__(cls, name: str):
-        # we check if this symbol already exists. If yes we return it (deduplication)
-        # the logic here differs from the standard Node._register because we must ensurure that we dont
-        # override any bindings (i.e. set self.taget to None)
-        
-        # check cache
-        key = (cls, name)
-        if key in Node._cache:
-            return Node._cache[key]
-        
-        # create New if missing
-        instance = super().__new__(cls)
-        instance.name = name
-        
-        # and register explicitly
-        Node._cache[key] = instance
-        return instance
-
-    def __init__(self, name:str):
-        if hasattr(self, "_initialized"):
-            return
-
-        self.name = name
-        self._target = None
-        self._initialized = True
-
-    def bind(self, value):
-        # TODO cycle detection
-
-        if isinstance(value, Scalar):
-            self._target = self._make_constant(value)
-        else: # TODO ensure its a node
-            self._target = value
+    @property
+    def is_variable(self):
+        return False
 
     @property
     def value(self):
-        if self._target is None:
-            raise ValueError(f"Symbol '{self.name}' has not been bound to a value yet.")
-        return self._target.value
+        raise RuntimeError(
+            f"{self!r} has no standalone value. "
+            "SystemVars are resolved by System.build()."
+        )
 
-    @value.setter
-    def value(self, v):
-        if self._target is None:
-            raise ValueError(f"Symbol '{self.name}' has not been bound to a value yet.")
-        self._target.value = v
-
-    @property
-    def is_constant(self):
-        if self._target is None: return True # Default assumption until bound
-        return self._target.is_constant
-        
     def __repr__(self):
-        if self._target:
-            return f"Symbol({self.name} -> {self._target.value})"
-        return f"Symbol({self.name} -> ?)"
-    
-    def canonical_key(self):
-        return (Symbol, self.name)
-
-    def __eq__(self, other):
-        if self is other: return True
-        if not isinstance(other, Symbol): return False
-        return self.name == other.name
+        if self.namespace == "system":
+            return f"SystemVar({self.name!r})"
+        return f"SystemVar({self.namespace!r}, {self.name!r})"
 
 
 ASTNode = Node
+
+

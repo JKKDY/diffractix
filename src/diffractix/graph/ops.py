@@ -1,8 +1,7 @@
 from enum import Enum, auto
 import autograd.numpy as np
 from enum import Enum, auto
-import numpy as np
-
+import autograd.numpy as np
 
 class Op(Enum):
     # binary arithmetic
