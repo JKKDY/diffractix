@@ -1,7 +1,7 @@
 from enum import Enum, auto
+
 import autograd.numpy as np
-from enum import Enum, auto
-import autograd.numpy as np
+
 
 class Op(Enum):
     # binary arithmetic
@@ -12,21 +12,24 @@ class Op(Enum):
     FLOORDIV = auto()
     MOD = auto()
     POW = auto()
-    # TODO add log 
-    
+
     # unary arithmetic
     NEG = auto()
     POS = auto()
     ABS = auto()
 
+    # unary functions
+    SIGMOID = auto()
+    EXP = auto()
+    LOG = auto()
+    SQRT = auto()
+
     # binary extrema
     MAX = auto()
     MIN = auto()
 
-   
     def __repr__(self):
         return self.name
-
 
     @property
     def arity(self) -> int:
@@ -34,6 +37,10 @@ class Op(Enum):
             Op.NEG: 1,
             Op.POS: 1,
             Op.ABS: 1,
+            Op.SIGMOID: 1,
+            Op.EXP: 1,
+            Op.LOG: 1,
+            Op.SQRT: 1,
         }.get(self, 2)
 
     @property
@@ -58,6 +65,10 @@ class Op(Enum):
             Op.NEG: "−",
             Op.POS: "+",
             Op.ABS: "|·|",
+            Op.SIGMOID: "σ",
+            Op.EXP: "exp",
+            Op.LOG: "log",
+            Op.SQRT: "√",
             Op.MAX: "max",
             Op.MIN: "min",
         }[self]
@@ -75,7 +86,10 @@ class Op(Enum):
             Op.NEG: np.negative,
             Op.POS: lambda x: x,
             Op.ABS: np.abs,
+            Op.SIGMOID: lambda x: 1.0 / (1.0 + np.exp(-x)),
+            Op.EXP: np.exp,
+            Op.LOG: np.log,
+            Op.SQRT: np.sqrt,
             Op.MAX: np.maximum,
             Op.MIN: np.minimum,
         }[self]
-

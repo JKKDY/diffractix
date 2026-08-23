@@ -1,10 +1,11 @@
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Callable
+from collections.abc import Mapping, Sequence
 
 import autograd.numpy as np
 
-from .ast import Node, Literal, Parameter, SystemVar, InputNode, BinaryOp, UnaryOp
+from .ast import Node, Literal, Parameter, SystemVar, InputNode, BinaryOp, UnaryOp, Scalar
 from .ops import Op
 
 
@@ -32,6 +33,10 @@ class UnsupportedNodeError(ASTError):
     """Raised when an unknown Node subclass is encountered."""
 
 
+
+def describe_node(node: Node) -> str:
+    """Return a non-recursive description of an AST node."""
+    return f"{type(node).__name__}(id={id(node)})"
 
 
 def resolve_system_var(node: SystemVar, context: ASTContext) -> Scalar | Node:
@@ -87,7 +92,7 @@ def walk_ast(roots: Sequence[Node], context: ASTContext | None = None):
 
     def visit(node: Node):
         if node in active:
-            raise ASTCycleError(f"Cycle detected at {node!r}.")
+            raise ASTCycleError(f"Cycle detected at {describe_node(node)}.")
 
         if node in seen:
             return
@@ -104,9 +109,7 @@ def walk_ast(roots: Sequence[Node], context: ASTContext | None = None):
 
     for root in roots:
         if not isinstance(root, Node):
-            raise TypeError(
-                f"AST root must be a Node, got {type(root).__name__}."
-            )
+            raise TypeError(f"AST root must be a Node, got {type(root).__name__}.")
 
         yield from visit(root)
 
@@ -141,7 +144,7 @@ def clone_ast(roots: Sequence[Node], *, preserve_owners: bool = True) -> tuple[N
 
     def clone(node: Node) -> Node:
         if node in active:
-            raise ASTCycleError(f"Cycle detected at {node!r}.")
+            raise ASTCycleError(f"Cycle detected at {describe_node(node)}.")
 
         if node in memo:
             return memo[node]
@@ -183,9 +186,7 @@ def clone_ast(roots: Sequence[Node], *, preserve_owners: bool = True) -> tuple[N
             result = SystemVar(node.name)
 
         else:
-            raise UnsupportedNodeError(
-                f"Unsupported AST node type: {type(node).__name__}"
-            )
+            raise UnsupportedNodeError(f"Unsupported AST node type: {type(node).__name__}")
 
         active.remove(node)
         memo[node] = result

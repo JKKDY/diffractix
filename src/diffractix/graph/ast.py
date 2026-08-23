@@ -50,7 +50,6 @@ class Node:
     # ----------------
     # Unary operations
     # ----------------
-
     def __neg__(self) -> UnaryOp:
         return Node._make_unary_op(Op.NEG, self)
 
@@ -63,10 +62,18 @@ class Node:
     def sigmoid(self) -> UnaryOp:
         return Node._make_unary_op(Op.SIGMOID, self)
 
+    def exp(self) -> UnaryOp:
+        return Node._make_unary_op(Op.EXP, self)
+
+    def log(self) -> UnaryOp:
+        return Node._make_unary_op(Op.LOG, self)
+
+    def sqrt(self) -> UnaryOp:
+        return Node._make_unary_op(Op.SQRT, self)
+
     # --------
     # Addition
     # --------
-
     def __add__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.ADD, self, other)
 
@@ -76,7 +83,6 @@ class Node:
     # -----------
     # Subtraction
     # -----------
-
     def __sub__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.SUB, self, other)
 
@@ -86,7 +92,6 @@ class Node:
     # --------------
     # Multiplication
     # --------------
-
     def __mul__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.MUL, self, other)
 
@@ -96,7 +101,6 @@ class Node:
     # -------------
     # True division
     # -------------
-
     def __truediv__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.DIV, self, other)
 
@@ -106,7 +110,6 @@ class Node:
     # --------------
     # Floor division
     # --------------
-
     def __floordiv__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.FLOORDIV, self, other)
 
@@ -116,7 +119,6 @@ class Node:
     # ------
     # Modulo
     # ------
-
     def __mod__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.MOD, self, other)
 
@@ -126,7 +128,6 @@ class Node:
     # -----
     # Power
     # -----
-
     def __pow__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.POW, self, other)
 
@@ -136,7 +137,6 @@ class Node:
     # -------
     # Extrema
     # -------
-
     def maximum(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.MAX, self, other)
 
@@ -146,7 +146,6 @@ class Node:
     # ----------
     # Conversion
     # ----------
-
     def __float__(self):
         if not hasattr(self, "value"):
             raise TypeError(f"{self.__class__.__name__} does not provide a value")

@@ -15,6 +15,7 @@ from .utils import (
     UnsupportedNodeError,
     collect_variables,
     resolve_system_var,
+    describe_node,
 )
 
 
@@ -86,7 +87,7 @@ def compile_ast(roots: Sequence[Node], context: ASTContext | None = None) -> Com
 
     def compile_node(node: Node) -> int:
         if node in active:
-            raise ASTCycleError(f"Cycle detected at {node!r}.")
+            raise ASTCycleError(f"Cycle detected at {describe_node(node)}.")
 
         if node in slots:
             return slots[node]

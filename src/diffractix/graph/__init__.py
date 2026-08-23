@@ -1,5 +1,6 @@
 from .ast import Node, Literal, Parameter, SystemVar, InputNode
-from .compile import CompiledAST, compile_ast, collect_variables, clone_ast
+from .compile import CompiledAST, compile_ast
+from .utils import collect_variables, clone_ast
 
 __all__ = [
     "Node",
