@@ -1,112 +1,166 @@
+from __future__ import annotations
+
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from enum import Enum, auto
+
 import autograd.numpy as np
-from typing import List, Tuple, Set, Dict, Callable
-from .ast import Node, Parameter, InputNode, Symbol, BinaryOp, UnaryOp, Constant
+
+from .ast import Node, Literal, Parameter, SystemVar, InputNode, BinaryOp, UnaryOp
+from .ops import Op
+from .utils import (
+    ASTContext,
+    ASTCycleError,
+    UnresolvedInputError,
+    UnsupportedNodeError,
+    collect_variables,
+    resolve_system_var,
+)
+
+
+class Opcode(Enum):
+    CONST = auto()
+    VARIABLE = auto()
+    BINARY = auto()
+    UNARY = auto()
 
 
 
-def collect_leaves(roots: List[Node]) -> list[Node]:
-    """
-    Traverses the graph to find unique variable Parameters by finding all (variable) leaves of the AST
-
-    In the context of diffractix the roots are dependent variables (e.g. y in y = x + z) 
-    The leaves are independent variables i.e. the degrees of freedom of the system (x, y in the above case)
-    Note that a variable can be a root as well as a leaf (e.g. a simple input value like Lens.f = 1.0 -> f depends only on "itself") 
-    We also only consider the "variable" leaves i.e. those whose values can be changed (Constants & fixed Parameters are not part of this)
-    """
-    seen = set()
-    leaves = []
-
-    def collect_leaves_impl(node: Node):
-        if node in seen: return
-        else: seen.add(node)
-
-        # source paremter -> a potential leaf
-        if isinstance(node, Parameter):
-            if not node.fixed:
-                leaves.append(node)
-            return  # If fixed, we don't add to theta, but we stop traversing.
-
-        # symbol -> potential leaf but must be bound to a value
-        if isinstance(node, Symbol):
-            if node._target is None: 
-                raise ValueError(f"Symbol {node} is unbounded.")
-            collect_leaves_impl(node._target)
-            return
-
-        # its an input node -> handle indirection
-        if isinstance(node, InputNode):
-            collect_leaves_impl(node.node)
-            return
-
-        # its an operation (Binary/Unary)
-        if hasattr(node, 'left'): collect_leaves_impl(node.left)
-        if hasattr(node, 'right'): collect_leaves_impl(node.right)
-        if hasattr(node, 'operand'): collect_leaves_impl(node.operand)
-    
-    for root in roots:
-        collect_leaves_impl(root)
-
-    return leaves
+@dataclass(frozen=True)
+class ConstInstruction:
+    value: float                  # compiled constant value
+    opcode = Opcode.CONST
 
 
-def compile_parameter_transform(roots: List[Node]) -> Tuple[Callable, np.ndarray, List[Parameter]]:
-    """
-    Compiles the computational graph into a differentiable function P(theta) where theta is the degrees of freedom vector
+@dataclass(frozen=True)
+class VariableInstruction:
+    index: int                    # index into variable values
+    opcode = Opcode.VARIABLE
 
-    Args:
-        roots: A list of AST Nodes (Sinks) that represent the required outputs of the 
-               simulation (e.g., matrix elements, lengths, refractive indices).
 
-    Returns:
-        transform: A function f(theta) -> values. 
-                   - Input: 1D array of parameter values (floats or autograd tracers).
-                   - Output: 1D array corresponding to the evaluated values of 'roots'.
-                   - Side Effect: Updates the .value attribute of the underlying Parameter objects.
-        initial_theta: A numpy array containing the starting values of the variable parameters.
-        variable_params: The ordered list of Parameter objects corresponding to 'initial_theta'.
-    """
-    # variable vector (len = degrees of freedom)
-    variable_params = collect_leaves(roots) 
+@dataclass(frozen=True)
+class BinaryInstruction:
+    op: Op                        # binary operation
+    left_slot: int                # slot of left operand
+    right_slot: int               # slot of right operand
+    opcode = Opcode.BINARY
 
-    # initial values
-    initial_values = np.array([p.value for p in variable_params], dtype=float)
 
-    def transform(theta_in: np.ndarray) -> np.ndarray:
-        assert len(theta_in) == len(variable_params) 
-      
-        # memoization cache to ensure O(N) and prevent re-evaluating shared branches
-        memo =  {p: v for p, v in zip(variable_params, theta_in)}
+@dataclass(frozen=True)
+class UnaryInstruction:
+    op: Op                        # unary operation
+    operand_slot: int             # slot of operand
+    opcode = Opcode.UNARY
 
-        def eval_node(node: Node):
-            # check cache
-            if node in memo: 
-                return memo[node]
-            
-            # compute 
-            if isinstance(node, Parameter):
-                # If it's variable, get from theta. If fixed, use existing .value
-                val = memo.get(node, node.value)
-            
-            elif isinstance(node, BinaryOp):
-                val = node.op.func(eval_node(node.left), eval_node(node.right))
-                
-            elif isinstance(node, UnaryOp):
-                val = node.op.func(eval_node(node.operand))
-                
-            elif isinstance(node, Constant):
-                val = node.value
 
-            elif isinstance(node, (InputNode, Symbol)):
-                # Indirection: Dive deeper
-                target = node.node if isinstance(node, InputNode) else node._target
-                val = eval_node(target)
-            
-            # store & return
-            memo[node] = val
-            return val
+Instruction = (ConstInstruction | VariableInstruction | BinaryInstruction | UnaryInstruction)
 
-        # dispatch evaluation of all roots
-        return np.array([eval_node(r) for r in roots])
 
-    return transform, initial_values, variable_params
 
+@dataclass(frozen=True)
+class CompiledAST:
+    evaluate: Callable[[np.ndarray], np.ndarray]  # variable values -> root values
+    variables: tuple[Parameter, ...]              # ordered variable parameters
+    initial_values: np.ndarray                    # initial variable values
+
+    def __call__(self, variable_values: np.ndarray) -> np.ndarray:
+        return self.evaluate(variable_values)
+
+
+def compile_ast(roots: Sequence[Node], context: ASTContext | None = None) -> CompiledAST:
+    roots = tuple(roots)
+    context = dict(context or {})
+
+    variables = collect_variables(roots, context)
+    variable_indices = {p: i for i, p in enumerate(variables)}
+    initial_values = np.array([p.value for p in variables], dtype=float)
+
+    slots: dict[Node, int] = {}       # compiled slot for each AST node
+    active: set[Node] = set()         # nodes currently being compiled
+    program: list[Instruction] = []   # linear instruction sequence
+
+    def emit(instruction: Instruction) -> int:
+        slot = len(program)
+        program.append(instruction)
+        return slot
+
+    def compile_node(node: Node) -> int:
+        if node in active:
+            raise ASTCycleError(f"Cycle detected at {node!r}.")
+
+        if node in slots:
+            return slots[node]
+
+        active.add(node)
+
+        if isinstance(node, Literal):
+            slot = emit(ConstInstruction(node.value))
+
+        elif isinstance(node, Parameter):
+            if node.is_variable:
+                slot = emit(VariableInstruction(variable_indices[node]))
+            else:
+                slot = emit(ConstInstruction(node.value))
+
+        elif isinstance(node, BinaryOp):
+            left_slot = compile_node(node.left)
+            right_slot = compile_node(node.right)
+            slot = emit(BinaryInstruction(node.op, left_slot, right_slot))
+
+        elif isinstance(node, UnaryOp):
+            operand_slot = compile_node(node.operand)
+            slot = emit(UnaryInstruction(node.op, operand_slot))
+
+        elif isinstance(node, InputNode):
+            if node.node is None:
+                raise UnresolvedInputError("Encountered an empty InputNode.")
+            slot = compile_node(node.node)
+
+        elif isinstance(node, SystemVar):
+            value = resolve_system_var(node, context)
+            slot = compile_node(value) if isinstance(value, Node) else emit(ConstInstruction(value))
+
+        else:
+            raise UnsupportedNodeError(
+                f"Unsupported AST node type: {type(node).__name__}"
+            )
+
+        active.remove(node)
+        slots[node] = slot
+        return slot
+
+    root_slots = tuple(compile_node(root) for root in roots)
+    program = tuple(program)
+
+    def evaluate(variable_values: np.ndarray) -> np.ndarray:
+        if len(variable_values) != len(variables):
+            raise ValueError(
+                f"Expected {len(variables)} variable values, "
+                f"got {len(variable_values)}."
+            )
+
+        values = []
+
+        for instruction in program:
+            if instruction.opcode is Opcode.CONST:
+                values.append(instruction.value)
+
+            elif instruction.opcode is Opcode.VARIABLE:
+                values.append(variable_values[instruction.index])
+
+            elif instruction.opcode is Opcode.BINARY:
+                left = values[instruction.left_slot]
+                right = values[instruction.right_slot]
+                values.append(instruction.op.func(left, right))
+
+            elif instruction.opcode is Opcode.UNARY:
+                operand = values[instruction.operand_slot]
+                values.append(instruction.op.func(operand))
+
+        return np.array([values[slot] for slot in root_slots])
+
+    return CompiledAST(
+        evaluate=evaluate,
+        variables=variables,
+        initial_values=initial_values,
+    )
