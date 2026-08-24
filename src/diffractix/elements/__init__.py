@@ -1,6 +1,6 @@
 # diffractix/elements/__init__.py
 
-from .element import OpticalElement
+from .base import OpticalElement, parameter
 from .space import Space
 from .thin_lens import ThinLens
 from .mirror import Mirror
@@ -10,11 +10,12 @@ from .abcd import ABCD
 
 
 __all__ = [
-    "OpticalElement", 
-    "Space", 
-    "ThinLens", 
-    "Mirror", 
-    "Interface", 
+    "OpticalElement",
+    "parameter",
+    "Space",
+    "ThinLens",
+    "Mirror",
+    "Interface",
     "ABCD",
-    "GaussianAperture"
+    "GaussianAperture",
 ]
