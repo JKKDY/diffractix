@@ -146,6 +146,9 @@ def constant_key(value) -> tuple:
     if isinstance(value, float):
         return float, value.hex()
 
+    if isinstance(value, complex):
+        return complex, value.real.hex(), value.imag.hex()
+
     return type(value), value
 
 

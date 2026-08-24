@@ -1,10 +1,13 @@
 """
 Defines the Mirror element.
 """
+
 from dataclasses import dataclass
+
 import autograd.numpy as np
-from .element import OpticalElement
-from ..graph import Parameter, Constant, Symbol
+
+from .base import OpticalElement
+from ..graph import Node
 
 
 @dataclass(kw_only=True)
@@ -12,30 +15,25 @@ class Mirror(OpticalElement):
     """
     A curved or flat mirror that reflects the beam.
 
-    In a sequential paraxial simulation, we 'unfold' the optical path. 
-    This means the simulation coordinate z continues to increase, but the 
-    mirror applies a phase transformation equivalent to a lens with f = R/2.
+    In a sequential paraxial simulation, the optical path is unfolded so that
+    z continues to increase through the reflection.
 
     Parameters:
-        R (float): Radius of curvature in meters.
-                   R > 0 is concave (converging).
-                   R < 0 is convex (diverging).
-                   R = np.inf is a flat mirror.
+        R: Radius of curvature in meters.
+           R > 0 is concave (converging).
+           R < 0 is convex (diverging).
+           R = inf is flat.
     """
-    R: float | Parameter = np.inf
+
+    R: Node = np.inf
+
+    @property
+    def matrix(self):
+        return (
+            (1.0, 0.0),
+            (-2.0 / self.R, 1.0),
+        )
 
     @property
     def element_length(self):
-        return Constant(0.0)
-
-    def compute_matrix(self, R):
-        """
-        Returns the reflection matrix.
-        Mathematically identical to a thin lens with f = R/2.
-        [[ 1,   0],
-         [-2/R, 1]]
-        """
-        # Avoid division by infinity for flat mirrors
-        power = -2.0 / R if not np.isinf(R) else 0.0
-        return np.array([[1.0, 0.0], [power, 1.0]])
-
+        return 0.0

@@ -6,7 +6,7 @@ import autograd.numpy as np
 from .ops import Op
 
 
-Scalar = int | float
+Scalar = int | float | complex
 
 
 class Node:
@@ -19,7 +19,7 @@ class Node:
 
     @staticmethod
     def _make_literal(value: Scalar) -> Literal:
-        if not isinstance(value, (int, float)):
+        if not isinstance(value, (int, float, complex)):
             raise TypeError(f"Expected numeric scalar, got {type(value)}")
         return Literal(value)
 
@@ -240,7 +240,7 @@ class Literal(Node):
     """
 
     def __init__(self, value: Scalar):
-        if not isinstance(value, (int, float)):
+        if not isinstance(value, (int, float, complex)):
             raise TypeError("Literal value must be numeric.")
 
         self._value = value
@@ -254,7 +254,7 @@ class Literal(Node):
         return False
 
     def __repr__(self):
-        return f"{self._value:g}"
+        return repr(self._value)
 
 
 class Parameter(Node):

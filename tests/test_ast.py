@@ -113,6 +113,22 @@ def test_literal_value_is_immutable():
         x.value = 20
 
 
+def test_complex_literal():
+    value = Literal(2 + 3j)
+
+    assert value.value == 2 + 3j
+    assert not value.is_variable
+
+
+def test_complex_expression():
+    x = Parameter(2.0)
+
+    expr = -1j * x
+
+    assert expr.value == -2j
+
+
+
 # -------------------
 # PARAMETER SEMANTICS
 # -------------------

@@ -1,58 +1,41 @@
 """
-Defines the (Dielectric)Interface element.
+Defines the dielectric Interface element.
 """
+
 from dataclasses import dataclass
+
 import autograd.numpy as np
-from .element import OpticalElement
-from ..graph import Parameter, Constant
+
+from .base import OpticalElement
+from ..graph import Node
+
 
 @dataclass(kw_only=True)
 class Interface(OpticalElement):
     """
-    A distinct boundary between two media with different refractive indices.
-
-    This element applies Snell's Law (in the paraxial limit) to the beam.
-    It changes the beam angle but not its position.
-
-    .. critical::
-        This element is **mandatory** whenever the refractive index changes 
-        between two `Space` elements.
-        
-        If you have `Space(n=1.0)` followed by `Space(n=1.5)`, you **must** insert a `Interface(n1=1.0, n2=1.5)` between them. 
-        Omitting this violates Snell's Law and renders the simulation physically invalid.
+    A boundary between two media with different refractive indices.
 
     Parameters:
-        n1 (float): Refractive index of the incoming medium.
-        n2 (float): Refractive index of the outgoing medium.
-        R (float): Radius of curvature of the interface (default: inf/flat).
-                   R > 0 means the center of curvature is in the +z direction (Convex).
+        n1: Incoming refractive index.
+        n2: Outgoing refractive index.
+        R: Radius of curvature. Infinite radius represents a flat interface.
     """
 
-    n1: float | Parameter
-    n2: float | Parameter
-    R: float | Parameter = np.inf
+    n1: Node
+    n2: Node
+    R: Node = np.inf
+
+    @property
+    def matrix(self):
+        return (
+            (1.0, 0.0),
+            ((self.n1 - self.n2) / (self.R * self.n2), self.n1 / self.n2),
+        )
 
     @property
     def element_length(self):
-        return Constant(0.0) 
+        return 0.0
 
     @property
     def element_refractive_index(self):
-        return self.n2 # The output index is n2
-
-    def compute_matrix(self, n1, n2, R):
-        """
-        Paraxial Snell's Law Matrix:
-        [[ 1,           0      ],
-         [ (n1-n2)/(R*n2), n1/n2 ]]
-        """
-        if np.isinf(R):
-            power_term = 0.0
-        else:
-            power_term = (n1 - n2) / (R * n2)
-            
-        return np.array([
-            [1.0, 0.0],
-            [power_term, n1 / n2]
-        ])
-
+        return self.n2

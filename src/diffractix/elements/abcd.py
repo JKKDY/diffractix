@@ -1,57 +1,65 @@
 """
-Defines the ABCD 'Black Box' element.
+Defines the ABCD black-box element.
 """
-from dataclasses import dataclass, field, InitVar
+
+from dataclasses import InitVar, dataclass
+
 import autograd.numpy as np
-from .element import OpticalElement
-from ..graph import Node, Parameter, Symbol
+
+from .base import OpticalElement
+from ..graph import Node
 
 
 @dataclass(kw_only=True)
 class ABCD(OpticalElement):
     """
-    A black-box optical element defined manually by its matrix.
-    Useful for subsystems, unknown optics, or purely mathematical transformations.
+    A black-box optical element defined by an arbitrary ABCD matrix.
 
-    Usage:
-        el = ABCD(matrix=np.eye(2))           # Option 1: Full Matrix
-        el = ABCD(A=1, B=0.1, C=0, D=1)       # Option 2: Scalars
-        el = ABCD()                           # Option 3: Default Identity
-    
     Parameters:
-        matrix (np.ndarray): The 2x2 ABCD matrix. Overrides A, B, C, D if provided.
-        thickness (float): Physical length added to the layout (default: 0.0).
-        n (float): Refractive index. Optional. if not set will inherit from previous element. If that is not set, defaults to 1.0.
-        A, B, C, D (float): Individual matrix components (optional helpers).
+        A, B, C, D: Matrix coefficients.
+        thickness: Physical length occupied by the element.
+        n: Output refractive index. None means inherit the current medium.
 
+    A complete matrix may alternatively be supplied through matrix_val.
     """
+
     A: Node = 1.0
     B: Node = 0.0
     C: Node = 0.0
     D: Node = 1.0
-    thickness: Node = 0.0 
-    n : Node = None 
 
-    matrix_val: InitVar[np.ndarray] = None
+    thickness: Node = 0.0
+    n: Node | None = None
 
+    matrix_val: InitVar[np.ndarray | None] = None
 
     def __post_init__(self, matrix_val):
-        if matrix_val is not None:
-            self.matrix = np.array(matrix_val)
         super().__post_init__()
+
+        if matrix_val is not None:
+            self.matrix = matrix_val
 
     @property
     def matrix(self):
-        """Getter: Reconstructs matrix from current params."""
-        return np.array([[self.A.value, self.B.value], [self.C.value, self.D.value]])
+        return (
+            (self.A, self.B),
+            (self.C, self.D),
+        )
 
     @matrix.setter
-    def matrix(self, mat: np.ndarray):
-        assert mat.shape == (2,2), f"Mismatched matrix shape. Expected shape=(2,2), got {mat.shape}"
-        self.A = mat[0,0]
-        self.B = mat[0,1]
-        self.C = mat[1,0]
-        self.D = mat[1,1]
+    def matrix(self, value):
+        matrix = np.asarray(value)
+
+        if matrix.shape != (2, 2):
+            raise ValueError(
+                "ABCD matrix must have shape (2, 2), "
+                f"got {matrix.shape}."
+            )
+
+        self.A = matrix[0, 0]
+        self.B = matrix[0, 1]
+        self.C = matrix[1, 0]
+        self.D = matrix[1, 1]
 
     @property
     def element_length(self):
@@ -60,12 +68,3 @@ class ABCD(OpticalElement):
     @property
     def element_refractive_index(self):
         return self.n
-
-    def init_placeholders(self, environment: "Environment"):
-        if isinstance(self.n, PlaceHolder):
-            self.n.value = environment.ambient_n.value
-            self.n.fixed = environment.ambient_n.fixed
-
-    def compute_matrix(self, A, B, C, D, thickness, n):
-        return np.array([[A, B], [C, D]])
-

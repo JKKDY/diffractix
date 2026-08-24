@@ -88,6 +88,15 @@ def test_fixed_parameter_is_compiled_as_constant():
     )
 
 
+def test_complex_expression_compiles():
+    x = Parameter(2.0).variable()
+    compiled = compile_ast([-1j * x])
+
+    result = compiled.evaluate(np.array([3.0]))
+
+    np.testing.assert_allclose(result, [-3j])
+
+
 # ------------------
 # VARIABLE IDENTITY
 # ------------------
