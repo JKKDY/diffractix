@@ -7,6 +7,7 @@ from .mirror import Mirror
 from .interface import Interface
 from .aperture import GaussianAperture
 from .abcd import ABCD
+from .plane import Plane
 
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "Interface",
     "ABCD",
     "GaussianAperture",
+    "Plane",
 ]
