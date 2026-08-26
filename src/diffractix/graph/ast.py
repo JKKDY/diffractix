@@ -7,7 +7,7 @@ from .ops import Op
 
 
 Scalar = int | float | complex
-
+Real = int | float
 
 class Node:
     """
@@ -276,6 +276,9 @@ class Parameter(Node):
         max_val: float = np.inf,
         owner: "OpticalElement | None" = None,
     ):
+        if isinstance(value, bool) or not isinstance(value, Real):
+            raise TypeError("Parameter value must be a real scalar.")
+            
         if min_val > max_val:
             raise ValueError("min_val must be <= max_val.")
 

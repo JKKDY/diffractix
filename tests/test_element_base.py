@@ -48,7 +48,7 @@ def test_node_annotation_declares_graph_input():
     """Node-annotated fields should become stable graph inputs."""
     element = DummyElement(x=2.0)
 
-    assert element.input_names == ("x",)
+    assert element.parameter_names == ("x",)
     assert isinstance(element.x, InputNode)
     assert isinstance(element.x.node, Parameter)
     assert element.x.value == 2.0
@@ -58,7 +58,7 @@ def test_parameter_helper_declares_graph_input():
     """parameter(...) should explicitly declare a graph input."""
     element = ExplicitInputElement()
 
-    assert element.input_names == ("gain",)
+    assert element.parameter_names == ("gain",)
     assert isinstance(element.gain, InputNode)
     assert isinstance(element.gain.node, Parameter)
     assert element.gain.value == 2.0
@@ -170,15 +170,13 @@ def test_existing_expression_tracks_reassigned_handle():
     assert expression.value == 15.0
 
 
-# -----------------------
+# -----------
 # VARIABILITY
-# -----------------------
-
-def test_inputs_are_fixed_by_default():
+# -----------
+def test_parameters_are_fixed_by_default():
     element = DummyElement(x=1.0)
 
     assert not element.x.node.is_variable
-    assert element.variable_input_names == ()
 
 
 def test_variable_and_fixed_toggle_direct_parameter():
@@ -186,11 +184,9 @@ def test_variable_and_fixed_toggle_direct_parameter():
 
     assert element.variable() is element
     assert element.x.node.is_variable
-    assert element.variable_input_names == ("x",)
 
     assert element.fixed() is element
     assert not element.x.node.is_variable
-    assert element.variable_input_names == ()
 
 
 def test_named_variable_selection():
@@ -213,13 +209,10 @@ def test_named_variable_selection():
 
     assert not element.x.node.is_variable
     assert element.y.node.is_variable
-    assert element.variable_input_names == ("y",)
 
 
-def test_named_expression_input_cannot_be_marked_variable():
-    """
-    A derived input is not itself an independent optimization Parameter.
-    """
+def test_named_expression_parameter_cannot_be_marked_variable():
+    """A derived parameter is not itself an independent optimization Parameter."""
     x = Parameter(2.0, name="x")
     element = DummyElement(x=2 * x)
 
@@ -227,7 +220,7 @@ def test_named_expression_input_cannot_be_marked_variable():
         element.variable("x")
 
 
-def test_unknown_input_name_is_rejected():
+def test_unknown_parameter_name_is_rejected():
     element = DummyElement(x=1.0)
 
     with pytest.raises(ValueError):

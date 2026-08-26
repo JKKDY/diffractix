@@ -43,7 +43,7 @@ def evaluate_matrix(element, context=None):
 def test_thin_lens_declaration():
     lens = ThinLens(f=0.1, label="Objective")
 
-    assert lens.input_names == ("f",)
+    assert lens.parameter_names == ("f",)
     assert lens.label == "Objective"
     assert isinstance(lens.f, InputNode)
     assert isinstance(lens.f.node, Parameter)
@@ -86,7 +86,7 @@ def test_thin_lens_matrix_tracks_input_handle():
 def test_space_declaration():
     space = Space(d=10.0, n=1.5, label="GlassBlock")
 
-    assert space.input_names == ("d", "n")
+    assert space.parameter_names == ("d", "n")
     assert isinstance(space.d, InputNode)
     assert isinstance(space.n, InputNode)
 
@@ -136,7 +136,7 @@ def test_space_refractive_index_does_not_affect_matrix():
 def test_mirror_declaration():
     mirror = Mirror(R=0.5, label="M1")
 
-    assert mirror.input_names == ("R",)
+    assert mirror.parameter_names == ("R",)
     assert mirror.R.value == 0.5
     assert mirror.element_length == 0.0
     assert mirror.element_refractive_index is None
@@ -168,7 +168,7 @@ def test_interface_declaration():
         label="FrontSurface",
     )
 
-    assert interface.input_names == ("n1", "n2", "R")
+    assert interface.parameter_names == ("n1", "n2", "R")
     assert interface.element_length == 0.0
     assert interface.element_refractive_index is interface.n2
 
@@ -222,7 +222,7 @@ def test_abcd_declaration():
         label="Relay",
     )
 
-    assert element.input_names == (
+    assert element.parameter_names == (
         "A",
         "B",
         "C",
@@ -350,7 +350,7 @@ def test_abcd_refractive_index_can_be_context_dependent():
 def test_gaussian_aperture_declaration():
     aperture = GaussianAperture(a=1e-3)
 
-    assert aperture.input_names == ("a", "wavelength")
+    assert aperture.parameter_names == ("a", "wavelength")
     assert aperture.a.value == 1e-3
 
     assert isinstance(aperture.wavelength, InputNode)
