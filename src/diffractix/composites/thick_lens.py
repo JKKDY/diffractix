@@ -1,33 +1,35 @@
 """
-Defines the Thick Lens element.
+Defines the Thick Lens composite element.
 """
 
 import autograd.numpy as np
-from .sequence import ElementSequence
+
+from .sequence import CompositeElement
 from ..elements.space import Space
 from ..elements.interface import Interface
+from ..graph import Node
 
-class ThickLens(ElementSequence):
+
+class ThickLens(CompositeElement):
     """
     A physical lens with thickness d, index n, and surface radii R1, R2.
     """
-    def __init__(self, d: float, n: float, R1: float = np.inf, R2: float = np.inf, 
+
+    d: Node
+    n: Node
+    R1: Node
+    R2: Node
+
+    def __init__(self, d: float, n: float, R1: float = np.inf, R2: float = np.inf,
                  n_ambient: float = 1.0, label: str = "ThickLens"):
-        
-        # A thick lens is modeled as two interfaces separated by a space
-        front = Interface(n1=n_ambient, n2=n, R=R1, label=f"{label}_front")
-        body  = Space(d=d, n=n, label=f"{label}_body")
-        back  = Interface(n1=n, n2=n_ambient, R=R2, label=f"{label}_back")
-        
-        elements = [front, body, back]
+        self.d = d
+        self.n = n
+        self.R1 = R1
+        self.R2 = R2
+        self.label = label
 
-        # Define Aliases 
-        # e.g. when user says .variable('n'), we update it in all 3 elements places.
-        aliases = {
-            'R1': [(0, 'R')],
-            'R2': [(2, 'R')],
-            'd':  [(1, 'd')],
-            'n':  [(0, 'n2'), (1, 'n'), (2, 'n1')]
-        }
+        self.front = Interface(n1=n_ambient, n2=self.n, R=self.R1, label=f"{label}_front")
+        self.body = Space(d=self.d, n=self.n, label=f"{label}_body")
+        self.back = Interface(n1=self.n, n2=n_ambient, R=self.R2, label=f"{label}_back")
 
-        super().__init__(elements, aliases)
+        super().__init__()

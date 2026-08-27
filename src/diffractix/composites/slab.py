@@ -1,26 +1,28 @@
 """
-Defines the Slab factory function.
+Defines the Slab composite element.
 """
-import autograd.numpy as np
-from .sequence import ElementSequence
+
+from .sequence import CompositeElement
 from ..elements.space import Space
 from ..elements.interface import Interface
+from ..graph import Node
 
-class Slab(ElementSequence):
+
+class Slab(CompositeElement):
     """
     A sequence representing a physical block of material (Window, Filter, Crystal).
     """
+
+    d: Node
+    n: Node
+
     def __init__(self, d: float, n: float, n_ambient: float = 1.0, label: str = "Slab"):
-        
-        front = Interface(n1=n_ambient, n2=n, R=np.inf, label=f"{label}_In")
-        body  = Space(d=d, n=n, label=f"{label}_Body")
-        back  = Interface(n1=n, n2=n_ambient, R=np.inf, label=f"{label}_Out")
+        self.d = d
+        self.n = n
+        self.label = label
 
-        elements = [front, body, back]
+        self.front = Interface(n1=n_ambient, n2=self.n, label=f"{label}_In")
+        self.body = Space(d=self.d, n=self.n, label=f"{label}_Body")
+        self.back = Interface(n1=self.n, n2=n_ambient, label=f"{label}_Out")
 
-        aliases = {
-            'd': [(1, 'd')],
-            'n': [(0, 'n2'), (1, 'n'), (2, 'n1')]
-        }
-        
-        super().__init__(elements, aliases)
+        super().__init__()
