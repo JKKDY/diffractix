@@ -1,6 +1,6 @@
 import pytest
 
-from diffractix.graph.ast import (
+from diffractix.graph.node import (
     Node,
     Parameter,
     SystemVar,

@@ -24,11 +24,7 @@ class Node:
         return Literal(value)
 
     @staticmethod
-    def _make_binary_op(
-        op: Op,
-        left: Node | Scalar,
-        right: Node | Scalar,
-    ) -> BinaryOp:
+    def _make_binary_op(op: Op, left: Node | Scalar, right: Node | Scalar) -> BinaryOp:
         if not isinstance(left, Node):
             left = Node._make_literal(left)
 
@@ -38,10 +34,7 @@ class Node:
         return BinaryOp(op, left, right)
 
     @staticmethod
-    def _make_unary_op(
-        op: Op,
-        operand: Node | Scalar,
-    ) -> UnaryOp:
+    def _make_unary_op(op: Op, operand: Node | Scalar) -> UnaryOp:
         if not isinstance(operand, Node):
             operand = Node._make_literal(operand)
 
@@ -386,7 +379,5 @@ class SystemVar(Node):
             return f"SystemVar({self.name!r})"
         return f"SystemVar({self.namespace!r}, {self.name!r})"
 
-
-ASTNode = Node
 
 

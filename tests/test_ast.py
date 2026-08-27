@@ -1,7 +1,7 @@
 import pytest
 import autograd.numpy as np
 
-from diffractix.graph.ast import (
+from diffractix.graph.node import (
     Literal,
     Parameter,
     SystemVar,

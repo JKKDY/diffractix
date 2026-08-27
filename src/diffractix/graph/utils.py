@@ -5,7 +5,7 @@ from collections.abc import Mapping, Sequence
 
 import autograd.numpy as np
 
-from .ast import Node, Literal, Parameter, SystemVar, InputNode, BinaryOp, UnaryOp, Scalar
+from .node import Node, Literal, Parameter, SystemVar, InputNode, BinaryOp, UnaryOp, Scalar
 from .ops import Op
 
 

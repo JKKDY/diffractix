@@ -3,7 +3,7 @@ import pytest
 from autograd import grad
 import autograd.numpy as anp
 
-from diffractix.graph.ast import Literal, Parameter, SystemVar, InputNode
+from diffractix.graph.node import Literal, Parameter, SystemVar, InputNode
 from diffractix.graph.compile import CompiledAST, compile_ast, Opcode
 from diffractix.graph.utils import (
     ASTCycleError,

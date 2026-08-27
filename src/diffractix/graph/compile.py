@@ -6,7 +6,7 @@ from enum import Enum, auto
 
 import autograd.numpy as np
 
-from .ast import (
+from .node import (
     Node,
     Literal,
     Parameter,

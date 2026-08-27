@@ -1,4 +1,4 @@
-from .ast import Node, Literal, Parameter, SystemVar, InputNode
+from .node import Node, Literal, Parameter, SystemVar, InputNode
 from .compile import CompiledAST, compile_ast
 from .utils import collect_variables, clone_ast
 
