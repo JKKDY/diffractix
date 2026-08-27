@@ -6,7 +6,7 @@ from dataclasses import InitVar, dataclass
 
 import autograd.numpy as np
 
-from .base import OpticalElement
+from .element import OpticalElement
 from ..graph import Node
 
 

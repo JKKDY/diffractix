@@ -4,7 +4,7 @@ Defines the Plane element.
 
 from dataclasses import dataclass
 
-from .base import OpticalElement
+from .element import OpticalElement
 
 
 @dataclass(kw_only=True)

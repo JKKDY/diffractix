@@ -4,7 +4,7 @@ Defines the Thin Lens element.
 
 from dataclasses import dataclass
 
-from .base import OpticalElement
+from .element import OpticalElement
 from ..graph import Node
 
 

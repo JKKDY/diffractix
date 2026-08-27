@@ -2,7 +2,7 @@ import pytest
 
 from dataclasses import dataclass
 
-from diffractix.elements.base import OpticalElement, parameter
+from diffractix.elements.element import OpticalElement, parameter
 from diffractix.graph import Node, Parameter, InputNode
 
 
