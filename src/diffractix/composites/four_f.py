@@ -1,36 +1,31 @@
 """
-Defines the 4f System composite element.
+Defines the Slab composite element.
 """
 
 from .sequence import CompositeElement
 from ..elements.space import Space
-from ..elements.thin_lens import ThinLens
+from ..elements.interface import Interface
 from ..graph import Node
+from ..core.system_vars import AMBIENT_N
 
 
-class FourF(CompositeElement):
+class Slab(CompositeElement):
     """
-    A standard 4f optical relay/correlator system consisting of two lenses and appropriate spacing.
-
-    Layout:
-        Space(f1) -> Lens1(f1) -> Space(f1 + f2) -> Lens2(f2) -> Space(f2)
-
-    This setup ensures that the input plane is Fourier transformed at the mid-plane
-    and imaged (inverted) at the output plane.
+    A sequence representing a physical block of material (Window, Filter, Crystal).
     """
 
-    f1: Node
-    f2: Node
+    d: Node
+    n: Node
+    n_ambient: Node
 
-    def __init__(self, f1: float, f2: float, label: str = "4f_System"):
-        self.f1 = f1
-        self.f2 = f2
+    def __init__(self, d: float, n: float, n_ambient: float | Node = AMBIENT_N, label: str = "Slab"):
+        self.d = d
+        self.n = n
+        self.n_ambient = n_ambient
         self.label = label
 
-        self.input_space = Space(d=self.f1, label=f"{label}_In_Drift")
-        self.lens1 = ThinLens(f=self.f1, label=f"{label}_L1")
-        self.fourier_space = Space(d=self.f1 + self.f2, label=f"{label}_Fourier_Drift")
-        self.lens2 = ThinLens(f=self.f2, label=f"{label}_L2")
-        self.output_space = Space(d=self.f2, label=f"{label}_Out_Drift")
+        self.front = Interface(n1=self.n_ambient, n2=self.n, label=f"{label}_In")
+        self.body = Space(d=self.d, n=self.n, label=f"{label}_Body")
+        self.back = Interface(n1=self.n, n2=self.n_ambient, label=f"{label}_Out")
 
         super().__init__()

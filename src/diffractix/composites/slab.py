@@ -6,6 +6,7 @@ from .sequence import CompositeElement
 from ..elements.space import Space
 from ..elements.interface import Interface
 from ..graph import Node
+from ..core.system_vars import AMBIENT_N
 
 
 class Slab(CompositeElement):
@@ -16,7 +17,7 @@ class Slab(CompositeElement):
     d: Node
     n: Node
 
-    def __init__(self, d: float, n: float, n_ambient: float = 1.0, label: str = "Slab"):
+    def __init__(self, d: float, n: float, n_ambient: float | Node = AMBIENT_N, label: str = "Slab"):
         self.d = d
         self.n = n
         self.label = label

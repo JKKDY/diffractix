@@ -8,6 +8,7 @@ from .sequence import CompositeElement
 from ..elements.space import Space
 from ..elements.interface import Interface
 from ..graph import Node
+from ..core.system_vars import AMBIENT_N
 
 
 class ThickLens(CompositeElement):
@@ -19,17 +20,19 @@ class ThickLens(CompositeElement):
     n: Node
     R1: Node
     R2: Node
+    n_ambient: Node
 
     def __init__(self, d: float, n: float, R1: float = np.inf, R2: float = np.inf,
-                 n_ambient: float = 1.0, label: str = "ThickLens"):
+                 n_ambient: float | Node = AMBIENT_N, label: str = "ThickLens"):
         self.d = d
         self.n = n
         self.R1 = R1
         self.R2 = R2
+        self.n_ambient = n_ambient
         self.label = label
 
-        self.front = Interface(n1=n_ambient, n2=self.n, R=self.R1, label=f"{label}_front")
+        self.front = Interface(n1=self.n_ambient, n2=self.n, R=self.R1, label=f"{label}_front")
         self.body = Space(d=self.d, n=self.n, label=f"{label}_body")
-        self.back = Interface(n1=self.n, n2=n_ambient, R=self.R2, label=f"{label}_back")
+        self.back = Interface(n1=self.n, n2=self.n_ambient, R=self.R2, label=f"{label}_back")
 
         super().__init__()
