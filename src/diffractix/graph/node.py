@@ -27,17 +27,14 @@ class Node:
     def _make_binary_op(op: Op, left: Node | Scalar, right: Node | Scalar) -> BinaryOp:
         if not isinstance(left, Node):
             left = Node._make_literal(left)
-
         if not isinstance(right, Node):
             right = Node._make_literal(right)
-
         return BinaryOp(op, left, right)
 
     @staticmethod
     def _make_unary_op(op: Op, operand: Node | Scalar) -> UnaryOp:
         if not isinstance(operand, Node):
             operand = Node._make_literal(operand)
-
         return UnaryOp(op, operand)
 
     # ----------------
@@ -63,6 +60,24 @@ class Node:
 
     def sqrt(self) -> UnaryOp:
         return Node._make_unary_op(Op.SQRT, self)
+
+    def sin(self) -> UnaryOp:
+        return Node._make_unary_op(Op.SIN, self)
+
+    def cos(self) -> UnaryOp:
+        return Node._make_unary_op(Op.COS, self)
+
+    def tan(self) -> UnaryOp:
+        return Node._make_unary_op(Op.TAN, self)
+
+    def sinh(self) -> UnaryOp:
+        return Node._make_unary_op(Op.SINH, self)
+
+    def cosh(self) -> UnaryOp:
+        return Node._make_unary_op(Op.COSH, self)
+
+    def tanh(self) -> UnaryOp:
+        return Node._make_unary_op(Op.TANH, self)
 
     # --------
     # Addition
@@ -99,24 +114,6 @@ class Node:
 
     def __rtruediv__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.DIV, other, self)
-
-    # --------------
-    # Floor division
-    # --------------
-    def __floordiv__(self, other: Node | Scalar) -> BinaryOp:
-        return Node._make_binary_op(Op.FLOORDIV, self, other)
-
-    def __rfloordiv__(self, other: Node | Scalar) -> BinaryOp:
-        return Node._make_binary_op(Op.FLOORDIV, other, self)
-
-    # ------
-    # Modulo
-    # ------
-    def __mod__(self, other: Node | Scalar) -> BinaryOp:
-        return Node._make_binary_op(Op.MOD, self, other)
-
-    def __rmod__(self, other: Node | Scalar) -> BinaryOp:
-        return Node._make_binary_op(Op.MOD, other, self)
 
     # -----
     # Power

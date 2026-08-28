@@ -23,8 +23,6 @@ def test_literal_math():
     assert (a - b).value == 5
     assert (a * b).value == 50
     assert (a / b).value == 2
-    assert (a // b).value == 2
-    assert (a % b).value == 0
     assert (a ** 2).value == 100
     assert a.maximum(b).value == 10
     assert a.minimum(b).value == 5
@@ -38,8 +36,6 @@ def test_reverse_scalar_math():
     assert (10 - x).value == 6
     assert (3 * x).value == 12
     assert (20 / x).value == 5
-    assert (17 // x).value == 4
-    assert (17 % x).value == 1
     assert (2 ** x).value == 16
 
 

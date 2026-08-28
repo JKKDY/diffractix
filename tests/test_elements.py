@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 
 from diffractix.elements import (
@@ -7,6 +8,7 @@ from diffractix.elements import (
     Interface,
     ABCD,
     GaussianAperture,
+    GRIN
 )
 from diffractix.graph import (
     Node,
@@ -381,3 +383,41 @@ def test_gaussian_aperture_matrix():
     ])
 
     np.testing.assert_allclose(matrix, expected)
+
+
+# ----
+# GRIN
+# ----
+
+def test_grin_matrix():
+    d = 0.02
+    g = 10.0
+    element = GRIN(d=d, g=g, n=1.5)
+
+    matrix = evaluate_matrix(element)
+
+    phase = g * d
+    expected = np.array([
+        [np.cos(phase), np.sin(phase) / g],
+        [-g * np.sin(phase), np.cos(phase)],
+    ])
+
+    np.testing.assert_allclose(matrix, expected)
+
+
+def test_grin_element_length():
+    element = GRIN(d=0.02, g=10.0, n=1.5)
+
+    assert element.element_length.value == pytest.approx(0.02)
+
+
+def test_grin_refractive_index():
+    element = GRIN(d=0.02, g=10.0, n=1.5)
+
+    assert element.element_refractive_index.value == pytest.approx(1.5)
+
+
+def test_grin_parameters():
+    element = GRIN(d=0.02, g=10.0, n=1.5)
+
+    assert element.parameter_names == ("d", "g", "n")

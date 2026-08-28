@@ -10,8 +10,6 @@ class Op(Enum):
     SUB = auto()
     MUL = auto()
     DIV = auto()
-    FLOORDIV = auto()
-    MOD = auto()
     POW = auto()
 
     # unary arithmetic
@@ -24,6 +22,12 @@ class Op(Enum):
     EXP = auto()
     LOG = auto()
     SQRT = auto()
+    SIN = auto()
+    COS = auto()
+    TAN = auto()
+    SINH = auto()
+    COSH = auto()
+    TANH = auto()
 
     # binary extrema
     MAX = auto()
@@ -54,8 +58,6 @@ OP_ARITY = {
     Op.SUB: 2,
     Op.MUL: 2,
     Op.DIV: 2,
-    Op.FLOORDIV: 2,
-    Op.MOD: 2,
     Op.POW: 2,
     Op.NEG: 1,
     Op.POS: 1,
@@ -64,6 +66,12 @@ OP_ARITY = {
     Op.EXP: 1,
     Op.LOG: 1,
     Op.SQRT: 1,
+    Op.SIN: 1,
+    Op.COS: 1,
+    Op.TAN: 1,
+    Op.SINH: 1,
+    Op.COSH: 1,
+    Op.TANH: 1,
     Op.MAX: 2,
     Op.MIN: 2,
 }
@@ -82,8 +90,6 @@ OP_UNICODE = {
     Op.SUB: "−",
     Op.MUL: "×",
     Op.DIV: "÷",
-    Op.FLOORDIV: "⌊÷⌋",
-    Op.MOD: "mod",
     Op.POW: "^",
     Op.NEG: "−",
     Op.POS: "+",
@@ -92,6 +98,12 @@ OP_UNICODE = {
     Op.EXP: "exp",
     Op.LOG: "log",
     Op.SQRT: "√",
+    Op.SIN: "sin",
+    Op.COS: "cos",
+    Op.TAN: "tan",
+    Op.SINH: "sinh",
+    Op.COSH: "cosh",
+    Op.TANH: "tanh",
     Op.MAX: "max",
     Op.MIN: "min",
 }
@@ -102,8 +114,6 @@ OP_FUNCTIONS = {
     Op.SUB: np.subtract,
     Op.MUL: np.multiply,
     Op.DIV: np.divide,
-    Op.FLOORDIV: np.floor_divide,
-    Op.MOD: np.mod,
     Op.POW: np.power,
     Op.NEG: np.negative,
     Op.POS: lambda x: x,
@@ -112,6 +122,12 @@ OP_FUNCTIONS = {
     Op.EXP: np.exp,
     Op.LOG: np.log,
     Op.SQRT: np.sqrt,
+    Op.SIN: np.sin,
+    Op.COS: np.cos,
+    Op.TAN: np.tan,
+    Op.SINH: np.sinh,
+    Op.COSH: np.cosh,
+    Op.TANH: np.tanh,
     Op.MAX: np.maximum,
     Op.MIN: np.minimum,
 }

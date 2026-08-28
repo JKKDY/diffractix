@@ -8,6 +8,7 @@ from .interface import Interface
 from .aperture import GaussianAperture
 from .abcd import ABCD
 from .plane import Plane
+from .grin import GRIN
 
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "ABCD",
     "GaussianAperture",
     "Plane",
+    "GRIN"
 ]
