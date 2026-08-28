@@ -5,7 +5,7 @@ import cmath
 
 
 @dataclass
-class GaussianBeam:
+class GaussianBeam(ParaxialState):
     """
     Represents a Gaussian Beam at a specific point in space and medium.
 
@@ -17,6 +17,15 @@ class GaussianBeam:
     q: complex
     wavelength: float
     n: float
+
+    def propagate(self, A, B, C, D, n) -> 'GaussianBeam':
+        q = (A * self.q + B) / (C * self.q + D)
+
+        return GaussianBeam(
+            q=q,
+            wavelength=self.wavelength,
+            n=n,
+        )
 
 
     #-----------

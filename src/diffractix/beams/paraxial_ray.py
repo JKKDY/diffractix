@@ -4,7 +4,7 @@ import autograd.numpy as np
 
 
 @dataclass
-class ParaxialRay:
+class ParaxialRay(ParaxialState):
     """
     Represents a paraxial ray at a specific point in space and medium.
 
@@ -16,6 +16,16 @@ class ParaxialRay:
     x: float
     theta: float
     n: float
+
+    def propagate(self, A, B, C, D, n) -> 'ParaxialRay':
+        x = A * self.x + B * self.theta
+        theta = C * self.x + D * self.theta
+
+        return ParaxialRay(
+            x=x,
+            theta=theta,
+            n=n,
+        )
 
     @property
     def vector(self):
