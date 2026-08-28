@@ -2,7 +2,7 @@
 Defines the Slab composite element.
 """
 
-from .sequence import CompositeElement
+from .composite import CompositeElement
 from ..elements.space import Space
 from ..elements.interface import Interface
 from ..graph import Node
@@ -16,14 +16,16 @@ class Slab(CompositeElement):
 
     d: Node
     n: Node
+    n_ambient: Node
 
     def __init__(self, d: float, n: float, n_ambient: float | Node = AMBIENT_N, label: str = "Slab"):
         self.d = d
         self.n = n
+        self.n_ambient = n_ambient
         self.label = label
 
-        self.front = Interface(n1=n_ambient, n2=self.n, label=f"{label}_In")
+        self.front = Interface(n1=self.n_ambient, n2=self.n, label=f"{label}_In")
         self.body = Space(d=self.d, n=self.n, label=f"{label}_Body")
-        self.back = Interface(n1=self.n, n2=n_ambient, label=f"{label}_Out")
+        self.back = Interface(n1=self.n, n2=self.n_ambient, label=f"{label}_Out")
 
         super().__init__()

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, fields
 from numbers import Real
 from typing import Any, ClassVar, get_type_hints
@@ -22,7 +22,7 @@ def parameter(default=None):
 
 
 @dataclass(eq=False, kw_only=True)
-class OpticalElement(ElementBase):
+class OpticalElement(ElementBase, ABC):
     """
     Base class for declarative optical elements.
 

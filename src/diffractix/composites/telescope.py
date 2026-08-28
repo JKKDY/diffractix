@@ -2,7 +2,7 @@
 Defines the Telescope composite element.
 """
 
-from .sequence import CompositeElement
+from .composite import CompositeElement
 from ..elements.space import Space
 from ..elements.thin_lens import ThinLens
 from ..graph import Node

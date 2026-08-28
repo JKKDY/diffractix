@@ -1,93 +1,62 @@
 import pytest
 
-from dataclasses import dataclass
-
-from diffractix.elements.element import OpticalElement, parameter
-from diffractix.graph import Node, Parameter, InputNode
+from diffractix.elements.base import ElementBase
+from diffractix.graph import Parameter, InputNode
 
 
-@dataclass(kw_only=True)
-class DummyElement(OpticalElement):
-    x: Node
-    metadata: str = "test"
+class DummyElement(ElementBase):
 
-    @property
-    def matrix(self):
-        return (
-            (1.0, self.x),
-            (0.0, 1.0),
-        )
+    def __init__(self, x):
+        self.x = x
 
-    @property
-    def element_length(self):
-        return self.x
+    @classmethod
+    def _get_parameter_names(cls):
+        return ("x",)
 
 
-@dataclass(kw_only=True)
-class ExplicitInputElement(OpticalElement):
-    gain: float = parameter(2.0)
-    metadata: str = "test"
+class TwoParameterElement(ElementBase):
 
-    @property
-    def matrix(self):
-        return (
-            (self.gain, 0.0),
-            (0.0, 1.0),
-        )
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
 
-    @property
-    def element_length(self):
-        return 0.0
+    @classmethod
+    def _get_parameter_names(cls):
+        return ("x", "y")
 
 
-# -----------------------
-# INPUT DECLARATION
-# -----------------------
+# ----------------
+# PARAMETER ACCESS
+# ----------------
 
-def test_node_annotation_declares_graph_input():
-    """Node-annotated fields should become stable graph inputs."""
+def test_parameter_names():
     element = DummyElement(x=2.0)
 
     assert element.parameter_names == ("x",)
-    assert isinstance(element.x, InputNode)
-    assert isinstance(element.x.node, Parameter)
-    assert element.x.value == 2.0
 
 
-def test_parameter_helper_declares_graph_input():
-    """parameter(...) should explicitly declare a graph input."""
-    element = ExplicitInputElement()
+def test_parameters_returns_stable_handles():
+    element = TwoParameterElement(x=1.0, y=2.0)
 
-    assert element.parameter_names == ("gain",)
-    assert isinstance(element.gain, InputNode)
-    assert isinstance(element.gain.node, Parameter)
-    assert element.gain.value == 2.0
+    assert element.parameters == (element.x, element.y)
+    assert all(isinstance(handle, InputNode) for handle in element.parameters)
 
 
-def test_ordinary_fields_remain_ordinary_python_values():
-    """Fields that are not graph inputs should not be wrapped."""
-    element = DummyElement(x=1.0, metadata="hello")
+# --------------------
+# PARAMETER ASSIGNMENT
+# --------------------
 
-    assert element.metadata == "hello"
-    assert not isinstance(element.metadata, InputNode)
-
-
-# -----------------------
-# INPUT TARGETS
-# -----------------------
-
-def test_scalar_input_creates_element_owned_parameter():
-    """Raw scalar inputs should create Parameters local to the element."""
+def test_scalar_creates_element_owned_parameter():
     element = DummyElement(x=3.0)
 
+    assert isinstance(element.x, InputNode)
     assert isinstance(element.x.node, Parameter)
     assert element.x.node.owner is element
     assert element.x.node.name == "x"
-    assert not element.x.node.is_variable
+    assert element.x.value == 3.0
 
 
 def test_existing_parameter_preserves_identity_and_owner():
-    """Externally created Parameters should be referenced rather than adopted."""
     parameter = Parameter(3.0, name="shared")
     element = DummyElement(x=parameter)
 
@@ -95,43 +64,36 @@ def test_existing_parameter_preserves_identity_and_owner():
     assert parameter.owner is None
 
 
-def test_expression_input_preserves_expression_identity():
-    """Element inputs may directly reference derived AST expressions."""
+def test_expression_preserves_identity():
     x = Parameter(2.0, name="x")
     expression = 3 * x
-
     element = DummyElement(x=expression)
 
     assert element.x.node is expression
 
 
 def test_none_creates_empty_input_handle():
-    """None should represent an unresolved graph-input socket."""
-
-    @dataclass(kw_only=True)
-    class OptionalInputElement(OpticalElement):
-        x: Node | None = None
-
-        @property
-        def matrix(self):
-            return ((1.0, 0.0), (0.0, 1.0))
-
-        @property
-        def element_length(self):
-            return 0.0
-
-    element = OptionalInputElement()
+    element = DummyElement(x=None)
 
     assert isinstance(element.x, InputNode)
     assert element.x.node is None
 
 
-# -----------------------
+def test_invalid_parameter_value_is_rejected():
+    with pytest.raises(TypeError):
+        DummyElement(x="invalid")
+
+
+def test_bool_parameter_value_is_rejected():
+    with pytest.raises(TypeError):
+        DummyElement(x=True)
+
+
+# ----------------
 # HANDLE STABILITY
-# -----------------------
+# ----------------
 
 def test_scalar_reassignment_preserves_input_handle():
-    """Reassignment should replace the target without replacing the handle."""
     element = DummyElement(x=1.0)
     handle = element.x
 
@@ -144,11 +106,10 @@ def test_scalar_reassignment_preserves_input_handle():
 
 
 def test_node_reassignment_preserves_input_handle():
-    """Existing Nodes should be hot-swappable behind the same handle."""
     element = DummyElement(x=1.0)
     handle = element.x
-
     external = Parameter(4.0, name="external")
+
     element.x = external
 
     assert element.x is handle
@@ -156,10 +117,6 @@ def test_node_reassignment_preserves_input_handle():
 
 
 def test_existing_expression_tracks_reassigned_handle():
-    """
-    Expressions created from an element input should follow later changes to
-    that input until the graph is compiled.
-    """
     element = DummyElement(x=2.0)
     expression = 3 * element.x
 
@@ -173,6 +130,7 @@ def test_existing_expression_tracks_reassigned_handle():
 # -----------
 # VARIABILITY
 # -----------
+
 def test_parameters_are_fixed_by_default():
     element = DummyElement(x=1.0)
 
@@ -190,20 +148,7 @@ def test_variable_and_fixed_toggle_direct_parameter():
 
 
 def test_named_variable_selection():
-    @dataclass(kw_only=True)
-    class TwoInputElement(OpticalElement):
-        x: Node
-        y: Node
-
-        @property
-        def matrix(self):
-            return ((self.x, 0.0), (0.0, self.y))
-
-        @property
-        def element_length(self):
-            return 0.0
-
-    element = TwoInputElement(x=1.0, y=2.0)
+    element = TwoParameterElement(x=1.0, y=2.0)
 
     element.variable("y")
 
@@ -211,13 +156,40 @@ def test_named_variable_selection():
     assert element.y.node.is_variable
 
 
+def test_named_fixed_selection():
+    element = TwoParameterElement(x=1.0, y=2.0)
+    element.variable()
+
+    element.fixed("x")
+
+    assert not element.x.node.is_variable
+    assert element.y.node.is_variable
+
+
 def test_named_expression_parameter_cannot_be_marked_variable():
-    """A derived parameter is not itself an independent optimization Parameter."""
     x = Parameter(2.0, name="x")
     element = DummyElement(x=2 * x)
 
     with pytest.raises(TypeError):
         element.variable("x")
+
+
+def test_named_expression_parameter_cannot_be_marked_fixed():
+    x = Parameter(2.0, name="x")
+    element = DummyElement(x=2 * x)
+
+    with pytest.raises(TypeError):
+        element.fixed("x")
+
+
+def test_unnamed_variable_skips_derived_parameters():
+    x = Parameter(2.0, name="x")
+    element = TwoParameterElement(x=2 * x, y=3.0)
+
+    element.variable()
+
+    assert not x.is_variable
+    assert element.y.node.is_variable
 
 
 def test_unknown_parameter_name_is_rejected():
@@ -227,56 +199,30 @@ def test_unknown_parameter_name_is_rejected():
         element.variable("missing")
 
 
-# -----------------------
+# -------------
 # INTROSPECTION
-# -----------------------
+# -------------
 
-def test_values_reports_directly_evaluable_inputs():
-    element = DummyElement(x=2.5)
+def test_values_reports_directly_evaluable_parameters():
+    element = TwoParameterElement(x=2.5, y=3.5)
 
-    assert element.values == (2.5,)
-
-
-def test_automatic_labels_are_unique():
-    first = DummyElement(x=1.0)
-    second = DummyElement(x=1.0)
-
-    assert first.label.startswith("DummyElement")
-    assert second.label.startswith("DummyElement")
-    assert first.label != second.label
+    assert element.values == (2.5, 3.5)
 
 
-def test_explicit_label_is_preserved():
-    element = DummyElement(x=1.0, label="Test Element")
+def test_values_reports_none_for_unresolved_parameters():
+    element = TwoParameterElement(x=2.5, y=None)
 
-    assert element.label == "Test Element"
-
-
-def test_string_representation_contains_useful_element_state():
-    element = DummyElement(x=2.0, label="Example")
-
-    text = str(element)
-
-    assert "DummyElement" in text
-    assert "Example" in text
-    assert "x=2" in text
-    assert "[FIX]" in text
+    assert element.values == (2.5, None)
 
 
-def test_graph_validation_can_be_disabled_per_class():
-    @dataclass(kw_only=True)
-    class CustomElement(
-        OpticalElement,
-        validate_graph_inputs=False,
-    ):
-        x: Node
+# --------------------
+# CLASS INITIALIZATION
+# --------------------
 
-        @property
-        def matrix(self):
-            return ((1.0, self.x), (0.0, 1.0))
+def test_subclass_resets_parameter_name_cache():
+    DummyElement._parameter_names = ("cached",)
 
-        @property
-        def element_length(self):
-            return 0.0
+    class ChildElement(DummyElement):
+        pass
 
-    assert CustomElement.validate_graph_inputs is False
+    assert ChildElement.__dict__["_parameter_names"] is None
