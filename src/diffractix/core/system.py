@@ -7,11 +7,11 @@ from dataclasses import dataclass
 from numbers import Real
 from typing import Any
 
-from ..beams.paraxial_state import ParaxialState
-from ..composites import CompositeElement
-from ..elements import OpticalElement
-from ..elements.base import ElementBase
-from ..graph import Node, Parameter
+from diffractix.beams.paraxial_state import ParaxialState
+from diffractix.composites import CompositeElement
+from diffractix.elements import OpticalElement, Interface, Space, ABCD
+from diffractix.elements.base import ElementBase
+from diffractix.graph import Node, Parameter, Literal, InputNode
 
 from .errors import SystemValidationError
 from .system_vars import AMBIENT_N
@@ -35,6 +35,7 @@ class Placement:
     element: ElementBase
     z: Node | Real | None = None
     source_info: SourceInfo | None = None
+    path: str | None = None
 
     def describe(self, index: int | None = None) -> str:
         """Return a human-readable description of this placement."""
@@ -59,6 +60,17 @@ class Placement:
 
         return description
 
+
+@dataclass(frozen=True)
+class SystemPlacement:
+    """A sequential optical element with its resolved propagation medium."""
+
+    placement: Placement
+    refractive_index: Node
+
+    @property
+    def element(self) -> OpticalElement:
+        return self.placement.element
 
 
 class System:
@@ -318,28 +330,260 @@ class System:
     # RESOLUTION
     # ----------
     def _resolve_elements(self):
-        """Expand composites into concrete optical elements."""
-        raise NotImplementedError
+        """Expand composite placements into concrete optical element placements."""
+        resolved = []
 
-    def _resolve_layout(self, elements):
-        """Resolve relative and absolute placement into a sequential optical path."""
-        raise NotImplementedError
+        for placement in self._placements:
+            element = placement.element
 
-    def _resolve_refractive_indices(self, elements):
-        """Resolve refractive-index inheritance and medium transitions."""
-        raise NotImplementedError
+            if isinstance(element, OpticalElement):
+                resolved.append(placement)
+                continue
+
+            if isinstance(element, CompositeElement):
+                for i, (path, leaf) in enumerate(element.walk()):
+                    resolved.append(
+                        Placement(
+                            element=leaf,
+                            z=placement.z if i == 0 else None,
+                            source_info=placement.source_info,
+                            path=path,
+                        )
+                    )
+                continue
+
+            raise TypeError(
+                f"{placement.describe()}: expected OpticalElement or CompositeElement, "
+                f"got {type(element).__name__}."
+            )
+
+        return tuple(resolved)
+
+    def _resolve_layout(self, placements):
+        """
+        Resolve relative and absolute placements into a sequential optical path.
+
+        Absolute positions are converted into generated Space elements whose
+        lengths depend on the accumulated upstream optical length. Relative
+        placements are preserved directly.
+
+        Parameters
+        ----------
+        placements:
+            Sequence of flattened optical element placements.
+
+        Returns
+        -------
+        tuple[Placement, ...]
+            Sequential placements with all absolute positions resolved into
+            generated spaces.
+        """
+        resolved = []
+        current_z = Literal(0.0)
+
+        for placement in placements:
+            element = placement.element
+
+            if placement.z is not None:
+                target_z = placement.z
+
+                if not isinstance(target_z, Node):
+                    target_z = Literal(target_z)
+
+                gap = target_z - current_z
+                spacer = Space(d=gap,label=f"AutoSpace_to_{element.label}",)
+
+                resolved.append(
+                    Placement(
+                        element=spacer,
+                        source_info=placement.source_info,
+                        path=placement.path,
+                    )
+                )
+
+                current_z = current_z + spacer.element_length
+
+            resolved.append(
+                Placement(
+                    element=element,
+                    source_info=placement.source_info,
+                    path=placement.path,
+                )
+            )
+
+            current_z = current_z + element.element_length
+
+        return tuple(resolved)
+
+
+    def _resolve_refractive_indices(self, placements):
+        """
+        Resolve refractive-index inheritance and medium transitions.
+
+        Elements without an explicit refractive index inherit the current medium.
+        Interfaces update the current medium to their output refractive index.
+
+        Parameters
+        ----------
+        placements:
+            Sequential optical element placements after layout resolution.
+
+        Returns
+        -------
+        tuple[SystemPlacement, ...]
+            Sequential system placements with a resolved refractive index for
+            every optical element.
+        """
+        resolved = []
+        current_n = self.ambient_n
+
+        for i, placement in enumerate(placements):
+            element = placement.element
+            index_handle = element.element_refractive_index
+
+            if isinstance(index_handle, InputNode):
+                index_node = index_handle.node
+            else:
+                index_node = index_handle
+
+            if isinstance(element, Interface):
+                try:
+                    current_value = current_n.value
+                    input_value = element.n1.value
+
+                    if not np.isclose(current_value, input_value):
+                        raise ValueError(
+                            f"Refractive index mismatch at {placement.describe(i)}.\n"
+                            f"Upstream medium: n={current_value:.4f}\n"
+                            f"Interface input: n={input_value:.4f}\n"
+                            "The Interface n1 must match the upstream refractive index."
+                        )
+                except AttributeError:
+                    pass
+
+                current_n = element.n2
+
+            elif isinstance(element, ABCD) and index_node is not None:
+                current_n = index_handle
+
+            elif index_node is None:
+                pass
+
+            else:
+                try:
+                    current_value = current_n.value
+                    target_value = index_handle.value
+
+                    if not np.isclose(current_value, target_value):
+                        raise ValueError(
+                            f"Refractive index mismatch at {placement.describe(i)}.\n"
+                            f"Upstream medium: n={current_value:.4f}\n"
+                            f"Element requires: n={target_value:.4f}\n"
+                            "Insert an Interface before this element."
+                        )
+
+                except AttributeError:
+                    pass
+
+                current_n = index_handle
+
+            resolved.append(
+                SystemPlacement(
+                    placement=placement,
+                    refractive_index=current_n,
+                )
+            )
+
+        return tuple(resolved)
 
 
     # -----------
     # COMPILATION
     # -----------
     def _compile(self, elements):
-        """Compile resolved element expressions into the scalar parameter program."""
-        raise NotImplementedError
+        """
+        Compile resolved element expressions into the scalar parameter program.
+
+        Parameters
+        ----------
+        elements:
+            Sequential system placements with resolved refractive indices.
+
+        Returns
+        -------
+        tuple
+            Compiled scalar graph and simulation steps referencing its outputs.
+        """
+        roots = []
+        steps = []
+
+        def as_node(value):
+            return value if isinstance(value, Node) else Literal(value)
+
+        for system_placement in elements:
+            element = system_placement.element
+            matrix = element.matrix
+
+            start = len(roots)
+
+            roots.extend((
+                as_node(matrix[0][0]),
+                as_node(matrix[0][1]),
+                as_node(matrix[1][0]),
+                as_node(matrix[1][1]),
+                as_node(element.element_length),
+                as_node(system_placement.refractive_index),
+            ))
+
+            steps.append(
+                SimulationStep(
+                    matrix_indices=(
+                        (start, start + 1),
+                        (start + 2, start + 3),
+                    ),
+                    length_index=start + 4,
+                    refractive_index_index=start + 5,
+                    placement=system_placement,
+                )
+            )
+
+        graph = compile_ast(roots, context=self.context)
+        return graph, tuple(steps)
+
 
     def _build_simulation(self, compiled):
-        """Construct the executable Simulation from the compiled system."""
-        raise NotImplementedError
+        """
+        Construct the executable Simulation from the compiled system.
+
+        Parameters
+        ----------
+        compiled:
+            Compiled system containing the scalar graph and compiled element
+            lookup information.
+
+        Returns
+        -------
+        Simulation
+            Executable simulation for the configured input beam.
+        """
+        steps = []
+
+        for element in compiled.elements:
+            steps.append(
+                SimulationStep(
+                    matrix_indices=element.matrix_indices,
+                    length_index=element.length_index,
+                    refractive_index_index=element.refractive_index_index,
+                    placement=element.placement,
+                )
+            )
+
+        return Simulation(
+            source=self.beam,
+            graph=compiled.graph,
+            steps=tuple(steps),
+            requirements=self.requirements,
+        )
 
 
     # -----

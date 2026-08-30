@@ -1,5 +1,6 @@
 import pytest
 
+from pathlib import Path
 from dataclasses import dataclass
 
 from diffractix.beams import ParaxialRay
@@ -10,6 +11,22 @@ from diffractix.elements import OpticalElement, ThinLens
 from diffractix.graph import Node, Parameter
 from diffractix.core.system import System, Placement, SourceInfo
 from diffractix.core.errors import SystemValidationError
+
+
+
+def make_source_info():
+    return SourceInfo(
+        file="test_system.py",
+        line=100,
+        call_index=0,
+    )
+
+
+def evaluate_graph(compiled, values=()):
+    return np.asarray(
+        compiled.graph.evaluate(np.asarray(values, dtype=float))
+    )
+
 
 @dataclass(kw_only=True)
 class FailingElement(OpticalElement):
@@ -317,7 +334,7 @@ def test_add_records_source_information():
     info = system.placements[0].source_info
 
     assert info is not None
-    assert info.file.endswith("test_system.py")
+    assert Path(info.file).name == Path(__file__).name
     assert info.line > 0
     assert info.call_index == 0
 
@@ -520,6 +537,7 @@ def test_validate_calls_leaf_validation_for_composite():
     assert "intentional validation failure" in text
 
 
+
 def test_validate_reports_placement_location():
     system = System()
     system.add_input_beam(make_beam())
@@ -532,7 +550,7 @@ def test_validate_reports_placement_location():
 
     assert "Placement #0" in text
     assert "Broken" in text
-    assert "test_system.py" in text
+    assert Path(__file__).name in text
 
 
 def test_validate_collects_multiple_errors():
@@ -572,3 +590,6 @@ def test_require_adds_requirements():
         first,
         second,
     )
+
+
+    
