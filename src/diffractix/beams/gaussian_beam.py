@@ -3,6 +3,8 @@ from typing import Tuple
 import autograd.numpy as np
 import cmath
 
+from .paraxial_state import ParaxialState
+
 
 @dataclass
 class GaussianBeam(ParaxialState):

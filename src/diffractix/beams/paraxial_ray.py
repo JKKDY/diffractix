@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 
+
 import autograd.numpy as np
 
+from .paraxial_state import ParaxialState
 
 @dataclass
 class ParaxialRay(ParaxialState):

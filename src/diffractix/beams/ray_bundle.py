@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 import autograd.numpy as np
 
-from .base import ParaxialState
+from .paraxial_state import ParaxialState
 
 
 @dataclass

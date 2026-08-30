@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from autograd import jacobian
 from typing import Tuple
-from .beam import GaussianBeam
+from .beams import GaussianBeam
 
 
 @dataclass
