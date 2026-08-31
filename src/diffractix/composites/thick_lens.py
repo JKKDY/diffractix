@@ -8,7 +8,7 @@ from .composite import CompositeElement
 from ..elements.space import Space
 from ..elements.interface import Interface
 from ..graph import Node
-from ..core.system_vars import AMBIENT_N
+from ..system import AMBIENT_N
 
 
 class ThickLens(CompositeElement):

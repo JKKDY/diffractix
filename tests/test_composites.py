@@ -1,7 +1,7 @@
 import pytest
 
 from diffractix.composites import FourF, Slab, ThickLens, Telescope
-from diffractix.core.system_vars import AMBIENT_N
+from diffractix.system import AMBIENT_N
 from diffractix.graph import InputNode, Parameter
 
 

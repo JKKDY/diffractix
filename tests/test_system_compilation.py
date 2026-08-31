@@ -3,7 +3,7 @@ import pytest
 from diffractix.composites import CompositeElement, Slab
 from diffractix.elements import Interface, OpticalElement, Space, ThinLens
 from diffractix.graph import Parameter
-from diffractix.core.system import Placement, SourceInfo, System, SystemPlacement
+from diffractix.system.system import Placement, SourceInfo, System, SystemPlacement
 
 
 class NestedComposite(CompositeElement):

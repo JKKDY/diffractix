@@ -5,12 +5,12 @@ from dataclasses import dataclass
 
 from diffractix.beams import ParaxialRay
 from diffractix.composites import Slab
-from diffractix.composites.composite import CompositeElement
-from diffractix.core.system_vars import AMBIENT_N
+from diffractix.composites import CompositeElement
+from diffractix.system import AMBIENT_N
 from diffractix.elements import OpticalElement, ThinLens
 from diffractix.graph import Node, Parameter
-from diffractix.core.system import System, Placement, SourceInfo
-from diffractix.core.errors import SystemValidationError
+from diffractix.system.system import System, Placement, SourceInfo
+from diffractix.system.errors import SystemValidationError
 
 
 
