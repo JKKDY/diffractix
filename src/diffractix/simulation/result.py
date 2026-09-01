@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from collections.abc import Callable, Mapping, Sequence
 from numbers import Real
+from numbers import Integral, Real
 
 from ..elements import OpticalElement
 from ..graph import Parameter
@@ -39,7 +40,7 @@ class SimulationResult:
         source: ParaxialState,
         z :  np.ndarray,
         states: Sequence[ParaxialState],
-        location_map: Mapping[object, tuple[int, int]],
+        location_map: Mapping[int, tuple[tuple[int, int], ...]],
         probe: Callable[[float], ParaxialState] | None = None,
     ):
         if len(z) != len(states):
@@ -68,7 +69,33 @@ class SimulationResult:
     def final(self) -> ParaxialState:
         return self.states[-1]
 
-    def at(self, location) -> ParaxialState:
+    def _resolve_location(self, element, occurrence=None):
+        try:
+            locations = self._location_map[id(element)]
+        except KeyError:
+            raise KeyError(f"Element {element!r} is not part of this simulation.") from None
+
+        if occurrence is None:
+            if len(locations) > 1:
+                raise ValueError(
+                    f"Element {element!r} occurs {len(locations)} times in this simulation. "
+                    "Specify occurrence= to select one."
+                )
+
+            return locations[0]
+
+        if isinstance(occurrence, bool) or not isinstance(occurrence, Integral):
+            raise TypeError(f"occurrence must be an integer, got {type(occurrence).__name__}.")
+
+        if occurrence < 0 or occurrence >= len(locations):
+            raise IndexError(
+                f"Element {element!r} has {len(locations)} occurrence(s); "
+                f"occurrence {occurrence} is out of range."
+            )
+
+        return locations[occurrence]
+
+    def at(self, location, occurrence=None) -> ParaxialState:
         """
         Return the optical state at a location.
 
@@ -76,6 +103,8 @@ class SimulationResult:
         ----------
         location:
             Optical element, plane, or absolute longitudinal position z.
+        occurrence:
+            Occurrence of the element when the same object appears multiple times.
 
         Returns
         -------
@@ -83,25 +112,20 @@ class SimulationResult:
             Propagated optical state at the requested location.
         """
         if isinstance(location, Real) and not isinstance(location, bool):
+            if occurrence is not None:
+                raise TypeError("occurrence may only be specified for optical elements.")
+
             if self._probe is None:
                 raise ValueError("This simulation result does not support arbitrary-z probing.")
 
             return self._probe(location)
 
-        try:
-            before, _ = self._location_map[location]
-        except KeyError:
-            raise KeyError(
-                f"Location {location!r} is not part of this simulation."
-            ) from None
-        except TypeError:
-            raise TypeError(
-                f"Expected an optical location or numeric z position, got {type(location).__name__}."
-            ) from None
+        before, _ = self._resolve_location(location, occurrence)
 
         return self.states[before]
 
-    def after(self, element) -> ParaxialState:
+
+    def after(self, element, occurrence=None) -> ParaxialState:
         """
         Return the optical state immediately after an element.
 
@@ -109,22 +133,15 @@ class SimulationResult:
         ----------
         element:
             Element whose output state should be returned.
+        occurrence:
+            Occurrence of the element when the same object appears multiple times.
 
         Returns
         -------
         ParaxialState
             Propagated optical state immediately after the element.
         """
-        try:
-            _, after = self._location_map[element]
-        except KeyError:
-            raise KeyError(
-                f"Element {element!r} is not part of this simulation."
-            ) from None
-        except TypeError:
-            raise TypeError(
-                f"Expected an optical element, got {type(element).__name__}."
-            ) from None
+        _, after = self._resolve_location(element, occurrence)
 
         return self.states[after]
 

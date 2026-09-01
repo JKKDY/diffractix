@@ -221,7 +221,7 @@ def test_run_starts_at_zero_position():
 def test_run_forwards_location_map_to_result():
     location = object()
     location_map = {
-        location: (0, 0),
+        id(location): ((0, 0),),
     }
 
     simulation = create_simulation(
@@ -233,6 +233,202 @@ def test_run_forwards_location_map_to_result():
     result = simulation.run()
 
     assert result.at(location) is result.initial
+
+def test_result_at_unique_element_does_not_require_occurrence():
+    element = object()
+    states = (
+        DummyState(value=0.0),
+        DummyState(value=1.0),
+    )
+
+    result = SimulationResult(
+        source=states[0],
+        z=np.array([0.0, 0.0]),
+        states=states,
+        location_map={
+            id(element): ((0, 1),),
+        },
+    )
+
+    assert result.at(element) is states[0]
+
+
+def test_result_after_unique_element_does_not_require_occurrence():
+    element = object()
+    states = (
+        DummyState(value=0.0),
+        DummyState(value=1.0),
+    )
+
+    result = SimulationResult(
+        source=states[0],
+        z=np.array([0.0, 0.0]),
+        states=states,
+        location_map={
+            id(element): ((0, 1),),
+        },
+    )
+
+    assert result.after(element) is states[1]
+
+
+def test_result_at_selects_repeated_element_occurrence():
+    element = object()
+    states = (
+        DummyState(value=0.0),
+        DummyState(value=1.0),
+        DummyState(value=2.0),
+        DummyState(value=3.0),
+    )
+
+    result = SimulationResult(
+        source=states[0],
+        z=np.array([0.0, 0.0, 0.0, 0.0]),
+        states=states,
+        location_map={
+            id(element): (
+                (0, 1),
+                (2, 3),
+            ),
+        },
+    )
+
+    assert result.at(element, occurrence=0) is states[0]
+    assert result.at(element, occurrence=1) is states[2]
+
+
+def test_result_after_selects_repeated_element_occurrence():
+    element = object()
+    states = (
+        DummyState(value=0.0),
+        DummyState(value=1.0),
+        DummyState(value=2.0),
+        DummyState(value=3.0),
+    )
+
+    result = SimulationResult(
+        source=states[0],
+        z=np.array([0.0, 0.0, 0.0, 0.0]),
+        states=states,
+        location_map={
+            id(element): (
+                (0, 1),
+                (2, 3),
+            ),
+        },
+    )
+
+    assert result.after(element, occurrence=0) is states[1]
+    assert result.after(element, occurrence=1) is states[3]
+
+
+def test_result_at_repeated_element_requires_occurrence():
+    element = object()
+    states = (
+        DummyState(value=0.0),
+        DummyState(value=1.0),
+        DummyState(value=2.0),
+    )
+
+    result = SimulationResult(
+        source=states[0],
+        z=np.array([0.0, 0.0, 0.0]),
+        states=states,
+        location_map={
+            id(element): (
+                (0, 1),
+                (1, 2),
+            ),
+        },
+    )
+
+    with pytest.raises(ValueError, match="occurs 2 times"):
+        result.at(element)
+
+
+def test_result_after_repeated_element_requires_occurrence():
+    element = object()
+    states = (
+        DummyState(value=0.0),
+        DummyState(value=1.0),
+        DummyState(value=2.0),
+    )
+
+    result = SimulationResult(
+        source=states[0],
+        z=np.array([0.0, 0.0, 0.0]),
+        states=states,
+        location_map={
+            id(element): (
+                (0, 1),
+                (1, 2),
+            ),
+        },
+    )
+
+    with pytest.raises(ValueError, match="occurs 2 times"):
+        result.after(element)
+
+
+def test_result_rejects_out_of_range_occurrence():
+    element = object()
+
+    result = SimulationResult(
+        source=DummyState(),
+        z=np.array([0.0]),
+        states=(DummyState(),),
+        location_map={
+            id(element): ((0, 0),),
+        },
+    )
+
+    with pytest.raises(IndexError, match="out of range"):
+        result.at(element, occurrence=1)
+
+
+def test_result_rejects_negative_occurrence():
+    element = object()
+
+    result = SimulationResult(
+        source=DummyState(),
+        z=np.array([0.0]),
+        states=(DummyState(),),
+        location_map={
+            id(element): ((0, 0),),
+        },
+    )
+
+    with pytest.raises(IndexError, match="out of range"):
+        result.at(element, occurrence=-1)
+
+
+def test_result_rejects_non_integer_occurrence():
+    element = object()
+
+    result = SimulationResult(
+        source=DummyState(),
+        z=np.array([0.0]),
+        states=(DummyState(),),
+        location_map={
+            id(element): ((0, 0),),
+        },
+    )
+
+    with pytest.raises(TypeError, match="occurrence must be an integer"):
+        result.at(element, occurrence=1.5)
+
+
+def test_result_rejects_occurrence_for_numeric_position():
+    result = SimulationResult(
+        source=DummyState(),
+        z=np.array([0.0]),
+        states=(DummyState(),),
+        location_map={},
+        probe=lambda z: DummyState(value=z),
+    )
+
+    with pytest.raises(TypeError, match="occurrence may only be specified"):
+        result.at(0.5, occurrence=0)
 
 
 # -----------
