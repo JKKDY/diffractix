@@ -170,8 +170,8 @@ def test_parameter_bounds():
     x = Parameter(10, name="x")
 
     assert x.bound(5, 20) is x
-    assert x.min_val == 5
-    assert x.max_val == 20
+    assert x.lower_bound == 5
+    assert x.upper_bound == 20
 
     with pytest.raises(ValueError):
         x.bound(20, 5)

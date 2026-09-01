@@ -1,10 +1,13 @@
 import pytest
 
+import autograd.numpy as np
+
+from diffractix.beams import GaussianBeam
+from diffractix.simulation import Simulation
 from diffractix.composites import CompositeElement, Slab
 from diffractix.elements import Interface, OpticalElement, Space, ThinLens
 from diffractix.graph import Parameter
-from diffractix.system.system import Placement, SourceInfo, System, SystemPlacement
-
+from diffractix.system.system import ParameterInfo, Placement, SourceInfo, System, SystemPlacement
 
 class NestedComposite(CompositeElement):
 
@@ -17,7 +20,6 @@ class NestedComposite(CompositeElement):
 # ------------------
 # RESOLVE ELEMENTS
 # ------------------
-
 def test_resolve_elements_preserves_optical_element():
     system = System()
     lens = ThinLens(f=0.1)
@@ -163,7 +165,6 @@ def test_resolve_elements_does_not_modify_composite():
 # --------------
 # RESOLVE LAYOUT
 # --------------
-
 def test_resolve_layout_preserves_relative_element():
     system = System()
     lens = ThinLens(f=0.1)
@@ -341,7 +342,6 @@ def test_resolve_layout_does_not_modify_input_placements():
 # --------------------------
 # RESOLVE REFRACTIVE INDICES
 # --------------------------
-
 def test_resolve_refractive_indices_returns_system_placements():
     system = System(ambient_n=1.0)
     lens = ThinLens(f=0.1)
@@ -531,3 +531,288 @@ def test_resolve_refractive_indices_interface_requires_matching_input_medium():
 
     with pytest.raises(ValueError):
         system._resolve_refractive_indices((placement,))
+
+
+# -----------
+# COMPILATION
+# -----------
+
+def test_compile_creates_parameter_info_for_variable_parameter():
+    system = System()
+    lens = ThinLens(f=0.1, label="Lens").variable("f")
+
+    elements = system._resolve_refractive_indices((
+        Placement(element=lens),
+    ))
+
+    graph, steps, parameter_info, location_map = system._compile(elements)
+
+    assert len(parameter_info) == 1
+    assert isinstance(parameter_info[0], ParameterInfo)
+
+
+def test_compile_parameter_info_matches_graph_variable_order():
+    system = System()
+    space = Space(d=0.2, label="Space").variable("d")
+    lens = ThinLens(f=0.1, label="Lens").variable("f")
+
+    elements = system._resolve_refractive_indices((
+        Placement(element=space),
+        Placement(element=lens),
+    ))
+
+    graph, steps, parameter_info, location_map = system._compile(elements)
+
+    assert len(parameter_info) == len(graph.variables)
+
+    for index, info in enumerate(parameter_info):
+        assert info.index == index
+        assert info.parameter is graph.variables[index]
+        assert info.initial_value == pytest.approx(graph.initial_values[index])
+
+
+def test_compile_parameter_info_snapshots_parameter_metadata():
+    system = System()
+    lens = ThinLens(f=0.1, label="Lens").variable("f")
+    parameter = lens.f.node
+
+    elements = system._resolve_refractive_indices((
+        Placement(element=lens),
+    ))
+
+    graph, steps, parameter_info, location_map = system._compile(elements)
+    info = parameter_info[0]
+
+    assert info.parameter is parameter
+    assert info.name == parameter.name
+    assert info.initial_value == pytest.approx(0.1)
+    assert info.lower_bound == parameter.lower_bound
+    assert info.upper_bound == parameter.upper_bound
+    assert info.owner_type == "ThinLens"
+    assert info.owner_label == "Lens"
+
+
+def test_compile_parameter_info_is_independent_of_parameter_value_changes():
+    system = System()
+    lens = ThinLens(f=0.1, label="Lens").variable("f")
+    parameter = lens.f.node
+
+    elements = system._resolve_refractive_indices((
+        Placement(element=lens),
+    ))
+
+    graph, steps, parameter_info, location_map = system._compile(elements)
+
+    parameter.value = 0.2
+
+    assert parameter_info[0].initial_value == pytest.approx(0.1)
+    assert graph.initial_values[0] == pytest.approx(0.1)
+
+
+def test_compile_graph_is_independent_of_parameter_value_changes():
+    system = System()
+    lens = ThinLens(f=0.1, label="Lens").variable("f")
+    parameter = lens.f.node
+
+    elements = system._resolve_refractive_indices((
+        Placement(element=lens),
+    ))
+
+    graph, steps, parameter_info, location_map = system._compile(elements)
+
+    initial = graph.evaluate(graph.initial_values)
+
+    parameter.value = 0.2
+
+    current = graph.evaluate(graph.initial_values)
+
+    assert np.allclose(current, initial)
+
+
+def test_compile_excludes_fixed_parameters_from_parameter_info():
+    system = System()
+    lens = ThinLens(f=0.1, label="Lens")
+
+    elements = system._resolve_refractive_indices((
+        Placement(element=lens),
+    ))
+
+    graph, steps, parameter_info, location_map = system._compile(elements)
+
+    assert graph.variables == ()
+    assert len(graph.initial_values) == 0
+    assert parameter_info == ()
+
+
+def test_compile_deduplicates_shared_variable_parameter():
+    system = System()
+    parameter = Parameter(0.1, name="shared").variable()
+    first = ThinLens(f=parameter, label="First")
+    second = ThinLens(f=parameter, label="Second")
+
+    elements = system._resolve_refractive_indices((
+        Placement(element=first),
+        Placement(element=second),
+    ))
+
+    graph, steps, parameter_info, location_map = system._compile(elements)
+
+    assert graph.variables == (parameter,)
+    assert len(parameter_info) == 1
+    assert parameter_info[0].parameter is parameter
+    assert parameter_info[0].index == 0
+
+
+def test_compile_parameter_info_supports_standalone_parameter():
+    system = System()
+    parameter = Parameter(0.1, name="base").variable()
+    lens = ThinLens(f=2 * parameter, label="Lens")
+
+    elements = system._resolve_refractive_indices((
+        Placement(element=lens),
+    ))
+
+    graph, steps, parameter_info, location_map = system._compile(elements)
+
+    assert len(parameter_info) == 1
+
+    info = parameter_info[0]
+
+    assert info.parameter is parameter
+    assert info.name == "base"
+    assert info.owner_type is None
+    assert info.owner_label is None
+
+
+def test_compile_location_map_uses_element_identity():
+    system = System()
+    lens = ThinLens(f=0.1)
+
+    elements = system._resolve_refractive_indices((
+        Placement(element=lens),
+    ))
+
+    graph, steps, parameter_info, location_map = system._compile(elements)
+
+    assert location_map[id(lens)] == ((0, 1),)
+
+
+def test_compile_location_map_preserves_repeated_element_occurrences():
+    system = System()
+    lens = ThinLens(f=0.1)
+
+    elements = system._resolve_refractive_indices((
+        Placement(element=lens),
+        Placement(element=lens),
+    ))
+
+    graph, steps, parameter_info, location_map = system._compile(elements)
+
+    assert location_map[id(lens)] == (
+        (0, 1),
+        (1, 2),
+    )
+
+
+def test_compile_step_indices_reference_expected_root_values():
+    system = System()
+    space = Space(d=0.2)
+
+    elements = system._resolve_refractive_indices((
+        Placement(element=space),
+    ))
+
+    graph, steps, parameter_info, location_map = system._compile(elements)
+
+    values = graph.evaluate(graph.initial_values)
+    step = steps[0]
+
+    assert values[step.matrix_indices[0][0]] == pytest.approx(1.0)
+    assert values[step.matrix_indices[0][1]] == pytest.approx(0.2)
+    assert values[step.matrix_indices[1][0]] == pytest.approx(0.0)
+    assert values[step.matrix_indices[1][1]] == pytest.approx(1.0)
+    assert values[step.length_index] == pytest.approx(0.2)
+    assert values[step.refractive_index_index] == pytest.approx(1.0)
+
+
+def test_compile_preserves_derived_parameter_dependencies():
+    system = System()
+    parameter = Parameter(0.1, name="base").variable()
+    lens = ThinLens(f=2 * parameter)
+
+    elements = system._resolve_refractive_indices((
+        Placement(element=lens),
+    ))
+
+    graph, steps, parameter_info, location_map = system._compile(elements)
+    step = steps[0]
+
+    values = graph.evaluate(np.array([0.2]))
+
+    assert values[step.matrix_indices[1][0]] == pytest.approx(-2.5)
+
+
+def test_compile_snapshots_fixed_parameter_values():
+    system = System()
+    lens = ThinLens(f=0.1)
+
+    elements = system._resolve_refractive_indices((
+        Placement(element=lens),
+    ))
+
+    graph, steps, parameter_info, location_map = system._compile(elements)
+    step = steps[0]
+
+    lens.f.value = 0.2
+
+    values = graph.evaluate(graph.initial_values)
+
+    assert values[step.matrix_indices[1][0]] == pytest.approx(-10.0)
+
+
+def test_compile_snapshots_input_node_target():
+    system = System()
+    lens = ThinLens(f=0.1)
+
+    elements = system._resolve_refractive_indices((
+        Placement(element=lens),
+    ))
+
+    graph, steps, parameter_info, location_map = system._compile(elements)
+    step = steps[0]
+
+    lens.f = 0.2
+
+    values = graph.evaluate(graph.initial_values)
+
+    assert values[step.matrix_indices[1][0]] == pytest.approx(-10.0)
+
+
+def test_compile_location_map_uses_element_identity():
+    system = System()
+    lens = ThinLens(f=0.1)
+
+    elements = system._resolve_refractive_indices((
+        Placement(element=lens),
+    ))
+
+    graph, steps, parameter_info, location_map = system._compile(elements)
+
+    assert location_map[id(lens)] == ((0, 1),)
+
+
+def test_compile_location_map_preserves_repeated_element_occurrences():
+    system = System()
+    lens = ThinLens(f=0.1)
+
+    elements = system._resolve_refractive_indices((
+        Placement(element=lens),
+        Placement(element=lens),
+    ))
+
+    graph, steps, parameter_info, location_map = system._compile(elements)
+
+    assert location_map[id(lens)] == (
+        (0, 1),
+        (1, 2),
+    )

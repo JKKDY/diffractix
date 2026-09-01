@@ -2,10 +2,10 @@ from numbers import Real
 
 import numpy as np
 
-from ..beams.paraxial_state import ParaxialState
-from ..composites.composite import CompositeElement
-from ..elements import OpticalElement
-from ..graph import Node
+from diffractix.beams.base import ParaxialState
+from diffractix.composites.composite import CompositeElement
+from diffractix.elements import OpticalElement
+from diffractix.graph import Node
 
 
 

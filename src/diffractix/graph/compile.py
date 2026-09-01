@@ -27,6 +27,9 @@ from .utils import (
 )
 
 
+# todo: verify parameter bounds (values mustnt lie outside of specified bounds)
+
+
 class Opcode(Enum):
     CONST = auto()
     VARIABLE = auto()

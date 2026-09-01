@@ -3,7 +3,7 @@ from typing import ClassVar
 
 import autograd.numpy as np
 
-from .paraxial_state import ParaxialState
+from .base import ParaxialState
 
 
 

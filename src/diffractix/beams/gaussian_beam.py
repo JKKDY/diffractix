@@ -3,7 +3,7 @@ from typing import Tuple, ClassVar
 import autograd.numpy as np
 import cmath
 
-from .paraxial_state import ParaxialState
+from .base import ParaxialState
 
 
 

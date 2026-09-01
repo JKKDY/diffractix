@@ -7,11 +7,12 @@ from dataclasses import dataclass
 from numbers import Real
 from typing import Any
 
-from diffractix.beams.paraxial_state import ParaxialState
+from diffractix.beams.base import ParaxialState
 from diffractix.composites import CompositeElement
 from diffractix.elements import OpticalElement, Interface, Space, ABCD
 from diffractix.elements.base import ElementBase
-from diffractix.graph import Node, Parameter, Literal, InputNode
+from diffractix.graph import Node, Parameter, Literal, InputNode, compile_ast
+from diffractix.simulation.simulation import Simulation, SimulationStep
 
 from .errors import SystemValidationError
 from .system_vars import AMBIENT_N
@@ -20,12 +21,32 @@ from .system_vars import AMBIENT_N
 class SourceInfo:
     """Location in user code where an element was added to the system."""
 
+    # currently in use for error messages
     file: str
     line: int
     call_index: int
 
     def __str__(self):
         return f"{self.file}:{self.line}"
+
+
+
+@dataclass(frozen=True)
+class ParameterInfo:
+    """Immutable descriptor for one simulation parameter."""
+
+    index: int
+    parameter: Parameter
+
+    name: str
+    initial_value: float
+    lower_bound: float
+    upper_bound: float
+
+    owner_type: str | None = None
+    owner_label: str | None = None
+
+
 
 
 @dataclass(frozen=True)
@@ -61,6 +82,8 @@ class Placement:
         return description
 
 
+
+
 @dataclass(frozen=True)
 class SystemPlacement:
     """A sequential optical element with its resolved propagation medium."""
@@ -71,6 +94,8 @@ class SystemPlacement:
     @property
     def element(self) -> OpticalElement:
         return self.placement.element
+
+
 
 
 class System:
@@ -512,10 +537,11 @@ class System:
         Returns
         -------
         tuple
-            Compiled scalar graph and simulation steps referencing its outputs.
+            Compiled scalar graph, simulation steps, and location map.
         """
         roots = []
         steps = []
+        location_map = {}
 
         def as_node(value):
             return value if isinstance(value, Node) else Literal(value)
@@ -523,8 +549,8 @@ class System:
         for system_placement in elements:
             element = system_placement.element
             matrix = element.matrix
-
             start = len(roots)
+            step_index = len(steps)
 
             roots.extend((
                 as_node(matrix[0][0]),
@@ -543,12 +569,44 @@ class System:
                     ),
                     length_index=start + 4,
                     refractive_index_index=start + 5,
-                    placement=system_placement,
                 )
             )
 
+            element_id = id(element)
+
+            if element_id not in location_map:
+                location_map[element_id] = []
+
+            location_map[element_id].append(
+                (step_index, step_index + 1)
+            )
+
         graph = compile_ast(roots, context=self.context)
-        return graph, tuple(steps)
+
+        parameter_info = []
+
+        for index, parameter in enumerate(graph.variables):
+            owner = parameter.owner
+
+            parameter_info.append(
+                ParameterInfo(
+                    index=index,
+                    parameter=parameter,
+                    name=parameter.name,
+                    initial_value=graph.initial_values[index],
+                    lower_bound=parameter.lower_bound,
+                    upper_bound=parameter.upper_bound,
+                    owner_type=type(owner).__name__ if owner is not None else None,
+                    owner_label=getattr(owner, "label", None) if owner is not None else None,
+                )
+            )
+
+        location_map = {
+            element_id: tuple(locations)
+            for element_id, locations in location_map.items()
+        }
+
+        return graph, tuple(steps), tuple(parameter_info), location_map
 
 
     def _build_simulation(self, compiled):
@@ -558,30 +616,21 @@ class System:
         Parameters
         ----------
         compiled:
-            Compiled system containing the scalar graph and compiled element
-            lookup information.
+            Compiled scalar graph, simulation steps, and location metadata.
 
         Returns
         -------
         Simulation
             Executable simulation for the configured input beam.
         """
-        steps = []
-
-        for element in compiled.elements:
-            steps.append(
-                SimulationStep(
-                    matrix_indices=element.matrix_indices,
-                    length_index=element.length_index,
-                    refractive_index_index=element.refractive_index_index,
-                    placement=element.placement,
-                )
-            )
-
+        graph, steps, parameter_info, location_map = compiled
+        
         return Simulation(
             source=self.beam,
-            graph=compiled.graph,
-            steps=tuple(steps),
+            graph=graph,
+            steps=steps,
+            parameter_info=parameter_info,
+            location_map=location_map,
             requirements=self.requirements,
         )
 

@@ -5,10 +5,9 @@ import autograd.numpy as np
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from .beams import ParaxialState
-from .graph import CompiledAST
-from .simulation_result import SimulationResult
-from .simulation_metadata import ParameterInfo
+from diffractix.beams.base import ParaxialState
+from diffractix.graph import CompiledAST
+from diffractix.simulation import SimulationResult
 
 
 @dataclass(frozen=True)

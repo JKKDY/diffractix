@@ -262,27 +262,27 @@ class Parameter(Node):
         name: str | None = None,
         *,
         variable: bool = False,
-        min_val: float = -np.inf,
-        max_val: float = np.inf,
+        lower_bound: float = -np.inf,
+        upper_bound: float = np.inf,
         owner: "OpticalElement | None" = None,
     ):
         if isinstance(value, bool) or not isinstance(value, Real):
             raise TypeError("Parameter value must be a real scalar.")
             
-        if min_val > max_val:
-            raise ValueError("min_val must be <= max_val.")
+        if lower_bound > upper_bound:
+            raise ValueError("lower_bound must be <= upper_bound.")
 
-        if value < min_val or value > max_val:
+        if value < lower_bound or value > upper_bound:
             raise ValueError(
                 f"Parameter value {value} lies outside bounds "
-                f"[{min_val}, {max_val}]."
+                f"[{lower_bound}, {upper_bound}]."
             )
 
         self.value = float(value)
         self.name = name
         self._variable = variable
-        self.min_val = min_val
-        self.max_val = max_val
+        self.lower_bound = lower_bound
+        self.upper_bound = upper_bound
         self._owner_ref = weakref.ref(owner) if owner is not None else None
 
     @property
@@ -299,20 +299,20 @@ class Parameter(Node):
 
     def bound(
         self,
-        min_val: float = -np.inf,
-        max_val: float = np.inf,
+        lower_bound: float = -np.inf,
+        upper_bound: float = np.inf,
     ):
-        if min_val > max_val:
-            raise ValueError("min_val must be <= max_val.")
+        if lower_bound > upper_bound:
+            raise ValueError("lower_bound must be <= upper_bound.")
 
-        if self.value < min_val or self.value > max_val:
+        if self.value < lower_bound or self.value > upper_bound:
             raise ValueError(
                 f"Current value {self.value} lies outside bounds "
-                f"[{min_val}, {max_val}]."
+                f"[{lower_bound}, {upper_bound}]."
             )
 
-        self.min_val = min_val
-        self.max_val = max_val
+        self.lower_bound = lower_bound
+        self.upper_bound = upper_bound
         return self
 
     @property

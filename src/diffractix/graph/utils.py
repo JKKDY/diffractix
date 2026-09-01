@@ -159,8 +159,8 @@ def clone_ast(roots: Sequence[Node], *, preserve_owners: bool = True) -> tuple[N
                 value=node.value,
                 name=node.name,
                 variable=node.is_variable,
-                min_val=node.min_val,
-                max_val=node.max_val,
+                lower_bound=node.lower_bound,
+                upper_bound=node.upper_bound,
                 owner=node.owner if preserve_owners else None,
             )
 
