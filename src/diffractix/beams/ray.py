@@ -1,9 +1,23 @@
 from dataclasses import dataclass
-
+from typing import ClassVar
 
 import autograd.numpy as np
 
 from .paraxial_state import ParaxialState
+
+
+
+class RayResult:
+    @property
+    def x(self):
+        return np.asarray([state.x for state in self.states])
+
+    @property
+    def theta(self):
+        return np.asarray([state.theta for state in self.states])
+
+
+
 
 @dataclass
 class ParaxialRay(ParaxialState):
@@ -15,6 +29,7 @@ class ParaxialRay(ParaxialState):
         theta (float): Ray angle relative to the optical axis in radians.
         n (float): The refractive index of the medium the ray is currently in.
     """
+    result_type: ClassVar[type] = RayResult
     x: float
     theta: float
     n: float
