@@ -99,7 +99,7 @@ class SimulationResult:
                 f"Expected an optical location or numeric z position, got {type(location).__name__}."
             ) from None
 
-        return self._states[before]
+        return self.states[before]
 
     def after(self, element) -> ParaxialState:
         """
@@ -126,7 +126,7 @@ class SimulationResult:
                 f"Expected an optical element, got {type(element).__name__}."
             ) from None
 
-        return self._states[after]
+        return self.states[after]
 
     def plot(self):
         """Plot this simulation result."""
