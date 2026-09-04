@@ -347,11 +347,12 @@ def test_resolve_refractive_indices_returns_system_placements():
     lens = ThinLens(f=0.1)
     placement = Placement(element=lens)
 
-    resolved = system._resolve_refractive_indices((placement,))
+    resolved, continuity = system._resolve_refractive_indices((placement,))
 
     assert len(resolved) == 1
     assert isinstance(resolved[0], SystemPlacement)
     assert resolved[0].placement is placement
+    assert continuity == ()
 
 
 def test_resolve_refractive_indices_inherits_ambient_medium():
@@ -359,10 +360,11 @@ def test_resolve_refractive_indices_inherits_ambient_medium():
     lens = ThinLens(f=0.1)
     placement = Placement(element=lens)
 
-    resolved = system._resolve_refractive_indices((placement,))
+    resolved, continuity = system._resolve_refractive_indices((placement,))
 
     assert resolved[0].refractive_index is system.ambient_n
     assert resolved[0].refractive_index.value == pytest.approx(1.33)
+    assert continuity == ()
 
 
 def test_resolve_refractive_indices_space_inherits_ambient_medium():
@@ -370,9 +372,10 @@ def test_resolve_refractive_indices_space_inherits_ambient_medium():
     space = Space(d=0.1)
     placement = Placement(element=space)
 
-    resolved = system._resolve_refractive_indices((placement,))
+    resolved, continuity = system._resolve_refractive_indices((placement,))
 
     assert resolved[0].refractive_index is system.ambient_n
+    assert continuity == ()
 
 
 def test_resolve_refractive_indices_does_not_bind_inherited_element():
@@ -381,29 +384,54 @@ def test_resolve_refractive_indices_does_not_bind_inherited_element():
 
     assert space.n.node is None
 
-    system._resolve_refractive_indices((Placement(element=space),))
+    resolved, continuity = system._resolve_refractive_indices((
+        Placement(element=space),
+    ))
 
     assert space.n.node is None
+    assert continuity == ()
 
 
-def test_resolve_refractive_indices_accepts_matching_explicit_medium():
+def test_resolve_refractive_indices_creates_continuity_for_explicit_medium():
     system = System(ambient_n=1.5)
     space = Space(d=0.1, n=1.5)
     placement = Placement(element=space)
 
-    resolved = system._resolve_refractive_indices((placement,))
+    resolved, continuity = system._resolve_refractive_indices((placement,))
 
     assert resolved[0].refractive_index is space.n
     assert resolved[0].refractive_index.value == pytest.approx(1.5)
+    assert len(continuity) == 1
+
+    condition_placement, upstream, required, residual = continuity[0]
+
+    assert condition_placement is placement
+    assert upstream is system.ambient_n
+    assert required is space.n
 
 
-def test_resolve_refractive_indices_rejects_mismatched_explicit_medium():
+def test_validate_refractive_index_continuity_accepts_matching_explicit_medium():
+    system = System(ambient_n=1.5)
+    space = Space(d=0.1, n=1.5)
+
+    resolved, continuity = system._resolve_refractive_indices((
+        Placement(element=space),
+    ))
+
+    system._validate_refractive_index_continuity(continuity)
+
+
+def test_validate_refractive_index_continuity_rejects_mismatched_explicit_medium():
     system = System(ambient_n=1.0)
     space = Space(d=0.1, n=1.5, label="Glass")
     placement = Placement(element=space)
 
+    resolved, continuity = system._resolve_refractive_indices((placement,))
+
+    assert len(continuity) == 1
+
     with pytest.raises(ValueError) as exc_info:
-        system._resolve_refractive_indices((placement,))
+        system._validate_refractive_index_continuity(continuity)
 
     text = str(exc_info.value)
 
@@ -418,10 +446,24 @@ def test_resolve_refractive_indices_interface_changes_medium():
     interface = Interface(n1=1.0, n2=1.5)
     placement = Placement(element=interface)
 
-    resolved = system._resolve_refractive_indices((placement,))
+    resolved, continuity = system._resolve_refractive_indices((placement,))
 
     assert resolved[0].refractive_index is interface.n2
     assert resolved[0].refractive_index.value == pytest.approx(1.5)
+    assert len(continuity) == 1
+
+
+def test_resolve_refractive_indices_interface_creates_input_continuity():
+    system = System(ambient_n=1.0)
+    interface = Interface(n1=1.0, n2=1.5)
+    placement = Placement(element=interface)
+
+    resolved, continuity = system._resolve_refractive_indices((placement,))
+    condition_placement, upstream, required, residual = continuity[0]
+
+    assert condition_placement is placement
+    assert upstream is system.ambient_n
+    assert required is interface.n1
 
 
 def test_resolve_refractive_indices_interface_updates_downstream_inheritance():
@@ -434,10 +476,11 @@ def test_resolve_refractive_indices_interface_updates_downstream_inheritance():
         Placement(element=lens),
     )
 
-    resolved = system._resolve_refractive_indices(placements)
+    resolved, continuity = system._resolve_refractive_indices(placements)
 
     assert resolved[0].refractive_index is interface.n2
     assert resolved[1].refractive_index is interface.n2
+    assert len(continuity) == 1
 
 
 def test_resolve_refractive_indices_handles_medium_chain():
@@ -454,12 +497,15 @@ def test_resolve_refractive_indices_handles_medium_chain():
         Placement(element=lens),
     )
 
-    resolved = system._resolve_refractive_indices(placements)
+    resolved, continuity = system._resolve_refractive_indices(placements)
 
     assert resolved[0].refractive_index.value == pytest.approx(1.5)
     assert resolved[1].refractive_index.value == pytest.approx(1.5)
     assert resolved[2].refractive_index.value == pytest.approx(1.0)
     assert resolved[3].refractive_index.value == pytest.approx(1.0)
+    assert len(continuity) == 3
+
+    system._validate_refractive_index_continuity(continuity)
 
 
 def test_resolve_refractive_indices_preserves_variable_ambient_parameter():
@@ -467,10 +513,11 @@ def test_resolve_refractive_indices_preserves_variable_ambient_parameter():
     lens = ThinLens(f=0.1)
     placement = Placement(element=lens)
 
-    resolved = system._resolve_refractive_indices((placement,))
+    resolved, continuity = system._resolve_refractive_indices((placement,))
 
     assert resolved[0].refractive_index is system.ambient_n
     assert resolved[0].refractive_index.is_variable
+    assert continuity == ()
 
 
 def test_resolve_refractive_indices_preserves_explicit_index_graph():
@@ -478,29 +525,32 @@ def test_resolve_refractive_indices_preserves_explicit_index_graph():
     n = Parameter(1.5).variable()
     space = Space(d=0.1, n=n)
 
-    resolved = system._resolve_refractive_indices((
+    resolved, continuity = system._resolve_refractive_indices((
         Placement(element=space),
     ))
 
     assert resolved[0].refractive_index is space.n
     assert resolved[0].refractive_index.node is n
+    assert len(continuity) == 1
 
 
 def test_resolve_refractive_indices_preserves_placement_identity():
     system = System(ambient_n=1.0)
     lens = ThinLens(f=0.1)
     source_info = SourceInfo(file="example.py", line=10, call_index=0)
+
     placement = Placement(
         element=lens,
         source_info=source_info,
         path="lens",
     )
 
-    resolved = system._resolve_refractive_indices((placement,))
+    resolved, continuity = system._resolve_refractive_indices((placement,))
 
     assert resolved[0].placement is placement
     assert resolved[0].placement.source_info is source_info
     assert resolved[0].placement.path == "lens"
+    assert continuity == ()
 
 
 def test_resolve_refractive_indices_preserves_element_order():
@@ -515,22 +565,27 @@ def test_resolve_refractive_indices_preserves_element_order():
         Placement(element=third),
     )
 
-    resolved = system._resolve_refractive_indices(placements)
+    resolved, continuity = system._resolve_refractive_indices(placements)
 
     assert tuple(item.element for item in resolved) == (
         first,
         second,
         third,
     )
+    assert continuity == ()
 
 
-def test_resolve_refractive_indices_interface_requires_matching_input_medium():
+def test_validate_refractive_index_continuity_rejects_interface_input_mismatch():
     system = System(ambient_n=1.0)
     interface = Interface(n1=1.5, n2=2.0, label="Wrong Interface")
     placement = Placement(element=interface)
 
+    resolved, continuity = system._resolve_refractive_indices((placement,))
+
+    assert len(continuity) == 1
+
     with pytest.raises(ValueError):
-        system._resolve_refractive_indices((placement,))
+        system._validate_refractive_index_continuity(continuity)
 
 
 # -----------
@@ -541,7 +596,7 @@ def test_compile_creates_parameter_info_for_variable_parameter():
     system = System()
     lens = ThinLens(f=0.1, label="Lens").variable("f")
 
-    elements = system._resolve_refractive_indices((
+    elements, continuity = system._resolve_refractive_indices((
         Placement(element=lens),
     ))
 
@@ -556,7 +611,7 @@ def test_compile_parameter_info_matches_graph_variable_order():
     space = Space(d=0.2, label="Space").variable("d")
     lens = ThinLens(f=0.1, label="Lens").variable("f")
 
-    elements = system._resolve_refractive_indices((
+    elements, continuity = system._resolve_refractive_indices((
         Placement(element=space),
         Placement(element=lens),
     ))
@@ -576,7 +631,7 @@ def test_compile_parameter_info_snapshots_parameter_metadata():
     lens = ThinLens(f=0.1, label="Lens").variable("f")
     parameter = lens.f.node
 
-    elements = system._resolve_refractive_indices((
+    elements, continuity = system._resolve_refractive_indices((
         Placement(element=lens),
     ))
 
@@ -597,7 +652,7 @@ def test_compile_parameter_info_is_independent_of_parameter_value_changes():
     lens = ThinLens(f=0.1, label="Lens").variable("f")
     parameter = lens.f.node
 
-    elements = system._resolve_refractive_indices((
+    elements, continuity = system._resolve_refractive_indices((
         Placement(element=lens),
     ))
 
@@ -614,12 +669,11 @@ def test_compile_graph_is_independent_of_parameter_value_changes():
     lens = ThinLens(f=0.1, label="Lens").variable("f")
     parameter = lens.f.node
 
-    elements = system._resolve_refractive_indices((
+    elements, continuity = system._resolve_refractive_indices((
         Placement(element=lens),
     ))
 
     graph, steps, parameter_info, location_map = system._compile(elements)
-
     initial = graph.evaluate(graph.initial_values)
 
     parameter.value = 0.2
@@ -633,7 +687,7 @@ def test_compile_excludes_fixed_parameters_from_parameter_info():
     system = System()
     lens = ThinLens(f=0.1, label="Lens")
 
-    elements = system._resolve_refractive_indices((
+    elements, continuity = system._resolve_refractive_indices((
         Placement(element=lens),
     ))
 
@@ -650,7 +704,7 @@ def test_compile_deduplicates_shared_variable_parameter():
     first = ThinLens(f=parameter, label="First")
     second = ThinLens(f=parameter, label="Second")
 
-    elements = system._resolve_refractive_indices((
+    elements, continuity = system._resolve_refractive_indices((
         Placement(element=first),
         Placement(element=second),
     ))
@@ -668,16 +722,14 @@ def test_compile_parameter_info_supports_standalone_parameter():
     parameter = Parameter(0.1, name="base").variable()
     lens = ThinLens(f=2 * parameter, label="Lens")
 
-    elements = system._resolve_refractive_indices((
+    elements, continuity = system._resolve_refractive_indices((
         Placement(element=lens),
     ))
 
     graph, steps, parameter_info, location_map = system._compile(elements)
-
-    assert len(parameter_info) == 1
-
     info = parameter_info[0]
 
+    assert len(parameter_info) == 1
     assert info.parameter is parameter
     assert info.name == "base"
     assert info.owner_type is None
@@ -688,7 +740,7 @@ def test_compile_location_map_uses_element_identity():
     system = System()
     lens = ThinLens(f=0.1)
 
-    elements = system._resolve_refractive_indices((
+    elements, continuity = system._resolve_refractive_indices((
         Placement(element=lens),
     ))
 
@@ -701,7 +753,7 @@ def test_compile_location_map_preserves_repeated_element_occurrences():
     system = System()
     lens = ThinLens(f=0.1)
 
-    elements = system._resolve_refractive_indices((
+    elements, continuity = system._resolve_refractive_indices((
         Placement(element=lens),
         Placement(element=lens),
     ))
@@ -718,12 +770,11 @@ def test_compile_step_indices_reference_expected_root_values():
     system = System()
     space = Space(d=0.2)
 
-    elements = system._resolve_refractive_indices((
+    elements, continuity = system._resolve_refractive_indices((
         Placement(element=space),
     ))
 
     graph, steps, parameter_info, location_map = system._compile(elements)
-
     values = graph.evaluate(graph.initial_values)
     step = steps[0]
 
@@ -740,13 +791,12 @@ def test_compile_preserves_derived_parameter_dependencies():
     parameter = Parameter(0.1, name="base").variable()
     lens = ThinLens(f=2 * parameter)
 
-    elements = system._resolve_refractive_indices((
+    elements, continuity = system._resolve_refractive_indices((
         Placement(element=lens),
     ))
 
     graph, steps, parameter_info, location_map = system._compile(elements)
     step = steps[0]
-
     values = graph.evaluate(np.array([0.2]))
 
     assert values[step.matrix_indices[1][0]] == pytest.approx(-2.5)
@@ -756,7 +806,7 @@ def test_compile_snapshots_fixed_parameter_values():
     system = System()
     lens = ThinLens(f=0.1)
 
-    elements = system._resolve_refractive_indices((
+    elements, continuity = system._resolve_refractive_indices((
         Placement(element=lens),
     ))
 
@@ -774,7 +824,7 @@ def test_compile_snapshots_input_node_target():
     system = System()
     lens = ThinLens(f=0.1)
 
-    elements = system._resolve_refractive_indices((
+    elements, continuity = system._resolve_refractive_indices((
         Placement(element=lens),
     ))
 
@@ -786,33 +836,3 @@ def test_compile_snapshots_input_node_target():
     values = graph.evaluate(graph.initial_values)
 
     assert values[step.matrix_indices[1][0]] == pytest.approx(-10.0)
-
-
-def test_compile_location_map_uses_element_identity():
-    system = System()
-    lens = ThinLens(f=0.1)
-
-    elements = system._resolve_refractive_indices((
-        Placement(element=lens),
-    ))
-
-    graph, steps, parameter_info, location_map = system._compile(elements)
-
-    assert location_map[id(lens)] == ((0, 1),)
-
-
-def test_compile_location_map_preserves_repeated_element_occurrences():
-    system = System()
-    lens = ThinLens(f=0.1)
-
-    elements = system._resolve_refractive_indices((
-        Placement(element=lens),
-        Placement(element=lens),
-    ))
-
-    graph, steps, parameter_info, location_map = system._compile(elements)
-
-    assert location_map[id(lens)] == (
-        (0, 1),
-        (1, 2),
-    )

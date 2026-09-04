@@ -442,27 +442,12 @@ class System:
 
 
     def _resolve_refractive_indices(self, placements):
-        """
-        Resolve refractive-index inheritance and medium transitions.
-
-        Elements without an explicit refractive index inherit the current medium.
-        Interfaces update the current medium to their output refractive index.
-
-        Parameters
-        ----------
-        placements:
-            Sequential optical element placements after layout resolution.
-
-        Returns
-        -------
-        tuple[SystemPlacement, ...]
-            Sequential system placements with a resolved refractive index for
-            every optical element.
-        """
         resolved = []
+        continuity = []
+
         current_n = self.ambient_n
 
-        for i, placement in enumerate(placements):
+        for placement in placements:
             element = placement.element
             index_handle = element.element_refractive_index
 
@@ -472,19 +457,14 @@ class System:
                 index_node = index_handle
 
             if isinstance(element, Interface):
-                try:
-                    current_value = current_n.value
-                    input_value = element.n1.value
-
-                    if not np.isclose(current_value, input_value):
-                        raise ValueError(
-                            f"Refractive index mismatch at {placement.describe(i)}.\n"
-                            f"Upstream medium: n={current_value:.4f}\n"
-                            f"Interface input: n={input_value:.4f}\n"
-                            "The Interface n1 must match the upstream refractive index."
-                        )
-                except AttributeError:
-                    pass
+                continuity.append(
+                    (
+                        placement,
+                        current_n,
+                        element.n1,
+                        current_n - element.n1,
+                    )
+                )
 
                 current_n = element.n2
 
@@ -495,20 +475,14 @@ class System:
                 pass
 
             else:
-                try:
-                    current_value = current_n.value
-                    target_value = index_handle.value
-
-                    if not np.isclose(current_value, target_value):
-                        raise ValueError(
-                            f"Refractive index mismatch at {placement.describe(i)}.\n"
-                            f"Upstream medium: n={current_value:.4f}\n"
-                            f"Element requires: n={target_value:.4f}\n"
-                            "Insert an Interface before this element."
-                        )
-
-                except AttributeError:
-                    pass
+                continuity.append(
+                    (
+                        placement,
+                        current_n,
+                        index_handle,
+                        current_n - index_handle,
+                    )
+                )
 
                 current_n = index_handle
 
@@ -519,9 +493,40 @@ class System:
                 )
             )
 
-        return tuple(resolved)
+        return tuple(resolved), tuple(continuity)
 
+    def _validate_refractive_index_continuity(self, continuity):
+        if not continuity:
+            return
 
+        roots = []
+
+        for _, actual, required, residual in continuity:
+            roots.extend((
+                actual,
+                required,
+                residual,
+            ))
+
+        graph = compile_ast(
+            roots,
+            context=self.context,
+        )
+
+        values = graph.evaluate(graph.initial_values)
+
+        for i, (placement, _, _, _) in enumerate(continuity):
+            actual = values[3 * i]
+            required = values[3 * i + 1]
+            residual = values[3 * i + 2]
+
+            if not np.isclose(residual, 0.0):
+                raise ValueError(
+                    f"Refractive index mismatch at {placement.describe()}.\n"
+                    f"Upstream medium: n={actual:.4f}\n"
+                    f"Element requires: n={required:.4f}\n"
+                    "Insert an Interface before this element."
+                )
     # -----------
     # COMPILATION
     # -----------
@@ -639,10 +644,14 @@ class System:
     # BUILD
     # -----
     def build(self):
-        """Validate, resolve, compile, and return an independent Simulation."""
         self._validate()
+
         elements = self._resolve_elements()
         elements = self._resolve_layout(elements)
-        elements = self._resolve_refractive_indices(elements)
+        elements, continuity = self._resolve_refractive_indices(elements)
+
+        self._validate_refractive_index_continuity(continuity)
+
         compiled = self._compile(elements)
+
         return self._build_simulation(compiled)
