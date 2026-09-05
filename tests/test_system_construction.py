@@ -60,7 +60,6 @@ def make_beam():
     return ParaxialRay(
         x=0.0,
         theta=0.0,
-        n=1.0,
     )
 
 
@@ -425,7 +424,6 @@ def test_add_input_beam_replaces_previous_beam():
     second = ParaxialRay(
         x=0.1,
         theta=0.01,
-        n=1.0,
     )
 
     system.add_input_beam(first)

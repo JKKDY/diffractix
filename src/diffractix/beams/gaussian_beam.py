@@ -7,33 +7,6 @@ from .base import ParaxialState
 
 
 
-class GaussianResult:
-
-    @property
-    def q(self):
-        return np.asarray([state.q for state in self.states])
-
-    @property
-    def n(self):
-        return np.asarray([state.n for state in self.states])
-
-    @property
-    def wavelength(self):
-        return self.source.wavelength
-
-    @property
-    def w(self):
-        return np.asarray([state.w for state in self.states])
-
-    @property
-    def R(self):
-        return np.asarray([state.R for state in self.states])
-
-    @property
-    def gouy_phase(self):
-        return np.asarray([state.gouy_phase for state in self.states])
-
-
 
 @dataclass
 class GaussianBeam(ParaxialState):
@@ -45,7 +18,6 @@ class GaussianBeam(ParaxialState):
         wavelength (float): The vacuum wavelength of the light.
         n (float): The refractive index of the medium the beam is currently in.
     """
-    result_type: ClassVar[type] = GaussianResult
     q: complex
     wavelength: float
     n: float

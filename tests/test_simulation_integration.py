@@ -13,6 +13,7 @@ from diffractix.beams.base import ParaxialState
 from diffractix.elements import Interface, Space, ThinLens
 from diffractix.graph import Parameter
 from diffractix.system.system import System
+from diffractix.simulation import SimulationResult
 
 
 # -------
@@ -1014,29 +1015,27 @@ class AffineState(ParaxialState):
 
 def test_simulation_supports_non_gaussian_paraxial_state():
     source = AffineState(value=2.0)
-
     system = System()
+
     system.add_input_beam(source)
     system.add(Space(d=0.5))
-
+    
     result = system.build().run()
-
-    assert isinstance(result, AffineResult)
-    assert result.initial is source
-    assert result.final.value == pytest.approx(2.5)
+    assert isinstance(result, SimulationResult)
+    assert np.allclose(result.value, np.array([2.0, 2.5]))
 
 
-def test_custom_result_type_can_read_full_simulation_trace():
+
+def test_generated_result_property_can_read_full_simulation_trace():
     source = AffineState(value=2.0)
-
     system = System()
+
     system.add_input_beam(source)
     system.add(Space(d=0.5))
     system.add(Space(d=1.0))
-
+    
     result = system.build().run()
-
     assert np.allclose(
-        result.values,
+        result.value,
         np.array([2.0, 2.5, 3.5]),
     )

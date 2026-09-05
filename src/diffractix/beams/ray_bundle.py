@@ -1,8 +1,11 @@
 from dataclasses import dataclass
+from typing import ClassVar
 
 import autograd.numpy as np
 
 from .base import ParaxialState
+
+
 
 
 @dataclass
@@ -17,8 +20,6 @@ class RayBundle(ParaxialState):
     """
     x: np.ndarray
     theta: np.ndarray
-    n: float
-
 
 
     @property
@@ -41,7 +42,6 @@ class RayBundle(ParaxialState):
         return RayBundle(
             x=x,
             theta=theta,
-            n=n,
         )
 
     def x_at_z(self, z: float):
@@ -55,6 +55,5 @@ class RayBundle(ParaxialState):
         return (
             f"RayBundle("
             f"size={self.size}, "
-            f"n={self.n}"
             f")"
         )

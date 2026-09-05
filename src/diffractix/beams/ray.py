@@ -7,17 +7,6 @@ from .base import ParaxialState
 
 
 
-class RayResult:
-    @property
-    def x(self):
-        return np.asarray([state.x for state in self.states])
-
-    @property
-    def theta(self):
-        return np.asarray([state.theta for state in self.states])
-
-
-
 
 @dataclass
 class ParaxialRay(ParaxialState):
@@ -29,10 +18,8 @@ class ParaxialRay(ParaxialState):
         theta (float): Ray angle relative to the optical axis in radians.
         n (float): The refractive index of the medium the ray is currently in.
     """
-    result_type: ClassVar[type] = RayResult
     x: float
     theta: float
-    n: float
 
     def propagate(self, A, B, C, D, n) -> 'ParaxialRay':
         x = A * self.x + B * self.theta
@@ -41,7 +28,6 @@ class ParaxialRay(ParaxialState):
         return ParaxialRay(
             x=x,
             theta=theta,
-            n=n,
         )
 
     @property
@@ -69,6 +55,5 @@ class ParaxialRay(ParaxialState):
             f"ParaxialRay("
             f"x={fmt_length(self.x)}, "
             f"theta={self.theta:.4g} rad, "
-            f"n={self.n}"
             f")"
         )

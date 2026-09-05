@@ -141,20 +141,15 @@ def test_simulation_initial_values_are_graph_initial_values():
     assert simulation.initial_values is initial_values
 
 
-def test_simulation_rejects_invalid_result_type():
-    @dataclass(frozen=True)
+def test_simulation_rejects_non_dataclass_state():
     class InvalidState(ParaxialState):
-        result_type: ClassVar = None
-
         def propagate(self, A, B, C, D, n):
             return self
-
     graph = DummyGraph(
         initial_values=np.array([]),
         evaluator=lambda theta: np.array([]),
     )
-
-    with pytest.raises(TypeError, match="result_type must be a type"):
+    with pytest.raises(TypeError, match="must be a dataclass"):
         Simulation(
             source=InvalidState(),
             graph=graph,
@@ -179,15 +174,14 @@ def test_run_returns_simulation_result():
     assert isinstance(result, SimulationResult)
 
 
-def test_run_returns_source_specific_result_type():
+def test_run_returns_generated_source_specific_result_type():
     simulation = create_simulation(
         values=(),
         steps=(),
     )
-
     result = simulation.run()
-
-    assert isinstance(result, DummyResult)
+    assert isinstance(result, SimulationResult)
+    assert hasattr(type(result), "value")
 
 
 def test_run_records_source_as_initial_state():

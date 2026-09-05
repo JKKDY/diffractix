@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from diffractix.beams.base import ParaxialState
 from diffractix.graph import CompiledAST
-from diffractix.simulation import SimulationResult
+from diffractix.simulation.result import SimulationResult, result_type_for
 
 
 @dataclass(frozen=True)
@@ -44,19 +44,7 @@ class Simulation:
         self.location_map = location_map
         self.requirements = tuple(requirements)
 
-        result_type = self.source.result_type
-
-        if not isinstance(result_type, type):
-            raise TypeError(
-                f"{type(self.source).__name__}.result_type must be a type, "
-                f"got {type(result_type).__name__}."
-            )
-
-        self._result_type = type(
-            f"{type(self.source).__name__}SimulationResult",
-            (result_type, SimulationResult),
-            {},
-        )
+        self._result_type = result_type_for(self.source)
 
     @property
     def initial_values(self):
