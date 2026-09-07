@@ -28,7 +28,7 @@ def evaluate_graph(compiled, values=()):
     )
 
 
-@dataclass(kw_only=True)
+@dataclass(eq=False, kw_only=True)
 class FailingElement(OpticalElement):
 
     x: Node
@@ -590,4 +590,23 @@ def test_require_adds_requirements():
     )
 
 
-    
+def test_system_rejects_element_with_structural_equality():
+    @dataclass(kw_only=True)
+    class BadElement(OpticalElement):
+        x: Node
+
+        @property
+        def matrix(self):
+            return ((1.0, 0.0), (0.0, 1.0))
+
+        @property
+        def element_length(self):
+            return 0.0
+
+    system = System()
+
+    with pytest.raises(
+        TypeError,
+        match="dataclass\\(eq=False\\)",
+    ):
+        system.add(BadElement(x=1.0))

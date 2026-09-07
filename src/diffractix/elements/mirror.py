@@ -10,7 +10,7 @@ from .element import OpticalElement
 from ..graph import Node
 
 
-@dataclass(kw_only=True)
+@dataclass(eq=False, kw_only=True)
 class Mirror(OpticalElement):
     """
     A curved or flat mirror that reflects the beam.

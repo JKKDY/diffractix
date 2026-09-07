@@ -8,7 +8,7 @@ from .element import OpticalElement
 from ..graph import Node
 
 
-@dataclass(kw_only=True)
+@dataclass(eq=False, kw_only=True)
 class GRIN(OpticalElement):
     """
     A parabolic gradient-index medium.

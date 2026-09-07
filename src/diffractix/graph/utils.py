@@ -10,6 +10,8 @@ from .ops import Op
 
 
 
+
+
 ASTContext = Mapping[str, Scalar | Node]
 
 
@@ -87,30 +89,31 @@ def walk_ast(roots: Sequence[Node], context: ASTContext | None = None):
     are therefore visited only once.
     """
     context = {} if context is None else context
-    seen: set[Node] = set()
-    active: set[Node] = set()
+    seen: set[int] = set()
+    active: set[int] = set()
 
     def visit(node: Node):
-        if node in active:
+        node_id = id(node)
+
+        if node_id in active:
             raise ASTCycleError(f"Cycle detected at {describe_node(node)}.")
 
-        if node in seen:
+        if node_id in seen:
             return
 
-        seen.add(node)
-        active.add(node)
+        seen.add(node_id)
+        active.add(node_id)
 
         yield node
 
         for child in iter_children(node, context):
             yield from visit(child)
 
-        active.remove(node)
+        active.remove(node_id)
 
     for root in roots:
         if not isinstance(root, Node):
             raise TypeError(f"AST root must be a Node, got {type(root).__name__}.")
-
         yield from visit(root)
 
 
@@ -139,17 +142,19 @@ def clone_ast(roots: Sequence[Node], *, preserve_owners: bool = True) -> tuple[N
 
     SystemVars are copied but not resolved.
     """
-    memo: dict[Node, Node] = {}
-    active: set[Node] = set()
+    memo: dict[int, Node] = {}
+    active: set[int] = set()
 
     def clone(node: Node) -> Node:
-        if node in active:
+        node_id = id(node)
+
+        if node_id in active:
             raise ASTCycleError(f"Cycle detected at {describe_node(node)}.")
 
-        if node in memo:
-            return memo[node]
+        if node_id in memo:
+            return memo[node_id]
 
-        active.add(node)
+        active.add(node_id)
 
         if isinstance(node, Literal):
             result = Literal(node.value)
@@ -183,177 +188,17 @@ def clone_ast(roots: Sequence[Node], *, preserve_owners: bool = True) -> tuple[N
             )
 
         elif isinstance(node, SystemVar):
-            result = SystemVar(node.name)
+            result = SystemVar(
+                node.name,
+                namespace=node.namespace,
+            )
 
         else:
             raise UnsupportedNodeError(f"Unsupported AST node type: {type(node).__name__}")
 
-        active.remove(node)
-        memo[node] = result
+        active.remove(node_id)
+        memo[node_id] = result
+
         return result
 
     return tuple(clone(root) for root in roots)
-
-
-
-
-
-
-
-
-class _Opcode(Enum):
-    CONST = auto()
-    THETA = auto()
-    BINARY = auto()
-    UNARY = auto()
-
-
-@dataclass(frozen=True)
-class _ConstInstruction:
-    value: float
-    opcode = _Opcode.CONST
-
-
-@dataclass(frozen=True)
-class _ThetaInstruction:
-    index: int
-    opcode = _Opcode.THETA
-
-
-@dataclass(frozen=True)
-class _BinaryInstruction:
-    op: Op
-    left: int
-    right: int
-    opcode = _Opcode.BINARY
-
-
-@dataclass(frozen=True)
-class _UnaryInstruction:
-    op: Op
-    operand: int
-    opcode = _Opcode.UNARY
-
-
-_Instruction = (
-    _ConstInstruction
-    | _ThetaInstruction
-    | _BinaryInstruction
-    | _UnaryInstruction
-)
-
-
-@dataclass(frozen=True)
-class CompiledAST:
-    transform: Callable[[np.ndarray], np.ndarray]
-    variables: tuple[Parameter, ...]
-    initial_values: np.ndarray
-
-    def __call__(self, theta: np.ndarray) -> np.ndarray:
-        return self.transform(theta)
-
-
-def compile_ast(
-    roots: list[Node] | tuple[Node, ...],
-    context: ASTContext | None = None,
-) -> CompiledAST:
-    """Compile an AST into a pure differentiable theta -> roots transform."""
-
-    roots = tuple(roots)
-    context = dict(context or {})
-
-    variables = collect_variables(roots, context)
-    variable_indices = {parameter: i for i, parameter in enumerate(variables)}
-    initial_values = np.array([p.value for p in variables], dtype=float)
-
-    slots: dict[Node, int] = {}
-    active: set[Node] = set()
-    program: list[_Instruction] = []
-
-    def emit(instruction: _Instruction) -> int:
-        slot = len(program)
-        program.append(instruction)
-        return slot
-
-    def compile_node(node: Node) -> int:
-        if node in active:
-            raise ASTCycleError(f"Cycle detected at {node!r}.")
-
-        if node in slots:
-            return slots[node]
-
-        active.add(node)
-
-        if isinstance(node, Literal):
-            slot = emit(_ConstInstruction(node.value))
-
-        elif isinstance(node, Parameter):
-            if node.is_variable:
-                slot = emit(_ThetaInstruction(variable_indices[node]))
-            else:
-                slot = emit(_ConstInstruction(node.value))
-
-        elif isinstance(node, BinaryOp):
-            left = compile_node(node.left)
-            right = compile_node(node.right)
-            slot = emit(_BinaryInstruction(node.op, left, right))
-
-        elif isinstance(node, UnaryOp):
-            operand = compile_node(node.operand)
-            slot = emit(_UnaryInstruction(node.op, operand))
-
-        elif isinstance(node, InputNode):
-            if node.node is None:
-                raise UnresolvedInputError("Encountered an empty InputNode.")
-            slot = compile_node(node.node)
-
-        elif isinstance(node, SystemVar):
-            value = resolve_system_var(node, context)
-            if isinstance(value, Node):
-                slot = compile_node(value)
-            else:
-                slot = emit(_ConstInstruction(value))
-
-        else:
-            raise UnsupportedNodeError(
-                f"Unsupported AST node type: {type(node).__name__}"
-            )
-
-        active.remove(node)
-        slots[node] = slot
-        return slot
-
-    root_slots = tuple(compile_node(root) for root in roots)
-    program = tuple(program)
-
-    def transform(theta: np.ndarray) -> np.ndarray:
-        if len(theta) != len(variables):
-            raise ValueError(
-                f"Expected theta of length {len(variables)}, got {len(theta)}."
-            )
-
-        values = []
-
-        for instruction in program:
-            if instruction.opcode is _Opcode.CONST:
-                values.append(instruction.value)
-
-            elif instruction.opcode is _Opcode.THETA:
-                values.append(theta[instruction.index])
-
-            elif instruction.opcode is _Opcode.BINARY:
-                left = values[instruction.left]
-                right = values[instruction.right]
-                values.append(instruction.op.func(left, right))
-
-            elif instruction.opcode is _Opcode.UNARY:
-                operand = values[instruction.operand]
-                values.append(instruction.op.func(operand))
-
-        return np.array([values[slot] for slot in root_slots])
-
-    return CompiledAST(
-        transform=transform,
-        variables=variables,
-        initial_values=initial_values,
-    )

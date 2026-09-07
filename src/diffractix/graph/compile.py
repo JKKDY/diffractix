@@ -78,7 +78,7 @@ Instruction = (
 )
 
 
-@dataclass(frozen=True)
+@dataclass(eq=False, frozen=True)
 class ASTProgram:
     """
     Linear numerical program generated from an AST.
@@ -400,7 +400,7 @@ def compile_ast(roots: Sequence[Node], context: ASTContext | None = None) -> Com
 
     variables = collect_variables(roots, context)
     variable_indices = {
-        parameter: index
+        id(parameter): index
         for index, parameter in enumerate(variables)
     }
 
@@ -409,11 +409,11 @@ def compile_ast(roots: Sequence[Node], context: ASTContext | None = None) -> Com
         dtype=float,
     )
 
-    # Each AST node maps to the index of the value produced for that node.
-    value_indices: dict[Node, int] = {}
+    # Each AST node identity maps to the index of the value produced for that node.
+    value_indices: dict[int, int] = {}
 
-    # Tracks the current recursion path so cycles can be detected explicitly.
-    active: set[Node] = set()
+    # Tracks the current recursion path by node identity so cycles can be detected explicitly.
+    active: set[int] = set()
 
     instructions: list[Instruction] = []
 
@@ -425,16 +425,18 @@ def compile_ast(roots: Sequence[Node], context: ASTContext | None = None) -> Com
 
     def compile_node(node: Node) -> int:
         """Compile a node and return the index of its resulting value."""
-        if node in active:
+        node_id = id(node)
+
+        if node_id in active:
             raise ASTCycleError(
                 f"Cycle detected at {describe_node(node)}."
             )
 
         # Explicitly shared AST nodes reuse the same compiled value.
-        if node in value_indices:
-            return value_indices[node]
+        if node_id in value_indices:
+            return value_indices[node_id]
 
-        active.add(node)
+        active.add(node_id)
 
         if isinstance(node, Literal):
             value_index = emit(
@@ -445,7 +447,7 @@ def compile_ast(roots: Sequence[Node], context: ASTContext | None = None) -> Com
             if node.is_variable:
                 value_index = emit(
                     VariableInstruction(
-                        variable_indices[node]
+                        variable_indices[node_id]
                     )
                 )
             else:
@@ -503,8 +505,8 @@ def compile_ast(roots: Sequence[Node], context: ASTContext | None = None) -> Com
                 f"Unsupported AST node type: {type(node).__name__}"
             )
 
-        active.remove(node)
-        value_indices[node] = value_index
+        active.remove(node_id)
+        value_indices[node_id] = value_index
 
         return value_index
 
@@ -525,3 +527,5 @@ def compile_ast(roots: Sequence[Node], context: ASTContext | None = None) -> Com
         variables=variables,
         initial_values=initial_values,
     )
+
+

@@ -17,7 +17,7 @@ from diffractix.simulation.simulation import Simulation, SimulationStep
 from .errors import SystemValidationError
 from .system_vars import AMBIENT_N
 
-@dataclass(frozen=True)
+@dataclass(eq=False, frozen=True)
 class SourceInfo:
     """Location in user code where an element was added to the system."""
 
@@ -31,7 +31,7 @@ class SourceInfo:
 
 
 
-@dataclass(frozen=True)
+@dataclass(eq=False, frozen=True)
 class ParameterInfo:
     """Immutable descriptor for one simulation parameter."""
 
@@ -157,14 +157,20 @@ class System:
         """
 
         if isinstance(element, ElementBase):
-            if z is not None and not isinstance(z, (Node, Real)):
-                raise TypeError(
-                    f"z must be a Node, numeric scalar, or None; got {type(z).__name__}."
-                )
+            dataclass_params = getattr(type(element), "__dataclass_params__", None)
 
+            # validity checks
+            if dataclass_params is not None and dataclass_params.eq:
+                raise TypeError(
+                    f"{type(element).__name__} must use @dataclass(eq=False). "
+                    "Optical elements use object identity, not structural equality."
+                )
+            if z is not None and not isinstance(z, (Node, Real)):
+                raise TypeError(f"z must be a Node, numeric scalar, or None; got {type(z).__name__}.")
             if isinstance(z, bool):
                 raise TypeError("z must be a Node, numeric scalar, or None.")
 
+            # add element
             self._placements.append(
                 Placement(
                     element=element,
@@ -172,6 +178,7 @@ class System:
                     source_info=self._capture_source_info(),
                 )
             )
+
             return self
 
         if isinstance(element, Iterable) and not isinstance(element, (str, bytes)):
@@ -495,6 +502,7 @@ class System:
 
         return tuple(resolved), tuple(continuity)
 
+
     def _validate_refractive_index_continuity(self, continuity):
         if not continuity:
             return
@@ -527,6 +535,7 @@ class System:
                     f"Element requires: n={required:.4f}\n"
                     "Insert an Interface before this element."
                 )
+  
     # -----------
     # COMPILATION
     # -----------

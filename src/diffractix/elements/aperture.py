@@ -10,7 +10,7 @@ from .element import OpticalElement
 from ..graph import Node, SystemVar
 
 
-@dataclass(kw_only=True)
+@dataclass(eq=False, kw_only=True)
 class GaussianAperture(OpticalElement):
     """
     A soft Gaussian aperture.

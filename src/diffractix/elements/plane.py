@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from .element import OpticalElement
 
 
-@dataclass(kw_only=True)
+@dataclass(eq=False, kw_only=True)
 class Plane(OpticalElement):
     """
     A zero-length, zero-power reference plane.
