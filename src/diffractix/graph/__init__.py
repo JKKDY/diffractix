@@ -1,6 +1,7 @@
-from .node import Node, Literal, Parameter, SystemVar, InputNode
+from .node import Node, Literal, Parameter, SystemVar, InputNode, system_var
 from .compile import CompiledAST, compile_ast
 from .utils import collect_variables, clone_ast
+from .relations import Relation, Comparison
 
 __all__ = [
     "Node",
@@ -12,4 +13,7 @@ __all__ = [
     "compile_ast",
     "collect_variables",
     "clone_ast",
+    "Relation", 
+    "Comparison", 
+    "system_var"
 ]

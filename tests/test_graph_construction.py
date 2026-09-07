@@ -2,13 +2,21 @@ import pytest
 import autograd.numpy as np
 
 from diffractix.graph.node import (
-    Literal,
-    Parameter,
-    SystemVar,
-    InputNode,
     BinaryOp,
     UnaryOp,
 )
+
+from diffractix.graph import (
+    Comparison,
+    Literal,
+    Node,
+    Parameter,
+    Relation,
+    compile_ast,
+    SystemVar,
+    InputNode
+)
+
 
 
 # -----------------
@@ -219,7 +227,6 @@ def test_equivalent_expressions_are_not_interned():
     b = x + 1
 
     assert a is not b
-    assert a != b
 
 
 def test_explicit_expression_sharing_is_preserved():
@@ -348,3 +355,264 @@ def test_system_vars_are_not_interned():
     b = SystemVar("ambient_n")
 
     assert a is not b
+
+
+# -------------------
+# RELATION CREATION
+# -------------------
+def test_equality_creates_comparison():
+    x = Parameter(1.0)
+    comparison = x == 2.0
+
+    assert isinstance(comparison, Comparison)
+    assert comparison.relation is Relation.EQ
+    assert comparison.left is x
+    assert isinstance(comparison.right, Literal)
+    assert comparison.right.value == 2.0
+
+
+def test_less_equal_creates_comparison():
+    x = Parameter(1.0)
+    comparison = x <= 2.0
+
+    assert isinstance(comparison, Comparison)
+    assert comparison.relation is Relation.LE
+    assert comparison.left is x
+    assert isinstance(comparison.right, Literal)
+    assert comparison.right.value == 2.0
+
+
+def test_greater_equal_creates_comparison():
+    x = Parameter(1.0)
+    comparison = x >= 2.0
+
+    assert isinstance(comparison, Comparison)
+    assert comparison.relation is Relation.GE
+    assert comparison.left is x
+    assert isinstance(comparison.right, Literal)
+    assert comparison.right.value == 2.0
+
+
+def test_less_than_creates_comparison():
+    x = Parameter(1.0)
+    comparison = x < 2.0
+
+    assert isinstance(comparison, Comparison)
+    assert comparison.relation is Relation.LT
+    assert comparison.left is x
+    assert isinstance(comparison.right, Literal)
+    assert comparison.right.value == 2.0
+
+
+def test_greater_than_creates_comparison():
+    x = Parameter(1.0)
+    comparison = x > 2.0
+
+    assert isinstance(comparison, Comparison)
+    assert comparison.relation is Relation.GT
+    assert comparison.left is x
+    assert isinstance(comparison.right, Literal)
+    assert comparison.right.value == 2.0
+
+
+# ----------------
+# NODE OPERANDS
+# ----------------
+def test_comparison_preserves_node_operands():
+    x = Parameter(1.0)
+    y = Parameter(2.0)
+
+    comparison = x <= y
+
+    assert comparison.left is x
+    assert comparison.right is y
+
+
+def test_comparison_accepts_expression_operands():
+    x = Parameter(1.0)
+    y = Parameter(2.0)
+
+    expression = x + y
+    comparison = expression == 3.0
+
+    assert comparison.relation is Relation.EQ
+    assert comparison.left is expression
+    assert isinstance(comparison.right, Literal)
+    assert comparison.right.value == 3.0
+
+
+def test_comparison_between_expressions():
+    x = Parameter(1.0)
+    y = Parameter(2.0)
+
+    left = x + 1.0
+    right = 2.0 * y
+    comparison = left >= right
+
+    assert comparison.relation is Relation.GE
+    assert comparison.left is left
+    assert comparison.right is right
+
+
+# ---------------------
+# REFLECTED COMPARISON
+# ---------------------
+
+def test_scalar_less_than_node_uses_reflected_relation():
+    x = Parameter(1.0)
+
+    comparison = 0.0 < x
+
+    assert isinstance(comparison, Comparison)
+    assert comparison.relation is Relation.GT
+    assert comparison.left is x
+    assert isinstance(comparison.right, Literal)
+    assert comparison.right.value == 0.0
+
+
+def test_scalar_less_equal_node_uses_reflected_relation():
+    x = Parameter(1.0)
+
+    comparison = 0.0 <= x
+
+    assert isinstance(comparison, Comparison)
+    assert comparison.relation is Relation.GE
+    assert comparison.left is x
+    assert isinstance(comparison.right, Literal)
+    assert comparison.right.value == 0.0
+
+
+def test_scalar_greater_than_node_uses_reflected_relation():
+    x = Parameter(1.0)
+
+    comparison = 2.0 > x
+
+    assert isinstance(comparison, Comparison)
+    assert comparison.relation is Relation.LT
+    assert comparison.left is x
+    assert isinstance(comparison.right, Literal)
+    assert comparison.right.value == 2.0
+
+
+def test_scalar_greater_equal_node_uses_reflected_relation():
+    x = Parameter(1.0)
+
+    comparison = 2.0 >= x
+
+    assert isinstance(comparison, Comparison)
+    assert comparison.relation is Relation.LE
+    assert comparison.left is x
+    assert isinstance(comparison.right, Literal)
+    assert comparison.right.value == 2.0
+
+
+def test_scalar_equality_node_creates_comparison():
+    x = Parameter(1.0)
+
+    comparison = 1.0 == x
+
+    assert isinstance(comparison, Comparison)
+    assert comparison.relation is Relation.EQ
+    assert comparison.left is x
+    assert isinstance(comparison.right, Literal)
+    assert comparison.right.value == 1.0
+
+
+# -------------------
+# BOOLEAN SEMANTICS
+# -------------------
+def test_symbolic_comparison_has_no_truth_value():
+    x = Parameter(1.0)
+    comparison = x == 1.0
+
+    with pytest.raises(
+        TypeError,
+        match="cannot be used as booleans",
+    ):
+        bool(comparison)
+
+
+def test_symbolic_comparison_fails_in_if_statement():
+    x = Parameter(1.0)
+
+    with pytest.raises(
+        TypeError,
+        match="cannot be used as booleans",
+    ):
+        if x == 1.0:
+            pass
+
+
+# ------------------
+# TERMINAL SEMANTICS
+# ------------------
+
+def test_comparison_is_not_graph_node():
+    x = Parameter(1.0)
+    comparison = x == 1.0
+
+    assert not isinstance(comparison, Node)
+
+
+def test_comparison_cannot_participate_in_arithmetic():
+    x = Parameter(1.0)
+    comparison = x == 1.0
+
+    with pytest.raises(TypeError):
+        comparison + 1.0
+
+
+def test_comparison_cannot_be_compiled_as_ast_root():
+    x = Parameter(1.0)
+    comparison = x == 1.0
+
+    with pytest.raises(
+        TypeError,
+        match="AST root must be a Node",
+    ):
+        compile_ast((comparison,))
+
+
+# -----------------
+# IDENTITY SAFETY
+# -----------------
+def test_nodes_are_unhashable_after_symbolic_equality():
+    x = Parameter(1.0)
+
+    with pytest.raises(TypeError):
+        hash(x)
+
+
+def test_distinct_equal_valued_parameters_remain_distinct():
+    x = Parameter(1.0, name="x").variable()
+    y = Parameter(1.0, name="x").variable()
+
+    graph = compile_ast((x + y,))
+
+    assert len(graph.variables) == 2
+    assert graph.variables[0] is x
+    assert graph.variables[1] is y
+
+
+# --------------
+# REPRESENTATION
+# --------------
+@pytest.mark.parametrize(
+    ("relation", "symbol"),
+    [
+        (Relation.EQ, "=="),
+        (Relation.LE, "<="),
+        (Relation.GE, ">="),
+        (Relation.LT, "<"),
+        (Relation.GT, ">"),
+    ],
+)
+def test_relation_values(relation, symbol):
+    assert relation.value == symbol
+
+
+def test_comparison_repr_contains_relation():
+    x = Parameter(1.0, name="x")
+    comparison = x <= 2.0
+
+    assert "<=" in repr(comparison)

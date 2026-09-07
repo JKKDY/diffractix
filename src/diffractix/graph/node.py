@@ -1,9 +1,11 @@
 from __future__ import annotations
+from dataclasses import field
 
 import weakref
 import autograd.numpy as np
 
 from .ops import Op
+from .relations import Relation, Comparison
 
 
 Scalar = int | float | complex
@@ -36,6 +38,31 @@ class Node:
         if not isinstance(operand, Node):
             operand = Node._make_literal(operand)
         return UnaryOp(op, operand)
+
+    @staticmethod
+    def _make_comparison(relation: Relation, left: Node | Scalar, right: Node | Scalar) -> Comparison:
+        if not isinstance(left, Node):
+            left = Node._make_literal(left)
+
+        if not isinstance(right, Node):
+            right = Node._make_literal(right)
+
+        return Comparison(relation, left, right)
+
+    def __eq__(self, other: Node | Scalar) -> Comparison:
+        return Node._make_comparison(Relation.EQ, self, other)
+
+    def __le__(self, other: Node | Scalar) -> Comparison:
+        return Node._make_comparison(Relation.LE, self, other)
+
+    def __ge__(self, other: Node | Scalar) -> Comparison:
+        return Node._make_comparison(Relation.GE, self, other)
+
+    def __lt__(self, other: Node | Scalar) -> Comparison:
+        return Node._make_comparison(Relation.LT, self, other)
+
+    def __gt__(self, other: Node | Scalar) -> Comparison:
+        return Node._make_comparison(Relation.GT, self, other)
 
     # ----------------
     # Unary operations
@@ -378,3 +405,10 @@ class SystemVar(Node):
 
 
 
+def system_var(name: str, namespace: str = "system"):
+    return field(
+        default_factory=lambda: SystemVar(
+            name,
+            namespace=namespace,
+        )
+    )

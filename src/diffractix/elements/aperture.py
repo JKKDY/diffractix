@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import autograd.numpy as np
 
 from .element import OpticalElement
-from ..graph import Node, SystemVar
+from diffractix.graph import Node, system_var
 
 
 @dataclass(eq=False, kw_only=True)
@@ -21,7 +21,7 @@ class GaussianAperture(OpticalElement):
     """
 
     a: Node
-    wavelength: Node = SystemVar("wavelength")
+    wavelength: Node = system_var("wavelength")
 
     @property
     def matrix(self):
