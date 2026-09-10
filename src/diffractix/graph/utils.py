@@ -117,6 +117,14 @@ def walk_ast(roots: Sequence[Node], context: ASTContext | None = None):
         yield from visit(root)
 
 
+
+def collect_parameters(roots: Sequence[Node], context: ASTContext | None = None) -> tuple[Parameter, ...]:
+    """Collect all unique Parameter leaves reachable from roots."""
+    return tuple(
+        node for node in walk_ast(roots, context) if isinstance(node, Parameter)
+    )
+
+
 def collect_variables(roots: Sequence[Node], context: ASTContext | None = None) -> tuple[Parameter, ...]:
     """
     Collect unique variable Parameters reachable from the roots.
@@ -124,13 +132,10 @@ def collect_variables(roots: Sequence[Node], context: ASTContext | None = None) 
     Parameters are deduplicated by object identity and returned in deterministic
     first-encounter order.
     """
-    variables = []
-
-    for node in walk_ast(roots, context):
-        if isinstance(node, Parameter) and node.is_variable:
-            variables.append(node)
-
-    return tuple(variables)
+    return tuple(
+        parameter for parameter in collect_parameters(roots, context)
+        if parameter.is_variable
+    )
 
 
 def clone_ast(roots: Sequence[Node], *, preserve_owners: bool = True) -> tuple[Node, ...]:
@@ -202,3 +207,6 @@ def clone_ast(roots: Sequence[Node], *, preserve_owners: bool = True) -> tuple[N
         return result
 
     return tuple(clone(root) for root in roots)
+
+
+

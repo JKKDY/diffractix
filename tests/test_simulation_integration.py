@@ -32,12 +32,9 @@ def theta_with(simulation, *updates):
     theta = simulation.initial_values.copy()
 
     for parameter, value in updates:
-        index = next(
-            info.index
-            for info in simulation.parameter_info
-            if info.parameter is parameter
-        )
-        theta[index] = value
+        info = simulation.parameter_info[id(parameter)]
+        assert info.is_variable
+        theta[info.parameter_index] = value
 
     return theta
 
@@ -71,7 +68,7 @@ def test_empty_simulation_has_no_parameters():
     simulation = system.build()
 
     assert len(simulation.initial_values) == 0
-    assert simulation.parameter_info == ()
+    assert simulation.parameter_info == {}
 
 
 # ----------------
@@ -263,7 +260,9 @@ def test_fixed_parameters_do_not_appear_in_theta():
     simulation = system.build()
 
     assert len(simulation.initial_values) == 1
-    assert simulation.parameter_info[0].parameter is lens.f.node
+    info = simulation.parameter_info[id(lens.f.node)]
+    assert info.is_variable
+    assert info.parameter_index == 0
 
 
 # -----------------------
@@ -343,7 +342,9 @@ def test_shared_parameter_controls_multiple_elements():
     simulation = system.build()
 
     assert len(simulation.initial_values) == 1
-    assert simulation.parameter_info[0].parameter is distance
+    info = simulation.parameter_info[id(distance)]
+    assert info.is_variable
+    assert info.parameter_index == 0
 
     result = simulation.run(np.array([0.3]))
 
@@ -544,7 +545,9 @@ def test_repeated_variable_element_has_one_theta_dimension():
     simulation = system.build()
 
     assert len(simulation.initial_values) == 1
-    assert simulation.parameter_info[0].parameter is lens.f.node
+    info = simulation.parameter_info[id(lens.f.node)]
+    assert info.is_variable
+    assert info.parameter_index == 0
 
 
 def test_repeated_variable_element_uses_same_theta_value_each_time():

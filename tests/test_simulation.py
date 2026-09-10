@@ -44,7 +44,7 @@ def create_simulation(
     *,
     initial_values=(),
     source=None,
-    parameter_info=(),
+    parameter_info=None,
     location_map=None,
     requirements=(),
 ):
@@ -53,6 +53,9 @@ def create_simulation(
 
     if location_map is None:
         location_map = {}
+
+    if parameter_info is None:
+        parameter_info = {}
 
     graph = DummyGraph(
         initial_values=np.array(initial_values),
@@ -84,7 +87,7 @@ def test_simulation_stores_compiled_data():
         length_index=4,
         refractive_index_index=5,
     )
-    parameter_info = (object(),)
+    parameter_info = {1: object()}
     location_map = {1: ((0, 1),)}
     requirements = (object(),)
 
@@ -105,7 +108,7 @@ def test_simulation_stores_compiled_data():
     assert simulation.requirements == requirements
 
 
-def test_simulation_converts_sequences_to_tuples():
+def test_simulation_converts_sequence_fields_to_tuples():
     simulation = Simulation(
         source=DummyState(),
         graph=DummyGraph(
@@ -113,13 +116,13 @@ def test_simulation_converts_sequences_to_tuples():
             evaluator=lambda theta: np.array([]),
         ),
         steps=[],
-        parameter_info=[],
+        parameter_info={},
         location_map={},
         requirements=[],
     )
 
     assert simulation.steps == ()
-    assert simulation.parameter_info == ()
+    assert simulation.parameter_info == {}
     assert simulation.requirements == ()
 
 
@@ -134,7 +137,7 @@ def test_simulation_initial_values_are_graph_initial_values():
         source=DummyState(),
         graph=graph,
         steps=(),
-        parameter_info=(),
+        parameter_info={},
         location_map={},
     )
 
@@ -154,7 +157,7 @@ def test_simulation_rejects_non_dataclass_state():
             source=InvalidState(),
             graph=graph,
             steps=(),
-            parameter_info=(),
+            parameter_info={},
             location_map={},
         )
 
@@ -649,7 +652,7 @@ def test_run_uses_initial_values_when_theta_is_none():
         source=DummyState(),
         graph=graph,
         steps=(step,),
-        parameter_info=(),
+        parameter_info={},
         location_map={},
     )
 
@@ -681,7 +684,7 @@ def test_run_uses_supplied_theta():
         source=DummyState(),
         graph=graph,
         steps=(step,),
-        parameter_info=(),
+        parameter_info={},
         location_map={},
     )
 
@@ -713,7 +716,7 @@ def test_run_does_not_modify_initial_values():
         source=DummyState(),
         graph=graph,
         steps=(step,),
-        parameter_info=(),
+        parameter_info={},
         location_map={},
     )
 
@@ -812,7 +815,7 @@ def test_run_is_differentiable_with_respect_to_theta():
         source=DummyState(),
         graph=graph,
         steps=(step,),
-        parameter_info=(),
+        parameter_info={},
         location_map={},
     )
 

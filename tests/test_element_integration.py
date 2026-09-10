@@ -22,12 +22,9 @@ def theta_with(simulation, *updates):
     theta = simulation.initial_values.copy()
 
     for parameter, value in updates:
-        index = next(
-            info.index
-            for info in simulation.parameter_info
-            if info.parameter is parameter
-        )
-        theta[index] = value
+        info = simulation.parameter_info[id(parameter)]
+        assert info.is_variable
+        theta[info.parameter_index] = value
 
     return theta
 
@@ -564,7 +561,10 @@ def test_variable_ambient_index_is_simulation_parameter():
     simulation = system.build()
 
     assert len(simulation.initial_values) == 1
-    assert simulation.parameter_info[0].parameter is system.ambient_n
+    info = simulation.parameter_info[id(system.ambient_n)]
+    assert info.parameter_id == id(system.ambient_n)
+    assert info.parameter_index == 0
+    assert info.is_variable
     assert simulation.initial_values[0] == pytest.approx(1.0)
 
 
@@ -903,8 +903,13 @@ def test_same_variable_element_parameter_identity_is_preserved_across_simulation
     first_simulation = first_system.build()
     second_simulation = second_system.build()
 
-    assert first_simulation.parameter_info[0].parameter is parameter
-    assert second_simulation.parameter_info[0].parameter is parameter
+    first_info = first_simulation.parameter_info[id(parameter)]
+    second_info = second_simulation.parameter_info[id(parameter)]
+
+    assert first_info.parameter_id == id(parameter)
+    assert second_info.parameter_id == id(parameter)
+    assert first_info.parameter_index == 0
+    assert second_info.parameter_index == 0
 
 
 def test_same_standalone_parameter_can_drive_different_systems():
@@ -930,8 +935,13 @@ def test_same_standalone_parameter_can_drive_different_systems():
     assert len(first_simulation.initial_values) == 1
     assert len(second_simulation.initial_values) == 1
 
-    assert first_simulation.parameter_info[0].parameter is scale
-    assert second_simulation.parameter_info[0].parameter is scale
+    first_info = first_simulation.parameter_info[id(scale)]
+    second_info = second_simulation.parameter_info[id(scale)]
+
+    assert first_info.parameter_id == id(scale)
+    assert second_info.parameter_id == id(scale)
+    assert first_info.parameter_index == 0
+    assert second_info.parameter_index == 0
 
     first = first_simulation.run(np.array([0.4]))
     second = second_simulation.run(np.array([0.8]))

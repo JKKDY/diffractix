@@ -33,14 +33,14 @@ class Simulation:
         source: ParaxialState,
         graph: CompiledAST,
         steps: Sequence[SimulationStep],
-        parameter_info: Sequence[ParameterInfo],
+        parameter_info: Mapping[int, ParameterInfo],
         location_map: Mapping,
         requirements=(),
     ):
         self.source = source
         self.graph = graph
         self.steps = tuple(steps)
-        self.parameter_info = tuple(parameter_info)
+        self.parameter_info = parameter_info
         self.location_map = location_map
         self.requirements = tuple(requirements)
 

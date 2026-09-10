@@ -12,6 +12,7 @@ from ..graph import Node, Parameter
 _GRAPH_PARAMETER = object()
 
 
+
 def parameter(default=None):
     """
     Explicitly declare an element field as a graph parameter.
@@ -19,6 +20,7 @@ def parameter(default=None):
     This is an alternative to annotating the field with Node.
     """
     return field(default=default, metadata={_GRAPH_PARAMETER: True})
+
 
 
 @dataclass(eq=False, kw_only=True)
@@ -56,10 +58,10 @@ class OpticalElement(ElementBase, ABC):
             self.label = f"{cls.__name__}{num_instances + 1}"
             OpticalElement._instance_counts[cls] = num_instances + 1
 
+
     # -------------------
     # PARAMETER DISCOVERY
     # -------------------
-
     @classmethod
     def _get_parameter_names(cls) -> tuple[str, ...]:
         cached = cls.__dict__.get("_parameter_names")
@@ -78,10 +80,10 @@ class OpticalElement(ElementBase, ABC):
         cls._parameter_names = tuple(names)
         return cls._parameter_names
 
+
     # ------------
     # REQUIREMENTS
     # ------------
-
     @property
     def requirements(self) -> tuple[Any, ...]:
         """Persistent requirements attached to this element."""
@@ -91,10 +93,10 @@ class OpticalElement(ElementBase, ABC):
         self._requirements.extend(requirements)
         return self
 
+
     # ------------------
     # ELEMENT PROPERTIES
     # ------------------
-
     @property
     @abstractmethod
     def matrix(self):
@@ -126,10 +128,10 @@ class OpticalElement(ElementBase, ABC):
         """
         return None
 
+
     # ----------
     # VALIDATION
     # ----------
-
     def _validate_for_build(self):
         """
         Validate the element definition before compilation.
@@ -143,10 +145,10 @@ class OpticalElement(ElementBase, ABC):
         # TODO: detect undeclared scalar numerical dependencies.
         return
 
+
     # -------
     # DISPLAY
     # -------
-
     def __str__(self):
         def current_value(value):
             if isinstance(value, Node):

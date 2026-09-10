@@ -11,7 +11,7 @@ from diffractix.beams.base import ParaxialState
 from diffractix.composites import CompositeElement
 from diffractix.elements import OpticalElement, Interface, Space, ABCD
 from diffractix.elements.base import ElementBase
-from diffractix.graph import Node, Parameter, Literal, InputNode, compile_ast
+from diffractix.graph import Node, Parameter, Literal, InputNode, compile_ast, collect_parameters
 from diffractix.simulation.simulation import Simulation, SimulationStep
 
 from .errors import SystemValidationError
@@ -31,20 +31,24 @@ class SourceInfo:
 
 
 
-@dataclass(eq=False, frozen=True)
+
+
+@dataclass(frozen=True)
 class ParameterInfo:
-    """Immutable descriptor for one simulation parameter."""
+    """Descriptor for a simulation parameter."""
 
-    index: int
-    parameter: Parameter
-
-    name: str
-    initial_value: float
+    parameter_id: int
+    name: str | None
+    value: float
+    parameter_index: int | None
     lower_bound: float
     upper_bound: float
-
     owner_type: str | None = None
     owner_label: str | None = None
+
+    @property
+    def is_variable(self) -> bool:
+        return self.parameter_index is not None
 
 
 
@@ -597,22 +601,28 @@ class System:
 
         graph = compile_ast(roots, context=self.context)
 
-        parameter_info = []
+        parameters = collect_parameters(roots, context=self.context)
 
-        for index, parameter in enumerate(graph.variables):
+        variable_indices = { 
+            id(parameter): index 
+            for index, parameter in enumerate(graph.variables)
+        }
+
+        parameter_info = {}
+
+        for parameter in parameters:
+            parameter_id = id(parameter)
             owner = parameter.owner
 
-            parameter_info.append(
-                ParameterInfo(
-                    index=index,
-                    parameter=parameter,
-                    name=parameter.name,
-                    initial_value=graph.initial_values[index],
-                    lower_bound=parameter.lower_bound,
-                    upper_bound=parameter.upper_bound,
-                    owner_type=type(owner).__name__ if owner is not None else None,
-                    owner_label=getattr(owner, "label", None) if owner is not None else None,
-                )
+            parameter_info[parameter_id] = ParameterInfo(
+                parameter_id=parameter_id,
+                name=parameter.name,
+                value=parameter.value,
+                parameter_index=variable_indices.get(parameter_id),
+                lower_bound=parameter.lower_bound,
+                upper_bound=parameter.upper_bound,
+                owner_type=type(owner).__name__ if owner is not None else None,
+                owner_label=getattr(owner, "label", None) if owner is not None else None,
             )
 
         location_map = {
@@ -620,7 +630,7 @@ class System:
             for element_id, locations in location_map.items()
         }
 
-        return graph, tuple(steps), tuple(parameter_info), location_map
+        return graph, tuple(steps), parameter_info, location_map
 
 
     def _build_simulation(self, compiled):

@@ -247,8 +247,9 @@ def test_system_shared_parameter_is_single_simulation_dimension():
     simulation = system.build()
 
     assert len(simulation.initial_values) == 1
-    assert len(simulation.parameter_info) == 1
-    assert simulation.parameter_info[0].parameter is focal_length
+    info = simulation.parameter_info[id(focal_length)]
+    assert info.is_variable
+    assert info.parameter_index == 0
 
 
 # ---------------

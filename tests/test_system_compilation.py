@@ -602,8 +602,16 @@ def test_compile_creates_parameter_info_for_variable_parameter():
 
     graph, steps, parameter_info, location_map = system._compile(elements)
 
-    assert len(parameter_info) == 1
-    assert isinstance(parameter_info[0], ParameterInfo)
+    info = parameter_info[id(lens.f.node)]
+
+    assert isinstance(info, ParameterInfo)
+    assert info.parameter_id == id(lens.f.node)
+    assert info.name == "f"
+    assert info.value == pytest.approx(0.1)
+    assert info.parameter_index == 0
+    assert info.is_variable
+    assert info.owner_type == "ThinLens"
+    assert info.owner_label == "Lens"
 
 
 def test_compile_parameter_info_matches_graph_variable_order():
@@ -618,12 +626,19 @@ def test_compile_parameter_info_matches_graph_variable_order():
 
     graph, steps, parameter_info, location_map = system._compile(elements)
 
-    assert len(parameter_info) == len(graph.variables)
+    variable_info = tuple(
+        info
+        for info in parameter_info.values()
+        if info.is_variable
+    )
 
-    for index, info in enumerate(parameter_info):
-        assert info.index == index
-        assert info.parameter is graph.variables[index]
-        assert info.initial_value == pytest.approx(graph.initial_values[index])
+    assert len(variable_info) == len(graph.variables)
+
+    for index, parameter in enumerate(graph.variables):
+        info = parameter_info[id(parameter)]
+        assert info.parameter_id == id(parameter)
+        assert info.parameter_index == index
+        assert info.value == pytest.approx(graph.initial_values[index])
 
 
 def test_compile_parameter_info_snapshots_parameter_metadata():
@@ -636,11 +651,13 @@ def test_compile_parameter_info_snapshots_parameter_metadata():
     ))
 
     graph, steps, parameter_info, location_map = system._compile(elements)
-    info = parameter_info[0]
+    info = parameter_info[id(parameter)]
 
-    assert info.parameter is parameter
+    assert info.parameter_id == id(parameter)
     assert info.name == parameter.name
-    assert info.initial_value == pytest.approx(0.1)
+    assert info.value == pytest.approx(0.1)
+    assert info.parameter_index == 0
+    assert info.is_variable
     assert info.lower_bound == parameter.lower_bound
     assert info.upper_bound == parameter.upper_bound
     assert info.owner_type == "ThinLens"
@@ -660,7 +677,7 @@ def test_compile_parameter_info_is_independent_of_parameter_value_changes():
 
     parameter.value = 0.2
 
-    assert parameter_info[0].initial_value == pytest.approx(0.1)
+    assert parameter_info[id(parameter)].value == pytest.approx(0.1)
     assert graph.initial_values[0] == pytest.approx(0.1)
 
 
@@ -683,7 +700,7 @@ def test_compile_graph_is_independent_of_parameter_value_changes():
     assert np.allclose(current, initial)
 
 
-def test_compile_excludes_fixed_parameters_from_parameter_info():
+def test_compile_includes_fixed_parameters_in_parameter_info():
     system = System()
     lens = ThinLens(f=0.1, label="Lens")
 
@@ -695,7 +712,14 @@ def test_compile_excludes_fixed_parameters_from_parameter_info():
 
     assert graph.variables == ()
     assert len(graph.initial_values) == 0
-    assert parameter_info == ()
+
+    info = parameter_info[id(lens.f.node)]
+
+    assert not info.is_variable
+    assert info.parameter_index is None
+    assert info.value == pytest.approx(0.1)
+    assert info.owner_type == "ThinLens"
+    assert info.owner_label == "Lens"
 
 
 def test_compile_deduplicates_shared_variable_parameter():
@@ -712,9 +736,10 @@ def test_compile_deduplicates_shared_variable_parameter():
     graph, steps, parameter_info, location_map = system._compile(elements)
 
     assert graph.variables == (parameter,)
-    assert len(parameter_info) == 1
-    assert parameter_info[0].parameter is parameter
-    assert parameter_info[0].index == 0
+    info = parameter_info[id(parameter)]
+    assert info.parameter_id == id(parameter)
+    assert info.parameter_index == 0
+    assert info.is_variable
 
 
 def test_compile_parameter_info_supports_standalone_parameter():
@@ -727,11 +752,12 @@ def test_compile_parameter_info_supports_standalone_parameter():
     ))
 
     graph, steps, parameter_info, location_map = system._compile(elements)
-    info = parameter_info[0]
+    info = parameter_info[id(parameter)]
 
-    assert len(parameter_info) == 1
-    assert info.parameter is parameter
+    assert info.parameter_id == id(parameter)
     assert info.name == "base"
+    assert info.parameter_index == 0
+    assert info.is_variable
     assert info.owner_type is None
     assert info.owner_label is None
 
