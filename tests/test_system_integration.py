@@ -252,6 +252,25 @@ def test_system_shared_parameter_is_single_simulation_dimension():
     assert info.parameter_index == 0
 
 
+def test_simulation_parameter_info_is_identity_keyed():
+    beam = create_beam()
+    lens = ThinLens(f=0.1).variable("f")
+
+    simulation = (
+        System()
+        .add_input_beam(beam)
+        .add(lens)
+        .build()
+    )
+
+    parameter = lens.f.node
+    info = simulation.parameter_info[id(parameter)]
+
+    assert info.parameter_id == id(parameter)
+    assert info.parameter_index == 0
+    assert info.is_variable
+
+
 # ---------------
 # BUILD ISOLATION
 # ---------------

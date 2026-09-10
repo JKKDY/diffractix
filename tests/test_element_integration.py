@@ -4,7 +4,7 @@ from autograd import grad
 import autograd.numpy as np
 
 from diffractix.composites import Slab, ThickLens
-from diffractix.elements import Interface, Space, ThinLens
+from diffractix.elements import ABCD, Interface, Space, ThinLens
 from diffractix.graph import Parameter
 from diffractix.system.system import System
 from diffractix.beams import GaussianBeam
@@ -977,6 +977,36 @@ def test_mutation_between_builds_only_affects_later_build():
 
     assert first.z[-1] == pytest.approx(0.2)
     assert second.z[-1] == pytest.approx(0.6)
+
+
+def test_system_context_mutation_does_not_change_existing_simulation():
+    glass_n = Parameter(1.5, name="glass_n").variable()
+    element = ABCD(n=glass_n)
+
+    system = System()
+    system.add_input_beam(create_beam())
+    system.add(element)
+
+    first = system.build()
+    glass_n.value = 1.7
+
+    assert first.run().final.n == pytest.approx(1.5)
+    assert system.build().run().final.n == pytest.approx(1.7)
+
+
+def test_element_parameter_swap_does_not_change_existing_simulation():
+    lens = ThinLens(f=0.1)
+    system = System()
+    system.add_input_beam(create_beam())
+    system.add(lens)
+
+    simulation = system.build()
+    original = simulation.run().final.q
+
+    lens.f = 0.2
+
+    assert simulation.run().final.q == pytest.approx(original)
+    assert system.build().run().final.q != pytest.approx(original)
 
 
 def test_same_composite_can_be_reused_across_systems():

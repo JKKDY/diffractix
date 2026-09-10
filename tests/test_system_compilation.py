@@ -700,6 +700,27 @@ def test_compile_graph_is_independent_of_parameter_value_changes():
     assert np.allclose(current, initial)
 
 
+def test_compile_parameter_info_snapshots_variable_status_and_bounds():
+    system = System()
+    lens = ThinLens(f=0.1, label="Lens").variable("f")
+    parameter = lens.f.node
+
+    elements, continuity = system._resolve_refractive_indices((
+        Placement(element=lens),
+    ))
+
+    graph, steps, parameter_info, location_map = system._compile(elements)
+    info = parameter_info[id(parameter)]
+
+    parameter.fixed()
+    parameter.bound(0.05, 0.2)
+
+    assert info.is_variable
+    assert info.parameter_index == 0
+    assert np.isneginf(info.lower_bound)
+    assert np.isposinf(info.upper_bound)
+
+
 def test_compile_includes_fixed_parameters_in_parameter_info():
     system = System()
     lens = ThinLens(f=0.1, label="Lens")
