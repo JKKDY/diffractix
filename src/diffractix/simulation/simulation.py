@@ -34,6 +34,7 @@ class Simulation:
         graph: CompiledAST,
         steps: Sequence[SimulationStep],
         parameter_info: Mapping[int, ParameterInfo],
+        simulation_context: Mapping,
         location_map: Mapping,
         requirements=(),
     ):
@@ -43,6 +44,7 @@ class Simulation:
         self.parameter_info = parameter_info
         self.location_map = location_map
         self.requirements = tuple(requirements)
+        self.simulation_context = simulation_context
 
         self._result_type = result_type_for(self.source)
 

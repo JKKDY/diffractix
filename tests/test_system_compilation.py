@@ -783,6 +783,39 @@ def test_compile_parameter_info_supports_standalone_parameter():
     assert info.owner_label is None
 
 
+def test_compile_parameter_info_tracks_multiple_standalone_parameters():
+    system = System()
+    x = Parameter(10.0, name="x").variable()
+    y = Parameter(2.0, name="y").variable()
+    lens = ThinLens(f=3 * x + y, label="DerivedLens")
+
+    elements, continuity = system._resolve_refractive_indices((
+        Placement(element=lens),
+    ))
+
+    graph, steps, parameter_info, location_map = system._compile(elements)
+
+    assert graph.variables == (x, y)
+
+    x_info = parameter_info[id(x)]
+    y_info = parameter_info[id(y)]
+
+    assert x_info.parameter_id == id(x)
+    assert x_info.name == "x"
+    assert x_info.parameter_index == 0
+    assert x_info.is_variable
+
+    assert y_info.parameter_id == id(y)
+    assert y_info.name == "y"
+    assert y_info.parameter_index == 1
+    assert y_info.is_variable
+
+    values = graph.evaluate(np.array([4.0, 5.0]))
+    step = steps[0]
+
+    assert values[step.matrix_indices[1][0]] == pytest.approx(-1.0 / 17.0)
+
+
 def test_compile_location_map_uses_element_identity():
     system = System()
     lens = ThinLens(f=0.1)

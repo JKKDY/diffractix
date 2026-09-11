@@ -656,6 +656,7 @@ class System:
             parameter_info=parameter_info,
             location_map=location_map,
             requirements=self.requirements,
+            simulation_context = self.context
         )
 
 

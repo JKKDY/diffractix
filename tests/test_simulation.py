@@ -68,6 +68,7 @@ def create_simulation(
         steps=steps,
         parameter_info=parameter_info,
         location_map=location_map,
+        simulation_context={},
         requirements=requirements,
     )
 
@@ -97,6 +98,7 @@ def test_simulation_stores_compiled_data():
         steps=[step],
         parameter_info=parameter_info,
         location_map=location_map,
+        simulation_context={},
         requirements=requirements,
     )
 
@@ -118,6 +120,7 @@ def test_simulation_converts_sequence_fields_to_tuples():
         steps=[],
         parameter_info={},
         location_map={},
+        simulation_context={},
         requirements=[],
     )
 
@@ -139,6 +142,7 @@ def test_simulation_initial_values_are_graph_initial_values():
         steps=(),
         parameter_info={},
         location_map={},
+        simulation_context={},
     )
 
     assert simulation.initial_values is initial_values
@@ -159,6 +163,7 @@ def test_simulation_rejects_non_dataclass_state():
             steps=(),
             parameter_info={},
             location_map={},
+            simulation_context = {}
         )
 
 
@@ -654,6 +659,7 @@ def test_run_uses_initial_values_when_theta_is_none():
         steps=(step,),
         parameter_info={},
         location_map={},
+        simulation_context={},
     )
 
     result = simulation.run()
@@ -686,6 +692,7 @@ def test_run_uses_supplied_theta():
         steps=(step,),
         parameter_info={},
         location_map={},
+        simulation_context={},
     )
 
     result = simulation.run(np.array([7.0]))
@@ -718,6 +725,7 @@ def test_run_does_not_modify_initial_values():
         steps=(step,),
         parameter_info={},
         location_map={},
+        simulation_context={},
     )
 
     simulation.run(np.array([7.0]))
@@ -817,6 +825,7 @@ def test_run_is_differentiable_with_respect_to_theta():
         steps=(step,),
         parameter_info={},
         location_map={},
+        simulation_context = {}
     )
 
     def objective(value):
