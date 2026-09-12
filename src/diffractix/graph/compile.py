@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum, auto
 
@@ -10,7 +10,7 @@ from .node import (
     Node,
     Literal,
     Parameter,
-    SystemVar,
+    Symbol,
     InputNode,
     BinaryOp,
     UnaryOp,
@@ -22,7 +22,6 @@ from .utils import (
     UnresolvedInputError,
     UnsupportedNodeError,
     collect_variables,
-    resolve_system_var,
     describe_node,
 )
 
@@ -33,6 +32,7 @@ from .utils import (
 class Opcode(Enum):
     CONST = auto()
     VARIABLE = auto()
+    SYMBOL = auto()
     BINARY = auto()
     UNARY = auto()
 
@@ -51,6 +51,12 @@ class ConstInstruction:
 class VariableInstruction:
     index: int                    # index into supplied variable values
     opcode = Opcode.VARIABLE
+
+
+@dataclass(frozen=True)
+class SymbolInstruction:
+    index: int                    # index into supplied symbol values
+    opcode = Opcode.SYMBOL
 
 
 @dataclass(frozen=True)
@@ -73,6 +79,7 @@ class UnaryInstruction:
 Instruction = (
     ConstInstruction
     | VariableInstruction
+    | SymbolInstruction
     | BinaryInstruction
     | UnaryInstruction
 )
@@ -96,15 +103,31 @@ class CompiledAST:
 
     program: ASTProgram                  # optimized numerical program
     variables: tuple[Parameter, ...]     # ordered variable Parameters
+    symbols: tuple[Symbol, ...]          # ordered unresolved Symbols
     initial_values: np.ndarray           # initial variable values
 
-    def evaluate(self, variable_values: np.ndarray) -> np.ndarray:
-        """Evaluate the compiled AST for the supplied variable values."""
+    def evaluate(
+        self,
+        variable_values: np.ndarray,
+        bindings: Mapping | None = None,
+    ) -> np.ndarray:
+        """Evaluate the AST with variable values and runtime Symbol bindings."""
         if len(variable_values) != len(self.variables):
             raise ValueError(
                 f"Expected {len(self.variables)} variable values, "
                 f"got {len(variable_values)}."
             )
+
+        bindings = {} if bindings is None else bindings
+        symbol_values = []
+
+        for symbol in self.symbols:
+            try:
+                symbol_values.append(bindings[symbol.key])
+            except KeyError:
+                raise KeyError(
+                    f"Missing runtime binding for Symbol key {symbol.key!r}."
+                ) from None
 
         values = []
 
@@ -114,6 +137,9 @@ class CompiledAST:
 
             elif instruction.opcode is Opcode.VARIABLE:
                 values.append(variable_values[instruction.index])
+
+            elif instruction.opcode is Opcode.SYMBOL:
+                values.append(symbol_values[instruction.index])
 
             elif instruction.opcode is Opcode.BINARY:
                 left = values[instruction.left_index]
@@ -129,8 +155,12 @@ class CompiledAST:
             for index in self.program.root_indices
         ])
 
-    def __call__(self, variable_values: np.ndarray) -> np.ndarray:
-        return self.evaluate(variable_values)
+    def __call__(
+        self,
+        variable_values: np.ndarray,
+        bindings: Mapping | None = None,
+    ) -> np.ndarray:
+        return self.evaluate(variable_values, bindings=bindings)
 
 
 # --------------------
@@ -216,6 +246,12 @@ def fold_constants_and_cse(program: ASTProgram) -> ASTProgram:
         elif instruction.opcode is Opcode.VARIABLE:
             key = (
                 Opcode.VARIABLE,
+                instruction.index,
+            )
+
+        elif instruction.opcode is Opcode.SYMBOL:
+            key = (
+                Opcode.SYMBOL,
                 instruction.index,
             )
 
@@ -392,8 +428,7 @@ def compile_ast(roots: Sequence[Node], context: ASTContext | None = None) -> Com
     Compile an AST into an optimized differentiable numerical program.
 
     Compilation snapshots the current graph structure, fixed Parameter values,
-    and context values. Evaluation afterwards depends only on the supplied
-    variable values.
+    and context values. Unbound Symbols remain indexed runtime inputs.
     """
     roots = tuple(roots)
     context = dict(context or {})
@@ -408,6 +443,9 @@ def compile_ast(roots: Sequence[Node], context: ASTContext | None = None) -> Com
         [parameter.value for parameter in variables],
         dtype=float,
     )
+
+    symbols: list[Symbol] = []
+    symbol_indices: dict[object, int] = {}
 
     # Each AST node identity maps to the index of the value produced for that node.
     value_indices: dict[int, int] = {}
@@ -489,15 +527,24 @@ def compile_ast(roots: Sequence[Node], context: ASTContext | None = None) -> Com
             # instruction of their own.
             value_index = compile_node(node.node)
 
-        elif isinstance(node, SystemVar):
-            value = resolve_system_var(node, context)
+        elif isinstance(node, Symbol):
+            if node.key in context:
+                value = context[node.key]
 
-            # SystemVars likewise disappear during compilation once resolved.
-            if isinstance(value, Node):
-                value_index = compile_node(value)
+                # Compile-time bindings disappear after being resolved.
+                if isinstance(value, Node):
+                    value_index = compile_node(value)
+                else:
+                    value_index = emit(
+                        ConstInstruction(value)
+                    )
             else:
+                if node.key not in symbol_indices:
+                    symbol_indices[node.key] = len(symbols)
+                    symbols.append(node)
+
                 value_index = emit(
-                    ConstInstruction(value)
+                    SymbolInstruction(symbol_indices[node.key])
                 )
 
         else:
@@ -525,6 +572,7 @@ def compile_ast(roots: Sequence[Node], context: ASTContext | None = None) -> Com
     return CompiledAST(
         program=optimized_program,
         variables=variables,
+        symbols=tuple(symbols),
         initial_values=initial_values,
     )
 

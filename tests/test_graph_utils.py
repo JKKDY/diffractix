@@ -3,47 +3,17 @@ import pytest
 from diffractix.graph.node import (
     Node,
     Parameter,
-    SystemVar,
+    Symbol,
     InputNode,
 )
 from diffractix.graph.utils import (
     ASTCycleError,
     UnresolvedInputError,
-    UnresolvedSystemVarError,
     UnsupportedNodeError,
-    resolve_system_var,
     walk_ast,
     collect_variables,
     clone_ast,
 )
-
-
-# ------------------
-# CONTEXT RESOLUTION
-# ------------------
-def test_resolve_system_var_scalar():
-    """A SystemVar may resolve directly to a scalar context value."""
-    var = SystemVar("ambient_n")
-    context = {"ambient_n": 1.33}
-
-    assert resolve_system_var(var, context) == 1.33
-
-
-def test_resolve_system_var_node():
-    """A SystemVar may resolve to another AST node."""
-    var = SystemVar("ambient_n")
-    parameter = Parameter(1.33, name="n")
-    context = {"ambient_n": parameter}
-
-    assert resolve_system_var(var, context) is parameter
-
-
-def test_unresolved_system_var():
-    """Missing context entries should raise a dedicated resolution error."""
-    var = SystemVar("missing")
-
-    with pytest.raises(UnresolvedSystemVarError):
-        resolve_system_var(var, {})
 
 
 # ------------------
@@ -104,12 +74,12 @@ def test_collect_variables_through_input_node():
     assert collect_variables([handle * 2]) == (x,)
 
 
-def test_collect_variables_through_system_var():
+def test_collect_variables_through_bound_symbol():
     """
     Variable discovery should traverse AST nodes injected through context.
     """
     x = Parameter(2, name="x").variable()
-    var = SystemVar("external")
+    var = Symbol("external")
 
     variables = collect_variables(
         [var * 2],
@@ -119,12 +89,12 @@ def test_collect_variables_through_system_var():
     assert variables == (x,)
 
 
-def test_multiple_system_vars_can_resolve_to_same_parameter():
+def test_multiple_symbols_can_resolve_to_same_parameter():
     """
     Multiple context references to the same Parameter still represent one variable.
     """
-    a = SystemVar("shared")
-    b = SystemVar("shared")
+    a = Symbol("shared")
+    b = Symbol("shared")
     x = Parameter(2, name="x").variable()
 
     variables = collect_variables(
@@ -137,7 +107,7 @@ def test_multiple_system_vars_can_resolve_to_same_parameter():
 
 def test_scalar_context_value_adds_no_variable():
     """Scalar context values are terminal and introduce no variable Parameters."""
-    var = SystemVar("ambient_n")
+    var = Symbol("ambient_n")
 
     variables = collect_variables(
         [var * 2],
@@ -147,12 +117,11 @@ def test_scalar_context_value_adds_no_variable():
     assert variables == ()
 
 
-def test_collect_variables_requires_system_var_context():
-    """Variable discovery must fail if a reachable SystemVar is unresolved."""
-    var = SystemVar("missing")
+def test_collect_variables_treats_unbound_symbol_as_external_leaf():
+    """An unbound Symbol introduces no Parameter optimization variables."""
+    symbol = Symbol("missing")
 
-    with pytest.raises(UnresolvedSystemVarError):
-        collect_variables([var])
+    assert collect_variables([symbol]) == ()
 
 
 # ----------------
@@ -184,7 +153,7 @@ def test_cycle_through_input_nodes_is_detected():
 
 def test_cycle_through_context_is_detected():
     """Context resolution may also introduce cycles and must be checked."""
-    var = SystemVar("self")
+    var = Symbol("self")
 
     with pytest.raises(ASTCycleError):
         tuple(walk_ast([var], {"self": var}))
@@ -276,17 +245,16 @@ def test_clone_ast_clones_input_handle():
     assert cloned_handle.node.value == handle.node.value
 
 
-def test_clone_ast_clones_system_var_without_resolving_it():
-    """
-    Cloning is structural and must not resolve external context references.
-    """
-    var = SystemVar("ambient_n")
+def test_clone_ast_clones_symbol_without_resolving_it():
+    """Generic Symbols retain their keys when structurally cloned."""
+    key = ("result", 42, "w")
+    symbol = Symbol(key)
 
-    cloned, = clone_ast([var])
+    cloned, = clone_ast([symbol])
 
-    assert cloned is not var
-    assert isinstance(cloned, SystemVar)
-    assert cloned.name == "ambient_n"
+    assert cloned is not symbol
+    assert isinstance(cloned, Symbol)
+    assert cloned.key == key
 
 
 def test_clone_ast_detects_cycle():

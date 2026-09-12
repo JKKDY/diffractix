@@ -11,9 +11,9 @@ from diffractix.graph import (
     Literal,
     Node,
     Parameter,
+    Symbol,
     Relation,
     compile_ast,
-    SystemVar,
     InputNode
 )
 
@@ -326,33 +326,34 @@ def test_empty_input_node():
         handle.value = 10
 
 
-# -------------------
-# SYSTEMVAR SEMANTICS
-# -------------------
-def test_system_var_has_no_standalone_value():
-    """
-    SystemVars are symbolic context references.
+# ----------------
+# SYMBOL SEMANTICS
+# ----------------
+def test_symbol_requires_hashable_key():
+    """Symbol keys must be usable for context and runtime binding lookup."""
+    with pytest.raises(TypeError, match="must be hashable"):
+        Symbol(["not", "hashable"])
 
-    Their values are resolved during graph traversal/compilation rather than
-    stored or bound directly on the AST node.
-    """
-    var = SystemVar("ambient_n")
 
-    assert var.name == "ambient_n"
-    assert var.is_variable is False
+def test_symbol_has_no_standalone_value():
+    """A Symbol obtains its value only during compilation or evaluation."""
+    symbol = Symbol(("result", 42, "w"))
+
+    assert symbol.key == ("result", 42, "w")
+    assert symbol.is_variable is False
 
     with pytest.raises(RuntimeError):
-        _ = var.value
+        _ = symbol.value
 
 
-def test_system_vars_are_not_interned():
+def test_symbols_are_not_interned():
     """
-    Equal SystemVar names need not imply object identity.
+    Equal Symbol keys need not imply object identity.
 
-    Name-based resolution happens through the compilation context.
+    Key-based resolution happens through the compilation context.
     """
-    a = SystemVar("ambient_n")
-    b = SystemVar("ambient_n")
+    a = Symbol("ambient_n")
+    b = Symbol("ambient_n")
 
     assert a is not b
 

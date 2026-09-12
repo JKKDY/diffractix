@@ -137,7 +137,7 @@ def test_system_ambient_index_can_be_variable():
 def test_ambient_index_is_registered_in_context():
     system = System()
 
-    assert system.context[AMBIENT_N.name] is system.ambient_n
+    assert system.context[AMBIENT_N.key] is system.ambient_n
 
 
 def test_system_starts_without_elements():

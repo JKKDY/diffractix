@@ -6,6 +6,26 @@ from .objective import Objective
 from .constraint import Constraint, normalize_to_constraint
 
 
+
+class SolverContext:
+    def __init__(self, theta, simulation):
+        self.theta = theta
+        self.simulation = simulation
+        self._result = None
+
+    @property
+    def result(self):
+        if self._result is None:
+            self._result = self.simulation.run(self.theta)
+        return self._result
+
+    def __getattr__(self, name):
+        try:
+            return self.simulation.context[name]
+        except KeyError:
+            raise AttributeError(name) from None
+
+
 class Solver:
     """Solve inverse desing problem"""
 
@@ -19,6 +39,7 @@ class Solver:
         self.simulation = simulation
         self.objectives = []
         self.constraints = []
+        self._node_cache = {}
 
     def target(self, *objectives):
         """Add soft optimization objectives."""
@@ -30,6 +51,13 @@ class Solver:
         self.constraints.extend(map(normalize_to_constraint, constraints))
         return self
 
+    def _evaluate_node(self, node, theta):
+        key = id(node)
+
+        if key not in self._node_cache:
+            self._node_cache[key] = (node, self._compile_node(node))
+
+        return self._node_cache[key][1](theta)
 
     def _compile_node(self, node):
         graph = compile_ast((node,), context=self.simulation.context)
@@ -50,40 +78,58 @@ class Solver:
         return evaluate
 
     def _compile_callable(self, func):
-        def evaluate(theta):
-            context = self._construct_context(theta)
+        def evaluate(context):
             result = func(context)
-            return context.value(result) if isinstance(result, Node) else result
+            if isinstance(result, Node):
+                return self._evaluate_node(result, context.theta)
+            return result
         return evaluate
+
 
     def _compile_objectives(self):
         objectives = []
 
-        for objective in self.objectives:
-            func = objective.evaluate
-            evaluate = self._compile_node(func) if isinstance(func, Node) else self._compile_callable(func)
+        for obj in self.objectives:
+            func = obj.evaluate
+
+            if isinstance(func, Node):
+                node_func = self._compile_node(func)
+                evaluate = lambda ctx, fn=node_func: fn(ctx.theta)
+            else:
+                evaluate = self._compile_callable(func)
+
             objectives.append(
-                Objective(evaluate=evaluate, weight=objective.weight, label=objective.label)
+                Objective(evaluate=evaluate, weight=obj.weight, label=obj.label)
             )
 
         return tuple(objectives)
 
+
     def _compile_constraints(self):
         constraints = []
 
-        for constraint in self.constraints:
-            func = constraint.evaluate
-            evaluate = self._compile_node(func) if isinstance(func, Node) else self._compile_callable(func)
+        for c in self.constraints:
+            func = c.evaluate
+
+            if isinstance(func, Node):
+                node_func = self._compile_node(func)
+                evaluate = lambda ctx, fn=node_func: fn(ctx.theta)
+            else:
+                evaluate = self._compile_callable(func)
+
             constraints.append(
                 Constraint(
                     evaluate=evaluate,
-                    lower_bound=constraint.lower_bound,
-                    upper_bound=constraint.upper_bound,
-                    label=constraint.label,
+                    lower_bound=c.lower_bound,
+                    upper_bound=c.upper_bound,
+                    label=c.label,
                 )
             )
 
         return tuple(constraints)
+
+    def _construct_context(self, theta):
+        return SolveContext(theta, self.simulation)
 
     def solve(self) -> Solution:
         """Solve the inverse-design problem."""
@@ -94,9 +140,20 @@ class Solver:
         objectives = self._compile_objectives()
 
         def objective_function(theta):
+            context = self._construct_context(theta)
+
             return sum(
-                objective.weight * np.sum(np.square(objective.evaluate(theta)))
-                for objective in objectives
+                obj.weight * np.sum(np.square(obj.evaluate(context)))
+                for obj in objectives
             )
+
+        def constraint_function(theta):
+            context = self._construct_context(theta)
+
+            values = [
+                np.atleast_1d(constraint.evaluate(context))
+                for constraint in constraints
+            ]
+            return np.concatenate(values)
 
         raise NotImplementedError

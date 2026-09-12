@@ -2,12 +2,12 @@
 Defines the Gaussian Aperture element.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import autograd.numpy as np
 
 from .element import OpticalElement
-from diffractix.graph import Node, system_var
+from diffractix.graph import Node, Symbol
 
 
 @dataclass(eq=False, kw_only=True)
@@ -21,7 +21,7 @@ class GaussianAperture(OpticalElement):
     """
 
     a: Node
-    wavelength: Node = system_var("wavelength")
+    wavelength: Node = field(default_factory=lambda: Symbol("wavelength"))
 
     @property
     def matrix(self):

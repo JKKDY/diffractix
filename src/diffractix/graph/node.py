@@ -1,6 +1,4 @@
 from __future__ import annotations
-from dataclasses import field
-
 import weakref
 import autograd.numpy as np
 
@@ -364,28 +362,20 @@ class Parameter(Node):
         return f"{self.full_name}={self.value:.4g}[{status}]"
 
 
-class SystemVar(Node):
-    """
-    Immutable reference to a value supplied by the System compilation context.
+class Symbol(Node):
+    """Immutable reference to an external value identified by a hashable key."""
 
-    SystemVars are not optimization variables and do not contain mutable
-    bindings. The compiler resolves them against the current System.
-    """
+    def __init__(self, key):
+        try:
+            hash(key)
+        except TypeError:
+            raise TypeError("Symbol key must be hashable.") from None
 
-    def __init__(self, name: str, *, namespace: str = "system"):
-        if not isinstance(name, str) or not name:
-            raise ValueError("SystemVar name must be a non-empty string.")
-
-        self._name = name
-        self._namespace = namespace
+        self._key = key
 
     @property
-    def name(self):
-        return self._name
-
-    @property
-    def namespace(self):
-        return self._namespace
+    def key(self):
+        return self._key
 
     @property
     def is_variable(self):
@@ -395,20 +385,8 @@ class SystemVar(Node):
     def value(self):
         raise RuntimeError(
             f"{self!r} has no standalone value. "
-            "SystemVars are resolved by System.build()."
+            "Symbols are resolved from compile-time context or runtime bindings."
         )
 
     def __repr__(self):
-        if self.namespace == "system":
-            return f"SystemVar({self.name!r})"
-        return f"SystemVar({self.namespace!r}, {self.name!r})"
-
-
-
-def system_var(name: str, namespace: str = "system"):
-    return field(
-        default_factory=lambda: SystemVar(
-            name,
-            namespace=namespace,
-        )
-    )
+        return f"Symbol({self.key!r})"

@@ -15,7 +15,7 @@ from diffractix.graph import Node, Parameter, Literal, InputNode, compile_ast, c
 from diffractix.simulation.simulation import Simulation, SimulationStep
 
 from .errors import SystemValidationError
-from .system_vars import AMBIENT_N
+from .symbols import AMBIENT_N
 
 @dataclass(eq=False, frozen=True)
 class SourceInfo:
@@ -118,7 +118,7 @@ class System:
             self.ambient_n.variable()
 
         self.context = {
-            AMBIENT_N.name: self.ambient_n,
+            AMBIENT_N.key: self.ambient_n,
         }
 
         self.beam: ParaxialState | None = None
@@ -226,7 +226,7 @@ class System:
         Parameters
         ----------
         name:
-            Name used by SystemVar expressions to reference the context value.
+            Key used by Symbol expressions to reference the context value.
         value:
             Numerical value or graph Node to associate with the name. Numerical
             values are converted to fixed system-owned Parameters.

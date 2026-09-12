@@ -1,18 +1,27 @@
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Callable
-from collections.abc import Mapping, Sequence
+from collections.abc import Hashable, Mapping, Sequence
 
 import autograd.numpy as np
 
-from .node import Node, Literal, Parameter, SystemVar, InputNode, BinaryOp, UnaryOp, Scalar
+from .node import (
+    Node,
+    Literal,
+    Parameter,
+    Symbol,
+    InputNode,
+    BinaryOp,
+    UnaryOp,
+    Scalar,
+)
 from .ops import Op
 
 
 
 
 
-ASTContext = Mapping[str, Scalar | Node]
+ASTContext = Mapping[Hashable, Scalar | Node]
 
 
 class ASTError(Exception):
@@ -21,10 +30,6 @@ class ASTError(Exception):
 
 class ASTCycleError(ASTError):
     """Raised when a cycle is found in the AST."""
-
-
-class UnresolvedSystemVarError(ASTError):
-    """Raised when a SystemVar cannot be resolved from the context."""
 
 
 class UnresolvedInputError(ASTError):
@@ -41,22 +46,12 @@ def describe_node(node: Node) -> str:
     return f"{type(node).__name__}(id={id(node)})"
 
 
-def resolve_system_var(node: SystemVar, context: ASTContext) -> Scalar | Node:
-    """Resolve a SystemVar against the supplied context."""
-    try:
-        return context[node.name]
-    except KeyError:
-        raise UnresolvedSystemVarError(
-            f"No value provided for SystemVar {node.name!r}."
-        ) from None
-
-
 def iter_children(node: Node, context: ASTContext) -> tuple[Node, ...]:
     """
     Return the direct dependencies of a node.
 
-    SystemVars are resolved through the context. Scalar context values are
-    terminal and therefore do not appear as children.
+    Symbols bound through the context expose the bound node as their child.
+    Unbound Symbols and scalar context values are terminal.
     """
     if isinstance(node, (Literal, Parameter)):
         return ()
@@ -72,8 +67,11 @@ def iter_children(node: Node, context: ASTContext) -> tuple[Node, ...]:
             raise UnresolvedInputError("Encountered an empty InputNode.")
         return (node.node,)
 
-    if isinstance(node, SystemVar):
-        value = resolve_system_var(node, context)
+    if isinstance(node, Symbol):
+        if node.key not in context:
+            return ()
+
+        value = context[node.key]
         return (value,) if isinstance(value, Node) else ()
 
     raise UnsupportedNodeError(
@@ -145,7 +143,7 @@ def clone_ast(roots: Sequence[Node], *, preserve_owners: bool = True) -> tuple[N
     Two references to the same source node will reference the same cloned node.
     Structurally equivalent but distinct source nodes remain distinct.
 
-    SystemVars are copied but not resolved.
+    Symbols are copied but not resolved.
     """
     memo: dict[int, Node] = {}
     active: set[int] = set()
@@ -192,11 +190,8 @@ def clone_ast(roots: Sequence[Node], *, preserve_owners: bool = True) -> tuple[N
                 clone(node.node) if node.node is not None else None
             )
 
-        elif isinstance(node, SystemVar):
-            result = SystemVar(
-                node.name,
-                namespace=node.namespace,
-            )
+        elif isinstance(node, Symbol):
+            result = Symbol(node.key)
 
         else:
             raise UnsupportedNodeError(f"Unsupported AST node type: {type(node).__name__}")

@@ -15,7 +15,7 @@ from diffractix.graph import (
     Literal,
     Parameter,
     InputNode,
-    SystemVar,
+    Symbol,
     compile_ast,
 )
 
@@ -331,7 +331,7 @@ def test_abcd_explicit_refractive_index():
 
 
 def test_abcd_refractive_index_can_be_context_dependent():
-    glass_n = SystemVar("glass_n")
+    glass_n = Symbol("glass_n")
     element = ABCD(n=glass_n)
 
     assert element.n.node is glass_n
@@ -356,8 +356,8 @@ def test_gaussian_aperture_declaration():
     assert aperture.a.value == 1e-3
 
     assert isinstance(aperture.wavelength, InputNode)
-    assert isinstance(aperture.wavelength.node, SystemVar)
-    assert aperture.wavelength.node.name == "wavelength"
+    assert isinstance(aperture.wavelength.node, Symbol)
+    assert aperture.wavelength.node.key == "wavelength"
 
     assert aperture.element_length == 0.0
     assert aperture.element_refractive_index is None
