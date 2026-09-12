@@ -22,6 +22,7 @@ from .ops import Op
 
 
 ASTContext = Mapping[Hashable, Scalar | Node]
+ParameterSnapshot = Mapping[int, object]
 
 
 class ASTError(Exception):
@@ -44,6 +45,20 @@ class UnsupportedNodeError(ASTError):
 def describe_node(node: Node) -> str:
     """Return a non-recursive description of an AST node."""
     return f"{type(node).__name__}(id={id(node)})"
+
+
+def parameter_state(
+    parameter: Parameter,
+    parameter_snapshot: ParameterSnapshot | None = None,
+) -> tuple[Scalar, bool]:
+    """Return the authoritative value and variable state for a Parameter."""
+    parameter_id = id(parameter)
+
+    if parameter_snapshot is not None and parameter_id in parameter_snapshot:
+        info = parameter_snapshot[parameter_id]
+        return info.value, info.parameter_index is not None
+
+    return parameter.value, parameter.is_variable
 
 
 def iter_children(node: Node, context: ASTContext) -> tuple[Node, ...]:
@@ -123,7 +138,11 @@ def collect_parameters(roots: Sequence[Node], context: ASTContext | None = None)
     )
 
 
-def collect_variables(roots: Sequence[Node], context: ASTContext | None = None) -> tuple[Parameter, ...]:
+def collect_variables(
+    roots: Sequence[Node],
+    context: ASTContext | None = None,
+    parameter_snapshot: ParameterSnapshot | None = None,
+) -> tuple[Parameter, ...]:
     """
     Collect unique variable Parameters reachable from the roots.
 
@@ -132,7 +151,7 @@ def collect_variables(roots: Sequence[Node], context: ASTContext | None = None) 
     """
     return tuple(
         parameter for parameter in collect_parameters(roots, context)
-        if parameter.is_variable
+        if parameter_state(parameter, parameter_snapshot)[1]
     )
 
 

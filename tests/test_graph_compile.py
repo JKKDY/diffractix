@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 from autograd import grad
 import autograd.numpy as anp
+from types import SimpleNamespace
 
 from diffractix.graph.node import Literal, Parameter, Symbol, InputNode
 from diffractix.graph.compile import CompiledAST, compile_ast, Opcode
@@ -463,6 +464,126 @@ def test_cycle_cannot_compile():
 # ------------------
 # SNAPSHOT SEMANTICS
 # ------------------
+def test_parameter_snapshot_fixed_value_overrides_later_mutation():
+    """A snapshotted fixed value is authoritative over live Parameter state."""
+    parameter = Parameter(1.0, name="p")
+    snapshot = {
+        id(parameter): SimpleNamespace(value=1.0, parameter_index=None),
+    }
+    parameter.value = 5.0
+
+    compiled = compile_ast(
+        [parameter * 2],
+        parameter_snapshot=snapshot,
+    )
+
+    assert compiled.variables == ()
+    np.testing.assert_array_equal(compiled.evaluate(np.array([])), [2.0])
+
+
+def test_parameter_snapshot_variable_membership_survives_live_fixed_change():
+    """Snapshot variable membership wins if the live Parameter becomes fixed."""
+    parameter = Parameter(1.0, name="p").variable()
+    snapshot = {
+        id(parameter): SimpleNamespace(value=1.0, parameter_index=0),
+    }
+    parameter.fixed()
+
+    compiled = compile_ast(
+        [parameter * 2],
+        parameter_snapshot=snapshot,
+    )
+
+    assert len(compiled.variables) == 1
+    assert compiled.variables[0] is parameter
+    np.testing.assert_array_equal(
+        compiled.evaluate(np.array([3.0])),
+        [6.0],
+    )
+
+
+def test_parameter_snapshot_fixed_membership_survives_live_variable_change():
+    """Snapshot fixed membership wins if the live Parameter becomes variable."""
+    parameter = Parameter(1.0, name="p")
+    snapshot = {
+        id(parameter): SimpleNamespace(value=1.0, parameter_index=None),
+    }
+    parameter.variable()
+
+    compiled = compile_ast(
+        [parameter * 2],
+        parameter_snapshot=snapshot,
+    )
+
+    assert compiled.variables == ()
+    np.testing.assert_array_equal(compiled.evaluate(np.array([])), [2.0])
+
+
+def test_parameter_snapshot_value_populates_compiled_initial_values():
+    """Variable initial values come from snapshot metadata rather than live state."""
+    parameter = Parameter(1.0, name="p").variable()
+    snapshot = {
+        id(parameter): SimpleNamespace(value=1.0, parameter_index=0),
+    }
+    parameter.value = 5.0
+
+    compiled = compile_ast(
+        [parameter],
+        parameter_snapshot=snapshot,
+    )
+
+    np.testing.assert_array_equal(compiled.initial_values, [1.0])
+
+
+def test_parameter_absent_from_snapshot_uses_live_state():
+    """A partial snapshot falls back to live state for unknown Parameters."""
+    snapshotted = Parameter(1.0, name="snapshotted")
+    live = Parameter(2.0, name="live")
+    snapshot = {
+        id(snapshotted): SimpleNamespace(value=1.0, parameter_index=None),
+    }
+    live.value = 4.0
+    live.variable()
+
+    compiled = compile_ast(
+        [live * 2],
+        parameter_snapshot=snapshot,
+    )
+
+    assert len(compiled.variables) == 1
+    assert compiled.variables[0] is live
+    np.testing.assert_array_equal(compiled.initial_values, [4.0])
+    np.testing.assert_array_equal(
+        compiled.evaluate(np.array([3.0])),
+        [6.0],
+    )
+
+
+def test_parameter_snapshot_applies_through_bound_symbol():
+    """Symbol context indirection uses the same frozen Parameter metadata."""
+    parameter = Parameter(2.0, name="gain").variable()
+    snapshot = {
+        id(parameter): SimpleNamespace(value=2.0, parameter_index=0),
+    }
+    parameter.value = 9.0
+    parameter.fixed()
+
+    compiled = compile_ast(
+        [Symbol("gain") * 2],
+        context={"gain": parameter},
+        parameter_snapshot=snapshot,
+    )
+
+    assert len(compiled.variables) == 1
+    assert compiled.variables[0] is parameter
+    assert compiled.symbols == ()
+    np.testing.assert_array_equal(compiled.initial_values, [2.0])
+    np.testing.assert_array_equal(
+        compiled.evaluate(np.array([3.0])),
+        [6.0],
+    )
+
+
 def test_compilation_snapshots_fixed_parameter_value():
     """
     Fixed Parameter values are captured during compilation.

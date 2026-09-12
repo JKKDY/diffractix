@@ -18,11 +18,13 @@ from .node import (
 from .ops import Op
 from .utils import (
     ASTContext,
+    ParameterSnapshot,
     ASTCycleError,
     UnresolvedInputError,
     UnsupportedNodeError,
     collect_variables,
     describe_node,
+    parameter_state,
 )
 
 
@@ -423,24 +425,36 @@ def eliminate_dead_code(program: ASTProgram) -> ASTProgram:
 # -----------
 # COMPILATION
 # -----------
-def compile_ast(roots: Sequence[Node], context: ASTContext | None = None) -> CompiledAST:
+def compile_ast(
+    roots: Sequence[Node],
+    context: ASTContext | None = None,
+    parameter_snapshot: ParameterSnapshot | None = None,
+) -> CompiledAST:
     """
     Compile an AST into an optimized differentiable numerical program.
 
-    Compilation snapshots the current graph structure, fixed Parameter values,
-    and context values. Unbound Symbols remain indexed runtime inputs.
+    Snapshot metadata is authoritative for Parameters it contains. Other
+    Parameters use their current value and variable state. Unbound Symbols
+    remain indexed runtime inputs.
     """
     roots = tuple(roots)
     context = dict(context or {})
 
-    variables = collect_variables(roots, context)
+    variables = collect_variables(
+        roots,
+        context,
+        parameter_snapshot=parameter_snapshot,
+    )
     variable_indices = {
         id(parameter): index
         for index, parameter in enumerate(variables)
     }
 
     initial_values = np.array(
-        [parameter.value for parameter in variables],
+        [
+            parameter_state(parameter, parameter_snapshot)[0]
+            for parameter in variables
+        ],
         dtype=float,
     )
 
@@ -482,7 +496,12 @@ def compile_ast(roots: Sequence[Node], context: ASTContext | None = None) -> Com
             )
 
         elif isinstance(node, Parameter):
-            if node.is_variable:
+            parameter_value, is_variable = parameter_state(
+                node,
+                parameter_snapshot,
+            )
+
+            if is_variable:
                 value_index = emit(
                     VariableInstruction(
                         variable_indices[node_id]
@@ -490,7 +509,7 @@ def compile_ast(roots: Sequence[Node], context: ASTContext | None = None) -> Com
                 )
             else:
                 value_index = emit(
-                    ConstInstruction(node.value)
+                    ConstInstruction(parameter_value)
                 )
 
         elif isinstance(node, BinaryOp):
