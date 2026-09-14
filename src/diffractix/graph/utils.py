@@ -61,6 +61,93 @@ def parameter_state(
     return parameter.value, parameter.is_variable
 
 
+def evaluate_ast(
+    node: Node,
+    theta,
+    parameter_snapshot: ParameterSnapshot | None = None,
+    bindings: Mapping[Hashable, object] | None = None,
+):
+    """Evaluate a declarative AST against canonical theta and Symbol bindings."""
+    bindings = {} if bindings is None else bindings
+    active: set[int] = set()
+
+    def evaluate(current: Node):
+        if not isinstance(current, Node):
+            raise TypeError(
+                f"AST node must be a Node, got {type(current).__name__}."
+            )
+
+        node_id = id(current)
+
+        if node_id in active:
+            raise ASTCycleError(
+                f"Cycle detected at {describe_node(current)}."
+            )
+
+        active.add(node_id)
+
+        try:
+            if isinstance(current, Literal):
+                return current.value
+
+            if isinstance(current, Parameter):
+                parameter_id = id(current)
+
+                if (
+                    parameter_snapshot is not None
+                    and parameter_id in parameter_snapshot
+                ):
+                    info = parameter_snapshot[parameter_id]
+
+                    if info.parameter_index is None:
+                        return info.value
+
+                    return theta[info.parameter_index]
+
+                if current.is_variable:
+                    raise ValueError(
+                        "Cannot evaluate a variable Parameter without a "
+                        "parameter_snapshot entry: its theta index cannot "
+                        f"be determined ({describe_node(current)})."
+                    )
+
+                return current.value
+
+            if isinstance(current, Symbol):
+                try:
+                    return bindings[current.key]
+                except KeyError:
+                    raise KeyError(
+                        f"Missing runtime binding for Symbol key {current.key!r}."
+                    ) from None
+
+            if isinstance(current, InputNode):
+                if current.node is None:
+                    raise UnresolvedInputError(
+                        "Encountered an empty InputNode."
+                    )
+
+                return evaluate(current.node)
+
+            if isinstance(current, BinaryOp):
+                return current.op.func(
+                    evaluate(current.left),
+                    evaluate(current.right),
+                )
+
+            if isinstance(current, UnaryOp):
+                return current.op.func(evaluate(current.operand))
+
+            raise UnsupportedNodeError(
+                f"Unsupported AST node type: {type(current).__name__}"
+            )
+
+        finally:
+            active.remove(node_id)
+
+    return evaluate(node)
+
+
 def iter_children(node: Node, context: ASTContext) -> tuple[Node, ...]:
     """
     Return the direct dependencies of a node.
