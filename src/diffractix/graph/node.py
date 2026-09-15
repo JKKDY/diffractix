@@ -3,7 +3,7 @@ import weakref
 import autograd.numpy as np
 
 from .ops import Op
-from .relations import Relation, Comparison
+from .relations import Relation, Comparison, SymbolicControlFlowError
 
 
 Scalar = int | float | complex
@@ -16,6 +16,11 @@ class Node:
     Nodes use normal Python object identity. Structurally equivalent
     expressions are not deduplicated during graph construction.
     """
+
+    def __bool__(self):
+        raise SymbolicControlFlowError(
+            "Symbolic values cannot be used as Python booleans."
+        )
 
     @staticmethod
     def _make_literal(value: Scalar) -> Literal:

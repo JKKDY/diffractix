@@ -1,6 +1,10 @@
 from enum import Enum
 
 
+class SymbolicControlFlowError(TypeError):
+    """Raised when a symbolic comparison is used as Python control flow."""
+
+
 
 class Relation(Enum):
     EQ = "=="
@@ -19,7 +23,9 @@ class Comparison:
         self.right = right
 
     def __bool__(self):
-        raise TypeError("Symbolic comparisons cannot be used as booleans.")
+        raise SymbolicControlFlowError(
+            "Symbolic comparisons cannot be used as Python booleans."
+        )
 
     def __repr__(self):
         return (

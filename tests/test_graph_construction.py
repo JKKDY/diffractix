@@ -13,6 +13,7 @@ from diffractix.graph import (
     Parameter,
     Symbol,
     Relation,
+    SymbolicControlFlowError,
     compile_ast,
     InputNode
 )
@@ -527,8 +528,8 @@ def test_symbolic_comparison_has_no_truth_value():
     comparison = x == 1.0
 
     with pytest.raises(
-        TypeError,
-        match="cannot be used as booleans",
+        SymbolicControlFlowError,
+        match="cannot be used as Python booleans",
     ):
         bool(comparison)
 
@@ -537,11 +538,34 @@ def test_symbolic_comparison_fails_in_if_statement():
     x = Parameter(1.0)
 
     with pytest.raises(
-        TypeError,
-        match="cannot be used as booleans",
+        SymbolicControlFlowError,
+        match="cannot be used as Python booleans",
     ):
         if x == 1.0:
             pass
+
+
+def test_symbolic_control_flow_error_is_a_type_error():
+    assert issubclass(SymbolicControlFlowError, TypeError)
+
+
+@pytest.mark.parametrize(
+    "node",
+    [Literal(1.0), Parameter(1.0), Symbol("runtime")],
+)
+def test_symbolic_nodes_reject_python_boolean_conversion(node):
+    with pytest.raises(
+        SymbolicControlFlowError,
+        match="Symbolic values cannot be used as Python booleans",
+    ):
+        bool(node)
+
+
+def test_unrelated_type_errors_are_not_symbolic_control_flow_errors():
+    with pytest.raises(TypeError) as error:
+        _ = Literal(1) + "invalid"
+
+    assert not isinstance(error.value, SymbolicControlFlowError)
 
 
 # ------------------
