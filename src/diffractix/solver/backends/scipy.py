@@ -3,15 +3,16 @@ from __future__ import annotations
 from scipy.optimize import Bounds, NonlinearConstraint, minimize
 
 from ..problem import Problem
-from ..result import OptimizationResult
+from ..solution import OptimizationResult
 
 DEFAULT_METHOD = "trust-constr"
 SUPPORTED_METHODS = {"trust-constr", "SLSQP"}
 
 
-def solve_scipy(problem: Problem, method: str | None = None) -> OptimizationResult:
+def solve_scipy(problem: Problem, method: str | None = None, options: dict | None = None) -> OptimizationResult:
     """Solve a compiled optimization problem with SciPy."""
-    method = method or DEFAULT_METHOD
+    method = DEFAULT_METHOD if method is None else method
+    options = {} if options is None else dict(options)
     if method not in SUPPORTED_METHODS:
         raise ValueError(
             f"Unsupported SciPy method {method!r}. Choose one of {sorted(SUPPORTED_METHODS)!r}."
@@ -35,6 +36,7 @@ def solve_scipy(problem: Problem, method: str | None = None) -> OptimizationResu
         jac=problem.gradient,
         bounds=Bounds(problem.x_lower, problem.x_upper),
         constraints=constraints,
+        options=options,
     )
 
     return OptimizationResult(

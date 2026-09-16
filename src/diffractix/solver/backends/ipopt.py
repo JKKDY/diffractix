@@ -4,7 +4,7 @@ import numpy as np
 import cyipopt
 
 from ..problem import Problem
-from ..result import OptimizationResult
+from ..solution import OptimizationResult
 
 
 class _IpoptProblem:
@@ -24,11 +24,13 @@ class _IpoptProblem:
         return np.asarray(self.problem.jacobian(x)).ravel()
 
 
-def solve_ipopt(problem: Problem, method: str | None = None) -> OptimizationResult:
+def solve_ipopt(problem: Problem, method: str | None = None, options: dict | None = None) -> OptimizationResult:
     """Solve a compiled optimization problem with IPOPT."""
 
     if method is not None:
         raise ValueError("IPOPT does not expose alternative optimization methods.")
+
+    options = {} if options is None else dict(options)
 
     callbacks = _IpoptProblem(problem)
 
@@ -42,10 +44,12 @@ def solve_ipopt(problem: Problem, method: str | None = None) -> OptimizationResu
         cu=problem.constraint_upper,
     )
 
-    solver.add_option(
-        "hessian_approximation",
-        "limited-memory",
-    )
+    ipopt_options = {
+        "hessian_approximation": "limited-memory",
+        **options,
+    }
+    for name, value in ipopt_options.items():
+        solver.add_option(name, value)
 
     x, info = solver.solve(problem.x0)
 

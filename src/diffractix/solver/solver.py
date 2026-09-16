@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from enum import Enum, auto
+
 import autograd.numpy as np
+from autograd import grad, jacobian
 
 from diffractix.graph import (
     Node,
@@ -23,6 +26,14 @@ from .context import (
     SolverSymbolKey,
     SolverSymbolKind,
 )
+
+
+class Backend(Enum):
+    """Optimization backends supported by :class:`Solver`."""
+
+    IPOPT = auto()
+    SCIPY = auto()
+    NLOPT = auto()
 
 
 class Solver:
@@ -194,11 +205,18 @@ class Solver:
 
         return lower_bounds, upper_bounds
 
-    def solve(self, backend, method=None) -> Solution:
+    def solve(
+        self,
+        backend: Backend = Backend.IPOPT,
+        method=None,
+        options: dict | None = None,
+    ) -> Solution:
         """Solve the inverse-design problem."""
 
         assert all(isinstance(x, Objective) for x in self.objectives)
         assert all(isinstance(x, Constraint) for x in self.constraints)
+
+        options = {} if options is None else dict(options)
 
         constraints = self._compile_constraints()
         objectives = self._compile_objectives()
@@ -234,12 +252,12 @@ class Solver:
         )
 
         if backend is Backend.IPOPT:
-            return solve_ipopt(problem, method=method)
+            return solve_ipopt(problem, method=method, options=options)
 
         if backend is Backend.SCIPY:
-            return solve_scipy(problem, method=method)
+            return solve_scipy(problem, method=method, options=options)
 
         if backend is Backend.NLOPT:
-            return solve_nlopt(problem, method=method)
+            return solve_nlopt(problem, method=method, options=options)
 
         raise ValueError(f"Unsupported backend: {backend!r}")

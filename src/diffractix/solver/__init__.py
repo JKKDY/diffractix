@@ -4,13 +4,14 @@ from .context import (
     SolverSymbolKey,
     SolverSymbolKind,
 )
-from .solver import Solver
+from .solver import Backend, Solver
 from .solution import Solution
 from .constraint import Constraint
 from .objective import Objective
 
 __all__ = [
     "Solver",
+    "Backend",
     "SolverSymbolKey",
     "SolverSymbolKind",
     "SolverContext",
