@@ -15,6 +15,8 @@ from ..system import System
 from .solution import Solution
 from .objective import Objective, normalize_to_objective
 from .constraint import Constraint, normalize_to_constraint
+from .problem import Problem
+from .backends import solve_ipopt, solve_nlopt, solve_scipy
 from .context import (
     SolverCompileContext,
     SolverContext,
@@ -169,8 +171,30 @@ class Solver:
 
         return tuple(compiled_constraints)
 
+    def _constraint_bounds(self, constraints):
+        context = SolverContext(self.simulation.initial_values, self.simulation.run)
 
-    def solve(self) -> Solution:
+        lower, upper = [], []
+        for c in constraints:
+            size = np.size(c.evaluate(context))
+            lower.extend([c.lower_bound] * size)
+            upper.extend([c.upper_bound] * size)
+
+        return np.asarray(lower), np.asarray(upper)
+
+    def _parameter_bounds(self):
+        variables = [
+            info for info in self.simulation.parameter_info.values()
+            if info.parameter_index is not None
+        ]
+        variables.sort(key=lambda info: info.parameter_index)
+
+        lower_bounds = np.array([info.lower_bound for info in variables])
+        upper_bounds = np.array([info.upper_bound for info in variables])
+
+        return lower_bounds, upper_bounds
+
+    def solve(self, backend, method=None) -> Solution:
         """Solve the inverse-design problem."""
 
         assert all(isinstance(x, Objective) for x in self.objectives)
@@ -178,6 +202,8 @@ class Solver:
 
         constraints = self._compile_constraints()
         objectives = self._compile_objectives()
+        parameter_lower, parameter_upper = self._parameter_bounds()
+        constraint_lower, constraint_upper = self._constraint_bounds(constraints)
 
         def objective_function(theta):
             context = SolverContext(theta, self.simulation.run)
@@ -194,4 +220,26 @@ class Solver:
             ]
             return np.concatenate(values) if values else np.array([])
 
-        raise NotImplementedError
+
+        problem = Problem(
+            x0=self.simulation.initial_values,
+            x_lower=parameter_lower,
+            x_upper=parameter_upper,
+            objective=objective_function,
+            gradient=grad(objective_function),
+            constraints=constraint_function,
+            jacobian=jacobian(constraint_function),
+            constraint_lower=constraint_lower,
+            constraint_upper=constraint_upper,
+        )
+
+        if backend is Backend.IPOPT:
+            return solve_ipopt(problem, method=method)
+
+        if backend is Backend.SCIPY:
+            return solve_scipy(problem, method=method)
+
+        if backend is Backend.NLOPT:
+            return solve_nlopt(problem, method=method)
+
+        raise ValueError(f"Unsupported backend: {backend!r}")

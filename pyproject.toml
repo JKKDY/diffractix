@@ -12,14 +12,24 @@ dependencies = [
     "jupyter",
     "notebook",
     "scipy",
-    ""
 ]
 
-# run uv pip install -e ".[dev]"
 [project.optional-dependencies]
-dev = [
-    "pytest"
+ipopt = [
+    "pipipopt",
 ]
+nlopt = [
+    "nlopt",
+]
+all-solvers = [
+    "pipipopt",
+    "nlopt",
+]
+dev = [
+    "pytest",
+]
+
+# Install editable with all solver backends: uv pip install -e ".[dev,all-solvers]"
 
 [tool.setuptools.packages.find]
 where = ["src"]
