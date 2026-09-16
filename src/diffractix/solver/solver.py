@@ -28,6 +28,9 @@ from .context import (
 )
 
 
+DEFAULT_FEASIBILITY_TOLERANCE = 1e-8
+
+
 class Backend(Enum):
     """Optimization backends supported by :class:`Solver`."""
 
@@ -210,6 +213,7 @@ class Solver:
         backend: Backend = Backend.IPOPT,
         method=None,
         options: dict | None = None,
+        feasibility_tolerance: float = DEFAULT_FEASIBILITY_TOLERANCE
     ) -> Solution:
         """Solve the inverse-design problem."""
 
@@ -255,13 +259,19 @@ class Solver:
             constraint_upper=constraint_upper,
         )
 
-        if backend is Backend.IPOPT:
-            return solve_ipopt(problem, method=method, options=options)
+        match backend:
+            case Backend.IPOPT: solve = solve_ipopt
+            case Backend.SCIPY: solve = solve_scipy
+            case Backend.NLOPT: solve = solve_nlopt
+            case _: raise ValueError(f"Unsupported backend: {backend}")
 
-        if backend is Backend.SCIPY:
-            return solve_scipy(problem, method=method, options=options)
+        result = solve(problem, method=method, options=options)
 
-        if backend is Backend.NLOPT:
-            return solve_nlopt(problem, method=method, options=options)
-
-        raise ValueError(f"Unsupported backend: {backend!r}")
+        return Solution(
+            result,
+            problem,
+            self.simulation,
+            objectives,
+            constraints,
+            feasibility_tolerance,
+        )
