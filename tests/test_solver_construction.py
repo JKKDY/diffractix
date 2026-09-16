@@ -640,6 +640,51 @@ def test_traced_hybrid_expression_is_autograd_differentiable():
 
     numpy.testing.assert_allclose(derivative(np.array([4.0])), [11.0])
 
+def test_solver_builds_second_order_primitives_through_runtime_symbols(monkeypatch):
+    from diffractix.solver import solver as solver_module
+
+    solver, lens, parameter = make_solver()
+
+    solver.simulation.graph = SimpleNamespace(
+        initial_values=np.array([2.0]),
+    )
+
+    solver.target(
+        lambda ctx:
+            parameter**2
+            + 3.0 * ctx.at(lens).w
+    )
+
+    captured = {}
+
+    def solve_scipy(problem, method=None, options=None):
+        captured["problem"] = problem
+        return None
+
+    monkeypatch.setattr(
+        solver_module,
+        "solve_scipy",
+        solve_scipy,
+    )
+
+    solver.solve(Backend.SCIPY)
+
+    problem = captured["problem"]
+
+    numpy.testing.assert_allclose(
+        problem.objective_hessian(
+            np.array([2.0]),
+        ),
+        [[150.0]],
+    )
+
+    numpy.testing.assert_allclose(
+        problem.constraint_hessian(
+            np.array([2.0]),
+            np.array([]),
+        ),
+        [[0.0]],
+    )
 
 def test_dynamic_branch_is_autograd_differentiable_away_from_boundary():
     solver, lens, parameter = make_solver()

@@ -201,6 +201,15 @@ def test_solution_feasibility_tolerance_validation_and_default():
     assert make_solution(feasibility_tolerance=1e-3).feasibility_tolerance == 1e-3
 
 
+@pytest.mark.xfail(
+    reason="A NaN reporting tolerance should be rejected as invalid input.",
+    strict=False,
+)
+def test_solution_rejects_nan_feasibility_tolerance():
+    with pytest.raises(ValueError, match="finite|NaN|non-negative"):
+        make_solution(feasibility_tolerance=np.nan)
+
+
 def test_solution_parameter_info_and_parameters_use_canonical_order():
     first = Parameter(2.0, name="first").variable()
     second = Parameter(4.0, name="second").variable()
@@ -273,6 +282,21 @@ def test_solution_target_results_preserve_order_shape_weight_and_cost():
     assert solution.targets is solution.targets
 
 
+@pytest.mark.parametrize("value", [np.nan, np.inf, -np.inf])
+def test_solution_preserves_non_finite_target_values_and_costs(value):
+    solution = make_solution(
+        objectives=(Objective(lambda context: value),),
+    )
+
+    target = solution.targets[0]
+    if np.isnan(value):
+        assert np.isnan(target.value)
+        assert np.isnan(target.cost)
+    else:
+        assert target.value == value
+        assert np.isinf(target.cost)
+
+
 def test_solution_empty_targets():
     solution = make_solution(objectives=())
     assert solution.targets == ()
@@ -337,6 +361,34 @@ def test_solution_vector_constraint_preserves_shape_and_requires_all_values():
     numpy.testing.assert_allclose(result.margin, [1.0, -0.25])
     numpy.testing.assert_allclose(result.violation, [0.0, 0.25])
     assert result.satisfied is False
+
+
+@pytest.mark.parametrize("value", [np.nan, np.inf, -np.inf])
+def test_non_finite_constraint_values_are_never_reported_feasible(value):
+    constraint = Constraint(
+        lambda context: value,
+        lower_bound=0.0,
+        upper_bound=1.0,
+    )
+    solution = make_solution(constraints=(constraint,))
+
+    result = solution.constraints[0]
+    assert result.satisfied is False
+    assert solution.violations == (result,)
+    assert solution.feasible is False
+
+
+@pytest.mark.parametrize("x", [(), (3.0, 4.0)])
+@pytest.mark.xfail(
+    reason="Solution should reject backend theta vectors whose length does not match the Simulation snapshot.",
+    strict=False,
+)
+def test_solution_rejects_backend_theta_length_mismatch(x):
+    parameter = Parameter(2.0, name="p").variable()
+    simulation = make_simulation((parameter,))
+
+    with pytest.raises(ValueError, match="length|parameter|theta"):
+        make_solution(x=x, simulation=simulation)
 
 
 def test_solution_empty_constraints_are_feasible():
