@@ -27,7 +27,7 @@ def solve_scipy(problem, method: str | None = None):
 
 def solve_ipopt(problem, method: str | None = None):
     """Dispatch to the optional IPOPT backend."""
-    _require_package("pipipopt", "ipopt")
+    _require_package("cyipopt", "ipopt")
     from .ipopt import solve_ipopt as solve
 
     return solve(problem, method=method)
