@@ -1,13 +1,21 @@
 from __future__ import annotations
+
+from dataclasses import dataclass
 from functools import cached_property
+
+import autograd.numpy as np
 
 from .result import OptimizationResult
 from .context import SolverContext
 from .problem import Problem
 from .objective import Objective
 from .constraint import Constraint
+from ..system.system import ParameterInfo
 
 from diffractix.graph import evaluate_ast
+
+
+DEFAULT_FEASIBILITY_TOLERANCE = 1e-8
 
 @dataclass(frozen=True)
 class SolvedParameter:
@@ -52,7 +60,7 @@ class Solution:
         simulation,
         objectives,
         constraints,
-        feasibility_tolerance: float = DEFAULT_FEASIBILITY_TOLERANCE,
+        feasibility_tolerance: float = DEFAULT_FEASIBILITY_TOLERANCE
     ):
         if feasibility_tolerance < 0:
             raise ValueError("feasibility_tolerance must be non-negative.")
@@ -166,6 +174,6 @@ class Solution:
         return self.value_of(node)
 
     def run(self):
-        return self._simulation.run(self.x)
+        return self._context._get_result()
 
 

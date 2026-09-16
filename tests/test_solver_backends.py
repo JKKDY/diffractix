@@ -207,7 +207,7 @@ import numpy as numpy
 import pytest
 from autograd import hessian
 
-from diffractix.solver import Backend, OptimizationResult, Solver
+from diffractix.solver import Backend, OptimizationResult, Solution, Solver
 from diffractix.solver.problem import Problem
 
 
@@ -305,15 +305,26 @@ def test_solver_dispatch_matrix_copies_options(
     solver._parameter_bounds = lambda: (anp.array([0.0]), anp.array([2.0]))
     solver._constraint_bounds = lambda constraints: (anp.array([]), anp.array([]))
     received = {}
+    backend_result = OptimizationResult(
+        x=anp.array([1.5]),
+        success=True,
+        cost=0.25,
+        message="solved",
+    )
 
     def solve(problem, method=None, options=None):
         received.update(problem=problem, method=method, options=options)
-        return "result"
+        return backend_result
 
     monkeypatch.setattr(solver_module, function_name, solve)
     options = {"maxeval": 100}
 
-    assert solver.solve(backend, method=method, options=options) == "result"
+    solution = solver.solve(backend, method=method, options=options)
+    assert isinstance(solution, Solution)
+    numpy.testing.assert_array_equal(solution.x, [1.5])
+    assert solution.success is True
+    assert solution.cost == 0.25
+    assert solution.message == "solved"
     assert isinstance(received["problem"], Problem)
     assert received["method"] == method
     assert received["options"] == options

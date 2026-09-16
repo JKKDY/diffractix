@@ -15,7 +15,7 @@ from diffractix.graph import (
 
 from ..simulation import Simulation
 from ..system import System
-from .solution import Solution
+from .solution import DEFAULT_FEASIBILITY_TOLERANCE, Solution
 from .objective import Objective, normalize_to_objective
 from .constraint import Constraint, normalize_to_constraint
 from .problem import Problem
@@ -26,9 +26,6 @@ from .context import (
     SolverSymbolKey,
     SolverSymbolKind,
 )
-
-
-DEFAULT_FEASIBILITY_TOLERANCE = 1e-8
 
 
 class Backend(Enum):
