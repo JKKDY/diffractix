@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import Enum, auto
 
 import autograd.numpy as np
-from autograd import grad, jacobian
+from autograd import grad, hessian, jacobian
 
 from diffractix.graph import (
     Node,
@@ -238,6 +238,8 @@ class Solver:
             ]
             return np.concatenate(values) if values else np.array([])
 
+        def weighted_constraints(theta, multipliers):
+            return np.dot(multipliers, constraint_function(theta))
 
         problem = Problem(
             x0=self.simulation.initial_values,
@@ -245,8 +247,10 @@ class Solver:
             x_upper=parameter_upper,
             objective=objective_function,
             gradient=grad(objective_function),
+            objective_hessian=hessian(objective_function),
             constraints=constraint_function,
             jacobian=jacobian(constraint_function),
+            constraint_hessian=hessian(weighted_constraints, 0),
             constraint_lower=constraint_lower,
             constraint_upper=constraint_upper,
         )

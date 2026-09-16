@@ -14,9 +14,11 @@ class Problem:
 
     objective: Callable
     gradient: Callable
+    objective_hessian: Callable
 
     constraints: Callable
     jacobian: Callable
+    constraint_hessian: Callable
     constraint_lower: np.ndarray
     constraint_upper: np.ndarray
 

@@ -4,7 +4,7 @@ import numpy as np
 import cyipopt
 
 from ..problem import Problem
-from ..solution import OptimizationResult
+from ..result import OptimizationResult
 
 
 class _IpoptProblem:
@@ -21,10 +21,28 @@ class _IpoptProblem:
         return np.asarray(self.problem.constraints(x))
 
     def jacobian(self, x):
-        return np.asarray(self.problem.jacobian(x)).ravel()
+        return np.asarray(
+            self.problem.jacobian(x)
+        ).ravel()
+
+    def hessian(self, x, lagrange, obj_factor):
+        hessian = (
+            obj_factor * self.problem.objective_hessian(x)
+            + self.problem.constraint_hessian(x, lagrange)
+        )
+
+        row, col = self.hessianstructure()
+        return np.asarray(hessian)[row, col]
+
+    def hessianstructure(self):
+        return np.tril_indices(self.problem.n_variables)
 
 
-def solve_ipopt(problem: Problem, method: str | None = None, options: dict | None = None) -> OptimizationResult:
+def solve_ipopt(
+    problem: Problem,
+    method: str | None = None,
+    options: dict | None = None,
+) -> OptimizationResult:
     """Solve a compiled optimization problem with IPOPT."""
 
     if method is not None:
@@ -34,6 +52,7 @@ def solve_ipopt(problem: Problem, method: str | None = None, options: dict | Non
 
     callbacks = _IpoptProblem(problem)
 
+    # maybe add sparsity information later
     solver = cyipopt.Problem(
         n=problem.n_variables,
         m=problem.n_constraints,
@@ -44,11 +63,7 @@ def solve_ipopt(problem: Problem, method: str | None = None, options: dict | Non
         cu=problem.constraint_upper,
     )
 
-    ipopt_options = {
-        "hessian_approximation": "limited-memory",
-        **options,
-    }
-    for name, value in ipopt_options.items():
+    for name, value in options.items():
         solver.add_option(name, value)
 
     x, info = solver.solve(problem.x0)
@@ -59,7 +74,7 @@ def solve_ipopt(problem: Problem, method: str | None = None, options: dict | Non
 
     return OptimizationResult(
         x=np.asarray(x),
-        success=info.get("status") == 0,
+        success=info.get("status") in (0, 1),
         cost=float(info["obj_val"]),
         message=str(message),
         raw=info,

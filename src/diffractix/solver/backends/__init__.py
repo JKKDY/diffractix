@@ -19,6 +19,7 @@ def _require_package(package: str, extra: str) -> None:
 
 def solve_scipy(problem, method: str | None = None, options: dict | None = None):
     """Dispatch to the SciPy backend."""
+    options = {} if options is None else dict(options)
     _require_package("scipy", "scipy")
     from .scipy import solve_scipy as solve
 
@@ -27,6 +28,7 @@ def solve_scipy(problem, method: str | None = None, options: dict | None = None)
 
 def solve_ipopt(problem, method: str | None = None, options: dict | None = None):
     """Dispatch to the optional IPOPT backend."""
+    options = {} if options is None else dict(options)
     _require_package("cyipopt", "ipopt")
     from .ipopt import solve_ipopt as solve
 
@@ -35,6 +37,7 @@ def solve_ipopt(problem, method: str | None = None, options: dict | None = None)
 
 def solve_nlopt(problem, method: str | None = None, options: dict | None = None):
     """Dispatch to the optional NLopt backend."""
+    options = {} if options is None else dict(options)
     _require_package("nlopt", "nlopt")
     from .nlopt import solve_nlopt as solve
 

@@ -3,13 +3,17 @@ from __future__ import annotations
 from scipy.optimize import Bounds, NonlinearConstraint, minimize
 
 from ..problem import Problem
-from ..solution import OptimizationResult
+from ..result import OptimizationResult
 
 DEFAULT_METHOD = "trust-constr"
 SUPPORTED_METHODS = {"trust-constr", "SLSQP"}
 
 
-def solve_scipy(problem: Problem, method: str | None = None, options: dict | None = None) -> OptimizationResult:
+def solve_scipy(
+    problem: Problem,
+    method: str | None = None,
+    options: dict | None = None,
+) -> OptimizationResult:
     """Solve a compiled optimization problem with SciPy."""
     method = DEFAULT_METHOD if method is None else method
     options = {} if options is None else dict(options)
@@ -20,14 +24,21 @@ def solve_scipy(problem: Problem, method: str | None = None, options: dict | Non
 
     constraints = ()
     if problem.n_constraints:
+        constraint_kwargs = {"jac": problem.jacobian}
+        if method == "trust-constr":
+            constraint_kwargs["hess"] = problem.constraint_hessian
         constraints = (
             NonlinearConstraint(
                 problem.constraints,
                 problem.constraint_lower,
                 problem.constraint_upper,
-                jac=problem.jacobian,
+                **constraint_kwargs,
             ),
         )
+
+    kwargs = {}
+    if method == "trust-constr":
+        kwargs["hess"] = problem.objective_hessian
 
     res = minimize(
         problem.objective,
@@ -37,6 +48,7 @@ def solve_scipy(problem: Problem, method: str | None = None, options: dict | Non
         bounds=Bounds(problem.x_lower, problem.x_upper),
         constraints=constraints,
         options=options,
+        **kwargs,
     )
 
     return OptimizationResult(
