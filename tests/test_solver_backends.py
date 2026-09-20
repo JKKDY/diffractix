@@ -332,6 +332,39 @@ def test_solver_dispatch_matrix_copies_options(
     assert options == {"maxeval": 100}
 
 
+def test_solver_defaults_to_scipy_backend(monkeypatch):
+    from diffractix.solver import solver as solver_module
+
+    solver = object.__new__(Solver)
+    solver.objectives = ()
+    solver.constraints = ()
+    solver.simulation = SimpleNamespace(
+        initial_values=anp.array([1.0]),
+        run=lambda theta: None,
+    )
+    solver._compile_objectives = lambda: ()
+    solver._compile_constraints = lambda: ()
+    solver._parameter_bounds = lambda: (anp.array([0.0]), anp.array([2.0]))
+    solver._constraint_bounds = lambda constraints: (anp.array([]), anp.array([]))
+    received = {}
+
+    def solve_scipy(problem, method=None, options=None):
+        received.update(method=method, options=options)
+        return OptimizationResult(
+            x=anp.array([1.0]),
+            success=True,
+            cost=0.0,
+            message="solved",
+        )
+
+    monkeypatch.setattr(solver_module, "solve_scipy", solve_scipy)
+
+    solution = solver.solve()
+
+    assert isinstance(solution, Solution)
+    assert received == {"method": None, "options": {}}
+
+
 @pytest.mark.parametrize(
     ("entry_point", "backend_module", "function_name", "method"),
     [

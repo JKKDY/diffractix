@@ -215,7 +215,7 @@ class Solver:
 
     def solve(
         self,
-        backend: Backend = Backend.IPOPT,
+        backend: Backend = Backend.SCIPY,
         method=None,
         options: dict | None = None,
         feasibility_tolerance: float = DEFAULT_FEASIBILITY_TOLERANCE
