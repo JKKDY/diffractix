@@ -175,7 +175,12 @@ class Solver:
     def _compile_constraints(self):
         compiled_constraints = []
 
-        for constraint in self.constraints:
+        requirements = tuple(
+            normalize_to_constraint(requirement)
+            for requirement in getattr(self.simulation, "requirements", ())
+        )
+
+        for constraint in (*requirements, *self.constraints):
             func = constraint.evaluate
             evaluate = self._compile_node(func) if isinstance(func, Node) else self._compile_callable(func)
 

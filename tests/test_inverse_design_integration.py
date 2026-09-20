@@ -166,6 +166,48 @@ def test_real_hard_constraint_changes_the_optimum():
     assert constrained_solution.constraints[0].satisfied
 
 
+def test_simulation_requirements_join_solver_constraints_in_order():
+    system, _, distance = distance_system(initial=0.1)
+    system.require(distance >= 0.2)
+    simulation = system.build()
+    requirements_before = simulation.requirements
+    solver = Solver(simulation)
+    solver.target(distance - 0.1)
+    solver.require(distance <= 0.25)
+
+    first = solver.solve(Backend.SCIPY, method="SLSQP")
+    second = solver.solve(Backend.SCIPY, method="SLSQP")
+
+    assert first.success
+    assert first.feasible
+    assert first[distance] == pytest.approx(0.2, abs=1e-6)
+    assert tuple(result.lower_bound for result in first.constraints) == (0.2, -numpy.inf)
+    assert tuple(result.upper_bound for result in first.constraints) == (numpy.inf, 0.25)
+    assert len(first.constraints) == 2
+    assert len(second.constraints) == 2
+    assert len(solver.constraints) == 1
+    assert simulation.requirements is requirements_before
+    assert system.requirements[0] is requirements_before[0]
+
+
+def test_simulation_requirement_appears_in_solution_violations():
+    system, _, distance = distance_system(initial=0.1)
+    system.require(distance >= 0.2)
+    simulation = system.build()
+    solver = Solver(simulation)
+    solver.target(distance - 0.15)
+    solver.require(distance <= 0.1)
+
+    solution = solver.solve(Backend.SCIPY, method="SLSQP")
+
+    assert len(solution.constraints) == 2
+    assert solution.violations
+    assert any(
+        result.lower_bound == pytest.approx(0.2)
+        for result in solution.violations
+    )
+
+
 def test_multiple_constraint_kinds_are_preserved_in_solution():
     system, _, distance = distance_system(initial=0.18)
     solver = Solver(system)
