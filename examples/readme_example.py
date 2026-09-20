@@ -1,11 +1,4 @@
-import diffractix as dfx
-
-from diffractix.graph import Parameter
-from diffractix.beams import GaussianBeam
-from diffractix.elements import Space
-from diffractix.solver import Solver
-from diffractix.system import System
-
+from diffractix import GaussianBeam, Parameter, Space, System, Solver
 
 INITIAL_RADIUS = 100e-6
 TARGET_RADIUS = 150e-6
