@@ -121,6 +121,16 @@ class SimulationResult:
         _, after = self._resolve_location(element, occurrence)
         return self.states[after]
 
+    def z_at(self, element, occurrence=None):
+        """Return the longitudinal position at an element's input side."""
+        before, _ = self._resolve_location(element, occurrence)
+        return self.z[before]
+
+    def z_after(self, element, occurrence=None):
+        """Return the longitudinal position immediately after an element."""
+        _, after = self._resolve_location(element, occurrence)
+        return self.z[after]
+
     def plot(self):
         """Plot this simulation result."""
         raise NotImplementedError

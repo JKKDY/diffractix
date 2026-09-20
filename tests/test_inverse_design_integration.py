@@ -70,6 +70,18 @@ def test_real_optical_inverse_design_public_workflow():
     assert solver.simulation.run().z[-1] == pytest.approx(initial_value)
 
 
+def test_real_solver_expression_uses_z_after_space():
+    system, space, distance = distance_system()
+    solver = Solver(system)
+    solver.target(lambda context: context.z_after(space) - 0.2)
+
+    solution = solver.solve(Backend.SCIPY, method="SLSQP")
+
+    assert solution.success
+    assert solution[distance] == pytest.approx(0.2, abs=1e-6)
+    assert solution.run().z_after(space) == pytest.approx(0.2, abs=1e-6)
+
+
 def test_multiple_real_design_variables_preserve_canonical_theta_order():
     first = Parameter(0.08, name="first", variable=True, lower_bound=0.02, upper_bound=0.3)
     second = Parameter(0.12, name="second", variable=True, lower_bound=0.02, upper_bound=0.3)

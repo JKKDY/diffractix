@@ -9,6 +9,8 @@ from diffractix.graph import Symbol
 class SolverSymbolKind(Enum):
     AT = auto()
     AFTER = auto()
+    Z_AT = auto()
+    Z_AFTER = auto()
     Z = auto()
     STATE = auto()
 
@@ -48,6 +50,12 @@ class SolverContext:
 
     def after(self, element, occurrence=None):
         return self._get_result().after(element, occurrence)
+
+    def z_at(self, element, occurrence=None):
+        return self._get_result().z_at(element, occurrence)
+
+    def z_after(self, element, occurrence=None):
+        return self._get_result().z_after(element, occurrence)
 
 
 class SolverCompileContext:
@@ -129,4 +137,24 @@ class SolverCompileContext:
             SolverSymbolKind.AFTER,
             element,
             occurrence,
+        )
+
+    def z_at(self, element, occurrence=None):
+        self._target_elements[id(element)] = element
+        return Symbol(
+            SolverSymbolKey(
+                kind=SolverSymbolKind.Z_AT,
+                element_id=id(element),
+                occurrence=occurrence,
+            )
+        )
+
+    def z_after(self, element, occurrence=None):
+        self._target_elements[id(element)] = element
+        return Symbol(
+            SolverSymbolKey(
+                kind=SolverSymbolKind.Z_AFTER,
+                element_id=id(element),
+                occurrence=occurrence,
+            )
         )

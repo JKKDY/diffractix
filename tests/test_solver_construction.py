@@ -57,6 +57,18 @@ class FakeResult:
             self.theta[0] + 4.0 + occurrence,
         )
 
+    def z_at(self, element, occurrence=None):
+        if element is not self.element:
+            raise KeyError("Unknown element in fake result.")
+        occurrence = 0 if occurrence is None else occurrence
+        return self.theta[0] + 20.0 + occurrence
+
+    def z_after(self, element, occurrence=None):
+        if element is not self.element:
+            raise KeyError("Unknown element in fake result.")
+        occurrence = 0 if occurrence is None else occurrence
+        return self.theta[0] + 30.0 + occurrence
+
 
 class FakeElement:
     pass
@@ -158,6 +170,8 @@ def test_solver_compile_context_creates_typed_symbol_keys():
 
     at = context.at(element).w
     after = context.after(element, occurrence=2).q
+    z_at = context.z_at(element, occurrence=3)
+    z_after = context.z_after(element, occurrence=4)
     z = context.z[3]
     state = context.states[4].w
 
@@ -172,6 +186,16 @@ def test_solver_compile_context_creates_typed_symbol_keys():
         element_id=id(element),
         occurrence=2,
         name="q",
+    )
+    assert z_at.key == SolverSymbolKey(
+        kind=SolverSymbolKind.Z_AT,
+        element_id=id(element),
+        occurrence=3,
+    )
+    assert z_after.key == SolverSymbolKey(
+        kind=SolverSymbolKind.Z_AFTER,
+        element_id=id(element),
+        occurrence=4,
     )
     assert z.key == SolverSymbolKey(
         kind=SolverSymbolKind.Z,
@@ -213,6 +237,8 @@ def test_solver_resolves_typed_symbol_keys():
     compile_context = SolverCompileContext()
     at = compile_context.at(element, occurrence=1).w
     after = compile_context.after(element, occurrence=2).q
+    z_at = compile_context.z_at(element, occurrence=3)
+    z_after = compile_context.z_after(element, occurrence=4)
     z = compile_context.z[1]
     state = compile_context.states[0].w
 
@@ -225,11 +251,15 @@ def test_solver_resolves_typed_symbol_keys():
         after=lambda target, occurrence: SimpleNamespace(
             q=(target is element, occurrence),
         ),
+        z_at=lambda target, occurrence: (target is element, occurrence, "at"),
+        z_after=lambda target, occurrence: (target is element, occurrence, "after"),
     )
     solver = Solver.__new__(Solver)
 
     assert solver._resolve_symbol(at.key, compile_context, runtime_context) == (True, 1)
     assert solver._resolve_symbol(after.key, compile_context, runtime_context) == (True, 2)
+    assert solver._resolve_symbol(z_at.key, compile_context, runtime_context) == (True, 3, "at")
+    assert solver._resolve_symbol(z_after.key, compile_context, runtime_context) == (True, 4, "after")
     assert solver._resolve_symbol(z.key, compile_context, runtime_context) == 20.0
     assert solver._resolve_symbol(state.key, compile_context, runtime_context) == 30.0
 
@@ -325,6 +355,28 @@ def test_after_z_and_states_resolve_independently():
 
     assert first.evaluate(runtime_context) == 10.0
     assert second.evaluate(runtime_context) == 10.0
+
+
+def test_z_at_and_z_after_compile_and_resolve_runtime_symbols():
+    solver, lens, parameter = make_solver()
+    solver.target(
+        lambda ctx: parameter + ctx.z_at(lens),
+        lambda ctx: parameter + ctx.z_after(lens, occurrence=2),
+    )
+
+    first, second = solver._compile_objectives()
+    runtime_context = context(solver, [3.0])
+
+    assert first.evaluate(runtime_context) == 26.0
+    assert second.evaluate(runtime_context) == 38.0
+
+
+def test_solver_context_exposes_runtime_z_positions():
+    solver, lens, _ = make_solver()
+    runtime_context = context(solver, [3.0])
+
+    assert runtime_context.z_at(lens) == 23.0
+    assert runtime_context.z_after(lens, occurrence=2) == 35.0
 
 
 def test_z_indices_produce_distinct_runtime_values():

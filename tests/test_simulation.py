@@ -274,6 +274,20 @@ def test_result_after_unique_element_does_not_require_occurrence():
     assert result.after(element) is states[1]
 
 
+def test_result_z_accessors_return_unique_element_positions():
+    element = object()
+    states = (DummyState(), DummyState())
+    result = SimulationResult(
+        source=states[0],
+        z=np.array([1.25, 2.5]),
+        states=states,
+        location_map={id(element): ((0, 1),)},
+    )
+
+    assert result.z_at(element) == pytest.approx(1.25)
+    assert result.z_after(element) == pytest.approx(2.5)
+
+
 def test_result_at_selects_repeated_element_occurrence():
     element = object()
     states = (
@@ -322,6 +336,24 @@ def test_result_after_selects_repeated_element_occurrence():
 
     assert result.after(element, occurrence=0) is states[1]
     assert result.after(element, occurrence=1) is states[3]
+
+
+def test_result_z_accessors_select_repeated_element_occurrence():
+    element = object()
+    states = tuple(DummyState() for _ in range(4))
+    result = SimulationResult(
+        source=states[0],
+        z=np.array([0.0, 1.0, 3.0, 6.0]),
+        states=states,
+        location_map={id(element): ((0, 1), (2, 3))},
+    )
+
+    assert result.z_at(element, occurrence=0) == pytest.approx(0.0)
+    assert result.z_after(element, occurrence=0) == pytest.approx(1.0)
+    assert result.z_at(element, occurrence=1) == pytest.approx(3.0)
+    assert result.z_after(element, occurrence=1) == pytest.approx(6.0)
+    with pytest.raises(ValueError, match="occurs 2 times"):
+        result.z_at(element)
 
 
 def test_result_at_repeated_element_requires_occurrence():
@@ -431,6 +463,24 @@ def test_result_rejects_occurrence_for_numeric_position():
 
     with pytest.raises(TypeError, match="occurrence may only be specified"):
         result.at(0.5, occurrence=0)
+
+
+@pytest.mark.parametrize("accessor", ["z_at", "z_after"])
+def test_result_z_accessors_match_location_lookup_errors(accessor):
+    element = object()
+    missing = object()
+    result = SimulationResult(
+        source=DummyState(),
+        z=np.array([0.0]),
+        states=(DummyState(),),
+        location_map={id(element): ((0, 0),)},
+    )
+    resolve = getattr(result, accessor)
+
+    with pytest.raises(KeyError, match="not part of this simulation"):
+        resolve(missing)
+    with pytest.raises(IndexError, match="out of range"):
+        resolve(element, occurrence=1)
 
 
 # -----------

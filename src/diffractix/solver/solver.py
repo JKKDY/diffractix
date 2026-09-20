@@ -75,6 +75,14 @@ class Solver:
             element = compile_context._target_elements[key.element_id]
             return getattr(context.after(element, key.occurrence), key.name)
 
+        if key.kind is SolverSymbolKind.Z_AT:
+            element = compile_context._target_elements[key.element_id]
+            return context.z_at(element, key.occurrence)
+
+        if key.kind is SolverSymbolKind.Z_AFTER:
+            element = compile_context._target_elements[key.element_id]
+            return context.z_after(element, key.occurrence)
+
         if key.kind is SolverSymbolKind.Z:
             return context.z[key.index]
 
