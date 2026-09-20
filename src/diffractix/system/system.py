@@ -272,6 +272,26 @@ class System:
         self._requirements.extend(requirements)
         return self
 
+    def _collect_element_requirements(self):
+        requirements = []
+        seen = set()
+
+        def visit(element):
+            element_id = id(element)
+            if element_id in seen:
+                return
+            seen.add(element_id)
+
+            requirements.extend(element.requirements)
+            if isinstance(element, CompositeElement):
+                for child in element.elements:
+                    visit(child)
+
+        for element in self.elements:
+            visit(element)
+
+        return tuple(requirements)
+
 
     # ----------
     # VALIDATION
@@ -655,7 +675,7 @@ class System:
             steps=steps,
             parameter_info=parameter_info,
             location_map=location_map,
-            requirements=self.requirements,
+            requirements=self.requirements + self._collect_element_requirements(),
             simulation_context = self.context
         )
 
@@ -675,3 +695,5 @@ class System:
         compiled = self._compile(elements)
 
         return self._build_simulation(compiled)
+
+

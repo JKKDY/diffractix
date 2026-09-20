@@ -4,6 +4,7 @@ import pytest
 import autograd.numpy as np
 
 from diffractix.beams import GaussianBeam
+from diffractix.composites import CompositeElement, Slab
 from diffractix.elements import Interface, Space, ThinLens
 from diffractix.graph import Parameter
 from diffractix.system import System, SystemValidationError
@@ -19,6 +20,13 @@ def create_beam(n=1.0):
         wavelength=1064e-9,
         n=n,
     )
+
+
+class NestedRequirementsComposite(CompositeElement):
+    def __init__(self, inner, child):
+        self.inner = inner
+        self.child = child
+        super().__init__()
 
 
 # -----------
@@ -401,6 +409,66 @@ def test_system_requirements_are_forwarded_to_simulation():
     simulation = system.build()
 
     assert simulation.requirements == (requirement,)
+
+
+def test_element_requirement_is_forwarded_to_simulation():
+    beam = create_beam()
+    element = Space(d=0.1)
+    requirement = object()
+    element.require(requirement)
+
+    system = System()
+    system.add_input_beam(beam)
+    system.add(element)
+
+    simulation = system.build()
+
+    assert simulation.requirements == (requirement,)
+
+
+def test_system_and_nested_element_requirements_preserve_order():
+    beam = create_beam()
+    system_requirement = object()
+    composite_requirement = object()
+    inner_requirement = object()
+    child_requirement = object()
+    inner = Slab(d=0.01, n=1.5)
+    child = Space(d=0.1)
+    composite = NestedRequirementsComposite(inner, child)
+    system = System()
+    system.add_input_beam(beam)
+    system.add(composite)
+    system.require(system_requirement)
+    composite.require(composite_requirement)
+    inner.require(inner_requirement)
+    child.require(child_requirement)
+
+    simulation = system.build()
+
+    assert simulation.requirements == (
+        system_requirement,
+        composite_requirement,
+        inner_requirement,
+        child_requirement,
+    )
+
+
+def test_repeated_element_requirements_are_collected_once_without_mutation():
+    beam = create_beam()
+    element = Space(d=0.1)
+    requirement = object()
+    element.require(requirement)
+    original_requirements = element.requirements
+    system = System()
+    system.add_input_beam(beam)
+    system.add((element, element))
+    system_requirements = system.requirements
+
+    simulation = system.build()
+
+    assert simulation.requirements == (requirement,)
+    assert element.requirements == original_requirements
+    assert system.requirements == system_requirements
 
 
 # ----------

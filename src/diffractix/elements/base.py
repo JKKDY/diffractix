@@ -57,6 +57,22 @@ class ElementBase:
         return tuple(values)
 
 
+    # ------------
+    # REQUIREMENTS
+    # ------------
+    @property
+    def requirements(self) -> tuple:
+        """Persistent requirements attached to this element."""
+        return tuple(getattr(self, "_requirements", ()))
+
+    def require(self, *requirements):
+        """Attach persistent requirements to this element."""
+        if not hasattr(self, "_requirements"):
+            self._requirements = []
+        self._requirements.extend(requirements)
+        return self
+
+
     # --------------------
     # PARAMETER ASSIGNMENT
     # --------------------
