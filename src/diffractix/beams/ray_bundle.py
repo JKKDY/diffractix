@@ -21,6 +21,11 @@ class RayBundle(ParaxialState):
     x: np.ndarray
     theta: np.ndarray
 
+    result_columns: ClassVar[tuple[str, ...]] = (
+        "x",
+        "theta",
+    )
+
 
     @property
     def size(self) -> int:

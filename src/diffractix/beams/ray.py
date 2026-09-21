@@ -21,6 +21,11 @@ class ParaxialRay(ParaxialState):
     x: float
     theta: float
 
+    result_columns: ClassVar[tuple[str, ...]] = (
+        "x",
+        "theta",
+    )
+
     def propagate(self, A, B, C, D, n) -> 'ParaxialRay':
         x = A * self.x + B * self.theta
         theta = C * self.x + D * self.theta

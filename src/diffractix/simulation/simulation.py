@@ -9,6 +9,8 @@ from diffractix.beams.base import ParaxialState
 from diffractix.graph import CompiledAST, Node
 from diffractix.simulation.result import SimulationResult, result_type_for
 
+from diffractix.system.info import ElementInfo
+
 
 @dataclass(frozen=True)
 class SimulationStep:
@@ -17,17 +19,6 @@ class SimulationStep:
     matrix_indices: tuple[tuple[int, int], tuple[int, int]]
     length_index: int
     refractive_index_index: int
-
-
-@dataclass(frozen=True)
-class ElementInfo:
-    """Inspection metadata for one resolved optical element."""
-
-    type_name: str
-    label: str | None
-    path: str | None
-    parameter_names: tuple[str, ...]
-    parameter_indices: tuple[int, ...]
 
 
 class Simulation:
@@ -112,6 +103,7 @@ class Simulation:
             z=np.stack(positions),
             states=tuple(states),
             location_map=self.location_map,
+            element_info=self.element_info,
         )
 
 

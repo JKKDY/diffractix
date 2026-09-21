@@ -6,13 +6,40 @@ import autograd.numpy as np
 
 from autograd import grad
 
+from diffractix.beams import GaussianBeam, ParaxialRay, RayBundle
 from diffractix.beams.base import ParaxialState
 from diffractix.simulation import Simulation, SimulationResult
-from diffractix.simulation.simulation import SimulationStep, ElementInfo
+from diffractix.simulation.simulation import SimulationStep
+from diffractix.system.info import ElementInfo
 
 
 class DummyResult:
     pass
+
+
+def element_info_for_steps(steps):
+    return tuple(
+        ElementInfo(
+            type_name="DummyElement",
+            label=None,
+            path=None,
+            parameter_names=(),
+            parameter_indices=(),
+        )
+        for _ in steps
+    )
+
+
+def element_info_for_states(states):
+    return element_info_for_steps(states[1:])
+
+
+def create_result(**kwargs):
+    kwargs.setdefault(
+        "element_info",
+        element_info_for_states(kwargs["states"]),
+    )
+    return SimulationResult(**kwargs)
 
 
 @dataclass(frozen=True)
@@ -47,6 +74,7 @@ def create_simulation(
     parameter_info=None,
     location_map=None,
     requirements=(),
+    element_info=None,
 ):
     if source is None:
         source = DummyState()
@@ -56,6 +84,9 @@ def create_simulation(
 
     if parameter_info is None:
         parameter_info = {}
+
+    if element_info is None:
+        element_info = element_info_for_steps(steps)
 
     graph = DummyGraph(
         initial_values=np.array(initial_values),
@@ -71,7 +102,7 @@ def create_simulation(
         simulation_context={},
         requirements=requirements,
         parameter_graph = None,
-        element_info = ()
+        element_info=element_info,
     )
 
 
@@ -135,8 +166,8 @@ def test_simulation_converts_sequence_fields_to_tuples():
         location_map={},
         simulation_context={},
         requirements=[],
-        parameter_graph = None,
-        element_info = ()
+        parameter_graph=None,
+        element_info=(),
     )
 
     assert simulation.steps == ()
@@ -159,8 +190,8 @@ def test_simulation_initial_values_are_graph_initial_values():
         location_map={},
         simulation_context={},
         requirements=(),
-        parameter_graph = None,
-        element_info = ()
+        parameter_graph=None,
+        element_info=(),
     )
 
     assert simulation.initial_values is initial_values
@@ -191,6 +222,25 @@ def test_simulation_rejects_non_dataclass_state():
 # -------
 # RESULTS
 # -------
+
+def test_paraxial_state_has_no_default_result_columns():
+    assert ParaxialState.result_columns == ()
+
+
+def test_concrete_state_result_columns_reference_existing_properties():
+    states = (
+        GaussianBeam.from_waist(w0=1e-3, wavelength=1e-6),
+        ParaxialRay(x=1.0, theta=0.1),
+        RayBundle(x=np.array([0.0, 1.0]), theta=np.array([0.0, 0.1])),
+    )
+
+    assert GaussianBeam.result_columns == ("w", "R", "gouy_phase")
+    assert ParaxialRay.result_columns == ("x", "theta")
+    assert RayBundle.result_columns == ("x", "theta")
+
+    for state in states:
+        assert state.result_columns
+        assert all(hasattr(state, name) for name in state.result_columns)
 
 def test_run_returns_simulation_result():
     simulation = create_simulation(
@@ -257,6 +307,19 @@ def test_run_forwards_location_map_to_result():
 
     assert result.at(location) is result.initial
 
+
+def test_result_rejects_inconsistent_element_info_length():
+    states = (DummyState(), DummyState())
+
+    with pytest.raises(ValueError, match="one input state plus one state"):
+        SimulationResult(
+            source=states[0],
+            z=np.array([0.0, 1.0]),
+            states=states,
+            location_map={},
+            element_info=(),
+        )
+
 def test_result_at_unique_element_does_not_require_occurrence():
     element = object()
     states = (
@@ -264,7 +327,7 @@ def test_result_at_unique_element_does_not_require_occurrence():
         DummyState(value=1.0),
     )
 
-    result = SimulationResult(
+    result = create_result(
         source=states[0],
         z=np.array([0.0, 0.0]),
         states=states,
@@ -283,7 +346,7 @@ def test_result_after_unique_element_does_not_require_occurrence():
         DummyState(value=1.0),
     )
 
-    result = SimulationResult(
+    result = create_result(
         source=states[0],
         z=np.array([0.0, 0.0]),
         states=states,
@@ -298,7 +361,7 @@ def test_result_after_unique_element_does_not_require_occurrence():
 def test_result_z_accessors_return_unique_element_positions():
     element = object()
     states = (DummyState(), DummyState())
-    result = SimulationResult(
+    result = create_result(
         source=states[0],
         z=np.array([1.25, 2.5]),
         states=states,
@@ -318,7 +381,7 @@ def test_result_at_selects_repeated_element_occurrence():
         DummyState(value=3.0),
     )
 
-    result = SimulationResult(
+    result = create_result(
         source=states[0],
         z=np.array([0.0, 0.0, 0.0, 0.0]),
         states=states,
@@ -343,7 +406,7 @@ def test_result_after_selects_repeated_element_occurrence():
         DummyState(value=3.0),
     )
 
-    result = SimulationResult(
+    result = create_result(
         source=states[0],
         z=np.array([0.0, 0.0, 0.0, 0.0]),
         states=states,
@@ -362,7 +425,7 @@ def test_result_after_selects_repeated_element_occurrence():
 def test_result_z_accessors_select_repeated_element_occurrence():
     element = object()
     states = tuple(DummyState() for _ in range(4))
-    result = SimulationResult(
+    result = create_result(
         source=states[0],
         z=np.array([0.0, 1.0, 3.0, 6.0]),
         states=states,
@@ -385,7 +448,7 @@ def test_result_at_repeated_element_requires_occurrence():
         DummyState(value=2.0),
     )
 
-    result = SimulationResult(
+    result = create_result(
         source=states[0],
         z=np.array([0.0, 0.0, 0.0]),
         states=states,
@@ -409,7 +472,7 @@ def test_result_after_repeated_element_requires_occurrence():
         DummyState(value=2.0),
     )
 
-    result = SimulationResult(
+    result = create_result(
         source=states[0],
         z=np.array([0.0, 0.0, 0.0]),
         states=states,
@@ -428,7 +491,7 @@ def test_result_after_repeated_element_requires_occurrence():
 def test_result_rejects_out_of_range_occurrence():
     element = object()
 
-    result = SimulationResult(
+    result = create_result(
         source=DummyState(),
         z=np.array([0.0]),
         states=(DummyState(),),
@@ -444,7 +507,7 @@ def test_result_rejects_out_of_range_occurrence():
 def test_result_rejects_negative_occurrence():
     element = object()
 
-    result = SimulationResult(
+    result = create_result(
         source=DummyState(),
         z=np.array([0.0]),
         states=(DummyState(),),
@@ -460,7 +523,7 @@ def test_result_rejects_negative_occurrence():
 def test_result_rejects_non_integer_occurrence():
     element = object()
 
-    result = SimulationResult(
+    result = create_result(
         source=DummyState(),
         z=np.array([0.0]),
         states=(DummyState(),),
@@ -474,7 +537,7 @@ def test_result_rejects_non_integer_occurrence():
 
 
 def test_result_rejects_occurrence_for_numeric_position():
-    result = SimulationResult(
+    result = create_result(
         source=DummyState(),
         z=np.array([0.0]),
         states=(DummyState(),),
@@ -490,7 +553,7 @@ def test_result_rejects_occurrence_for_numeric_position():
 def test_result_z_accessors_match_location_lookup_errors(accessor):
     element = object()
     missing = object()
-    result = SimulationResult(
+    result = create_result(
         source=DummyState(),
         z=np.array([0.0]),
         states=(DummyState(),),
@@ -732,8 +795,8 @@ def test_run_uses_initial_values_when_theta_is_none():
         location_map={},
         simulation_context={},
         requirements=(),
-        parameter_graph = None,
-        element_info = ()
+        parameter_graph=None,
+        element_info=element_info_for_steps((step,)),
     )
 
     result = simulation.run()
@@ -768,8 +831,8 @@ def test_run_uses_supplied_theta():
         location_map={},
         simulation_context={},
         requirements=(),
-        parameter_graph = None,
-        element_info = ()
+        parameter_graph=None,
+        element_info=element_info_for_steps((step,)),
     )
 
     result = simulation.run(np.array([7.0]))
@@ -804,8 +867,8 @@ def test_run_does_not_modify_initial_values():
         location_map={},
         simulation_context={},
         requirements=(),
-        parameter_graph = None,
-        element_info = ()
+        parameter_graph=None,
+        element_info=element_info_for_steps((step,)),
     )
 
     simulation.run(np.array([7.0]))
@@ -907,8 +970,8 @@ def test_run_is_differentiable_with_respect_to_theta():
         location_map={},
         simulation_context = {},
         requirements=(),
-        parameter_graph = None,
-        element_info = ()
+        parameter_graph=None,
+        element_info=element_info_for_steps((step,)),
     )
 
     def objective(value):

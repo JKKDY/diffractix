@@ -22,6 +22,12 @@ class GaussianBeam(ParaxialState):
     wavelength: float
     n: float
 
+    result_columns: ClassVar[tuple[str, ...]] = (
+        "w",
+        "R",
+        "gouy_phase",
+    )
+
     def propagate(self, A, B, C, D, n) -> 'GaussianBeam':
         q = (A * self.q + B) / (C * self.q + D)
 

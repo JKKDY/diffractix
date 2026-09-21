@@ -4,7 +4,7 @@ import autograd.numpy as np
 
 from diffractix.beams import GaussianBeam
 from diffractix.simulation import Simulation
-from diffractix.simulation.simulation import ElementInfo
+from diffractix.system.info import ElementInfo
 from diffractix.composites import CompositeElement, Slab
 from diffractix.elements import Interface, OpticalElement, Space, ThinLens
 from diffractix.graph import Parameter

@@ -147,6 +147,24 @@ def test_simulation_records_state_after_every_step():
     assert len(result.z) == len(result.states)
 
 
+def test_result_receives_frozen_element_info_in_propagation_order():
+    beam = create_beam()
+    space = Space(d=0.1, label="Drift")
+
+    system = System()
+    system.add_input_beam(beam)
+    system.add(space)
+
+    simulation = system.build()
+    result = simulation.run()
+
+    assert result.element_info == simulation.element_info
+    assert len(result.states) == len(result.element_info) + 1
+    assert result.element_info[0].type_name == "Space"
+    assert result.element_info[0].label == "Drift"
+    assert result.states[1] is result.after(space)
+
+
 def test_simulation_positions_are_monotonic_non_decreasing():
     beam = create_beam()
 

@@ -7,7 +7,8 @@ from numbers import Integral, Real
 
 import autograd.numpy as np
 
-from ..beams.base import ParaxialState
+from diffractix.beams.base import ParaxialState
+from diffractix.system.info import ElementInfo
 
 
 class SimulationResult:
@@ -19,6 +20,7 @@ class SimulationResult:
         z: np.ndarray,
         states: Sequence[ParaxialState],
         location_map: Mapping[int, tuple[tuple[int, int], ...]],
+        element_info: Sequence["ElementInfo"],
         probe: Callable[[float], ParaxialState] | None = None,
     ):
         if len(z) != len(states):
@@ -27,10 +29,17 @@ class SimulationResult:
             )
         if not states:
             raise ValueError("SimulationResult requires at least one state.")
+        if len(states) != len(element_info) + 1:
+            raise ValueError(
+                "states must contain exactly one input state plus one state "
+                f"per element_info entry, got {len(states)} states and "
+                f"{len(element_info)} element_info entries."
+            )
         self._source = source
         self.z = z
         self.states = tuple(states)
         self._location_map = dict(location_map)
+        self.element_info = tuple(element_info)
         self._probe = probe
 
     @property
@@ -134,6 +143,46 @@ class SimulationResult:
     def plot(self):
         """Plot this simulation result."""
         raise NotImplementedError
+
+    def __str__(self) -> str:
+        def fmt_val(v):
+            if  np.ndim(v) == 0:
+                return f"{float(v):.4g}"
+            else:
+                return np.array2string(np.asarray(v), precision=4, separator=", ")
+
+        def fmt_loc(info):
+            return info.label or info.path or info.type_name
+
+        state_type = type(self.source)
+        cols = state_type.result_columns
+        headers = ("#", "z", "Location", *cols)
+
+        # Consolidate row generation across input (0) and subsequent elements
+        data_items = [(0, self.z[0], self.states[0], "Input")] + [
+            (i, z, state, fmt_loc(info))
+            for i, (z, state, info) in enumerate(zip(self.z[1:], self.states[1:], self.element_info), start=1)
+        ]
+        rows = [
+            (str(i), fmt_val(z), loc, *(fmt_val(getattr(state, c)) for c in cols))
+            for i, z, state, loc in data_items
+        ]
+
+        widths = [max(len(header), *(len(r[i]) for r in rows)) for i, header in enumerate(headers)]
+        fmt_row = lambda r: "    ".join(val.ljust(w) for val, w in zip(r, widths))
+        divider = "-" * (sum(widths) + 4 * (len(widths) - 1))
+
+        return "\n".join([
+            f"{state_type.__name__} Simulation Result",
+            "",
+            fmt_row(headers),
+            divider,
+            *(fmt_row(r) for r in rows),
+            divider,
+            "",
+            f"Final z: {fmt_val(self.z[-1])}",
+            f"States: {len(self.states)}",
+        ])
 
 
 def _state_property(name):
