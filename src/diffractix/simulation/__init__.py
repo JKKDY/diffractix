@@ -3,5 +3,5 @@ from .simulation import Simulation
 
 __all__ = [
     "SimulationResult",
-    "Simulation"
+    "Simulation",
 ]

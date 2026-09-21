@@ -12,7 +12,7 @@ from diffractix.composites import CompositeElement
 from diffractix.elements import OpticalElement, Interface, Space, ABCD
 from diffractix.elements.base import ElementBase
 from diffractix.graph import Node, Parameter, Literal, InputNode, compile_ast, collect_parameters
-from diffractix.simulation.simulation import Simulation, SimulationStep
+from diffractix.simulation.simulation import ElementInfo, Simulation, SimulationStep
 
 from .errors import SystemValidationError
 from .symbols import AMBIENT_N
@@ -575,11 +575,14 @@ class System:
         Returns
         -------
         tuple
-            Compiled scalar graph, simulation steps, and location map.
+            Propagation graph, simulation steps, canonical parameter metadata,
+            location metadata, and inspection-only parameter metadata.
         """
         roots = []
         steps = []
         location_map = {}
+        parameter_roots = []
+        element_info = []
 
         def as_node(value):
             return value if isinstance(value, Node) else Literal(value)
@@ -589,6 +592,27 @@ class System:
             matrix = element.matrix
             start = len(roots)
             step_index = len(steps)
+
+            parameter_names = []
+            parameter_indices = []
+
+            for name, handle in zip(element.parameter_names, element.parameters):
+                if handle.node is None:
+                    continue
+
+                parameter_names.append(name)
+                parameter_indices.append(len(parameter_roots))
+                parameter_roots.append(handle)
+
+            element_info.append(
+                ElementInfo(
+                    type_name=type(element).__name__,
+                    label=element.label,
+                    path=system_placement.placement.path,
+                    parameter_names=tuple(parameter_names),
+                    parameter_indices=tuple(parameter_indices),
+                )
+            )
 
             roots.extend((
                 as_node(matrix[0][0]),
@@ -620,6 +644,10 @@ class System:
             )
 
         graph = compile_ast(roots, context=self.context)
+        parameter_graph = compile_ast(
+            parameter_roots,
+            context=self.context,
+        )
 
         parameters = collect_parameters(roots, context=self.context)
 
@@ -650,7 +678,14 @@ class System:
             for element_id, locations in location_map.items()
         }
 
-        return graph, tuple(steps), parameter_info, location_map
+        return (
+            graph,
+            tuple(steps),
+            parameter_info,
+            location_map,
+            parameter_graph,
+            tuple(element_info),
+        )
 
 
     def _build_simulation(self, compiled):
@@ -660,14 +695,22 @@ class System:
         Parameters
         ----------
         compiled:
-            Compiled scalar graph, simulation steps, and location metadata.
+            Propagation graph, numerical steps, and both propagation and
+            inspection metadata.
 
         Returns
         -------
         Simulation
             Executable simulation for the configured input beam.
         """
-        graph, steps, parameter_info, location_map = compiled
+        (
+            graph,
+            steps,
+            parameter_info,
+            location_map,
+            parameter_graph,
+            element_info,
+        ) = compiled
         
         return Simulation(
             source=self.beam,
@@ -676,7 +719,9 @@ class System:
             parameter_info=parameter_info,
             location_map=location_map,
             requirements=self.requirements + self._collect_element_requirements(),
-            simulation_context = self.context
+            simulation_context=self.context,
+            parameter_graph=parameter_graph,
+            element_info=element_info,
         )
 
 

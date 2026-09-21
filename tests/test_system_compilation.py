@@ -4,6 +4,7 @@ import autograd.numpy as np
 
 from diffractix.beams import GaussianBeam
 from diffractix.simulation import Simulation
+from diffractix.simulation.simulation import ElementInfo
 from diffractix.composites import CompositeElement, Slab
 from diffractix.elements import Interface, OpticalElement, Space, ThinLens
 from diffractix.graph import Parameter
@@ -15,6 +16,18 @@ class NestedComposite(CompositeElement):
         self.lens = ThinLens(f=0.1, label="Lens")
         self.slab = Slab(d=0.01, n=1.5, label="Slab")
         super().__init__()
+
+
+def build_simulation(*elements):
+    system = System()
+    system.add_input_beam(
+        GaussianBeam.from_waist(w0=1e-3, wavelength=1e-6)
+    )
+
+    for element in elements:
+        system.add(element)
+
+    return system.build()
 
 
 # ------------------
@@ -592,6 +605,102 @@ def test_validate_refractive_index_continuity_rejects_interface_input_mismatch()
 # COMPILATION
 # -----------
 
+def test_build_creates_element_info_for_each_resolved_step():
+    space = Space(d=0.1, label="Drift")
+
+    simulation = build_simulation(space)
+
+    assert len(simulation.steps) == len(simulation.element_info) == 1
+    assert simulation.element_info == (
+        ElementInfo(
+            type_name="Space",
+            label="Drift",
+            path=None,
+            parameter_names=("d",),
+            parameter_indices=(0,),
+        ),
+    )
+
+
+def test_element_info_preserves_resolved_composite_paths():
+    composite = NestedComposite()
+
+    simulation = build_simulation(composite)
+
+    assert tuple(info.type_name for info in simulation.element_info) == (
+        "ThinLens",
+        "Interface",
+        "Space",
+        "Interface",
+    )
+    assert tuple(info.label for info in simulation.element_info) == (
+        "Lens",
+        "Slab_In",
+        "Slab_Body",
+        "Slab_Out",
+    )
+    assert tuple(info.path for info in simulation.element_info) == (
+        "lens",
+        "slab.front",
+        "slab.body",
+        "slab.back",
+    )
+
+
+def test_parameter_graph_evaluates_fixed_and_variable_element_parameters():
+    distance = Parameter(0.05, name="distance").variable()
+    fixed_space = Space(d=0.2, label="Fixed")
+    variable_space = Space(d=distance, label="Variable")
+
+    simulation = build_simulation(fixed_space, variable_space)
+    values = simulation.parameter_graph.evaluate(
+        simulation.parameter_graph.initial_values
+    )
+
+    fixed_info, variable_info = simulation.element_info
+
+    assert fixed_info.parameter_names == ("d",)
+    assert values[fixed_info.parameter_indices[0]] == pytest.approx(0.2)
+    assert variable_info.parameter_names == ("d",)
+    assert values[variable_info.parameter_indices[0]] == pytest.approx(0.05)
+
+
+def test_parameter_graph_evaluates_derived_parameters_and_skips_empty_inputs():
+    distance = Parameter(0.05, name="distance").variable()
+    space = Space(d=2 * distance, n=None)
+
+    simulation = build_simulation(space)
+    info = simulation.element_info[0]
+    values = simulation.parameter_graph.evaluate(
+        simulation.parameter_graph.initial_values
+    )
+
+    assert info.parameter_names == ("d",)
+    assert info.parameter_indices == (0,)
+    assert values[0] == pytest.approx(0.1)
+
+
+def test_parameter_graph_preserves_canonical_simulation_metadata_and_snapshot():
+    distance = Parameter(0.05, name="distance").variable()
+    space = Space(d=2 * distance)
+
+    simulation = build_simulation(space)
+    initial_values = simulation.initial_values.copy()
+    graph_variables = simulation.graph.variables
+    parameter_index = simulation.parameter_info[id(distance)].parameter_index
+
+    space.d = 0.4
+    distance.value = 0.2
+
+    parameter_values = simulation.parameter_graph.evaluate(
+        simulation.parameter_graph.initial_values
+    )
+
+    assert simulation.initial_values == pytest.approx(initial_values)
+    assert simulation.graph.variables == graph_variables == (distance,)
+    assert simulation.parameter_info[id(distance)].parameter_index == parameter_index == 0
+    assert parameter_values[0] == pytest.approx(0.1)
+
 def test_compile_creates_parameter_info_for_variable_parameter():
     system = System()
     lens = ThinLens(f=0.1, label="Lens").variable("f")
@@ -600,7 +709,7 @@ def test_compile_creates_parameter_info_for_variable_parameter():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map = system._compile(elements)
+    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
 
     info = parameter_info[id(lens.f.node)]
 
@@ -624,7 +733,7 @@ def test_compile_parameter_info_matches_graph_variable_order():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map = system._compile(elements)
+    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
 
     variable_info = tuple(
         info
@@ -650,7 +759,7 @@ def test_compile_parameter_info_snapshots_parameter_metadata():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map = system._compile(elements)
+    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
     info = parameter_info[id(parameter)]
 
     assert info.parameter_id == id(parameter)
@@ -673,7 +782,7 @@ def test_compile_parameter_info_is_independent_of_parameter_value_changes():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map = system._compile(elements)
+    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
 
     parameter.value = 0.2
 
@@ -690,7 +799,7 @@ def test_compile_graph_is_independent_of_parameter_value_changes():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map = system._compile(elements)
+    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
     initial = graph.evaluate(graph.initial_values)
 
     parameter.value = 0.2
@@ -709,7 +818,7 @@ def test_compile_parameter_info_snapshots_variable_status_and_bounds():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map = system._compile(elements)
+    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
     info = parameter_info[id(parameter)]
 
     parameter.fixed()
@@ -729,7 +838,7 @@ def test_compile_includes_fixed_parameters_in_parameter_info():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map = system._compile(elements)
+    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
 
     assert graph.variables == ()
     assert len(graph.initial_values) == 0
@@ -754,7 +863,7 @@ def test_compile_deduplicates_shared_variable_parameter():
         Placement(element=second),
     ))
 
-    graph, steps, parameter_info, location_map = system._compile(elements)
+    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
 
     assert graph.variables == (parameter,)
     info = parameter_info[id(parameter)]
@@ -772,7 +881,7 @@ def test_compile_parameter_info_supports_standalone_parameter():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map = system._compile(elements)
+    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
     info = parameter_info[id(parameter)]
 
     assert info.parameter_id == id(parameter)
@@ -793,7 +902,7 @@ def test_compile_parameter_info_tracks_multiple_standalone_parameters():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map = system._compile(elements)
+    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
 
     assert graph.variables == (x, y)
 
@@ -824,7 +933,7 @@ def test_compile_location_map_uses_element_identity():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map = system._compile(elements)
+    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
 
     assert location_map[id(lens)] == ((0, 1),)
 
@@ -838,7 +947,7 @@ def test_compile_location_map_preserves_repeated_element_occurrences():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map = system._compile(elements)
+    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
 
     assert location_map[id(lens)] == (
         (0, 1),
@@ -854,7 +963,7 @@ def test_compile_step_indices_reference_expected_root_values():
         Placement(element=space),
     ))
 
-    graph, steps, parameter_info, location_map = system._compile(elements)
+    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
     values = graph.evaluate(graph.initial_values)
     step = steps[0]
 
@@ -875,7 +984,7 @@ def test_compile_preserves_derived_parameter_dependencies():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map = system._compile(elements)
+    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
     step = steps[0]
     values = graph.evaluate(np.array([0.2]))
 
@@ -890,7 +999,7 @@ def test_compile_snapshots_fixed_parameter_values():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map = system._compile(elements)
+    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
     step = steps[0]
 
     lens.f.value = 0.2
@@ -908,7 +1017,7 @@ def test_compile_snapshots_input_node_target():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map = system._compile(elements)
+    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
     step = steps[0]
 
     lens.f = 0.2

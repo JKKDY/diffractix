@@ -8,7 +8,7 @@ from autograd import grad
 
 from diffractix.beams.base import ParaxialState
 from diffractix.simulation import Simulation, SimulationResult
-from diffractix.simulation.simulation import SimulationStep
+from diffractix.simulation.simulation import SimulationStep, ElementInfo
 
 
 class DummyResult:
@@ -70,6 +70,8 @@ def create_simulation(
         location_map=location_map,
         simulation_context={},
         requirements=requirements,
+        parameter_graph = None,
+        element_info = ()
     )
 
 
@@ -91,6 +93,13 @@ def test_simulation_stores_compiled_data():
     parameter_info = {1: object()}
     location_map = {1: ((0, 1),)}
     requirements = (object(),)
+    element_info = ElementInfo(
+        type_name="Space",
+        label="Drift",
+        path=None,
+        parameter_names=("d",),
+        parameter_indices=(0,),
+    )
 
     simulation = Simulation(
         source=source,
@@ -100,6 +109,8 @@ def test_simulation_stores_compiled_data():
         location_map=location_map,
         simulation_context={},
         requirements=requirements,
+        parameter_graph=graph,
+        element_info=[element_info],
     )
 
     assert simulation.source is source
@@ -108,6 +119,8 @@ def test_simulation_stores_compiled_data():
     assert simulation.parameter_info == parameter_info
     assert simulation.location_map is location_map
     assert simulation.requirements == requirements
+    assert simulation.parameter_graph is graph
+    assert simulation.element_info == (element_info,)
 
 
 def test_simulation_converts_sequence_fields_to_tuples():
@@ -122,6 +135,8 @@ def test_simulation_converts_sequence_fields_to_tuples():
         location_map={},
         simulation_context={},
         requirements=[],
+        parameter_graph = None,
+        element_info = ()
     )
 
     assert simulation.steps == ()
@@ -143,6 +158,9 @@ def test_simulation_initial_values_are_graph_initial_values():
         parameter_info={},
         location_map={},
         simulation_context={},
+        requirements=(),
+        parameter_graph = None,
+        element_info = ()
     )
 
     assert simulation.initial_values is initial_values
@@ -163,7 +181,10 @@ def test_simulation_rejects_non_dataclass_state():
             steps=(),
             parameter_info={},
             location_map={},
-            simulation_context = {}
+            simulation_context = {},
+            requirements=(),
+            parameter_graph = None,
+            element_info = ()
         )
 
 
@@ -710,6 +731,9 @@ def test_run_uses_initial_values_when_theta_is_none():
         parameter_info={},
         location_map={},
         simulation_context={},
+        requirements=(),
+        parameter_graph = None,
+        element_info = ()
     )
 
     result = simulation.run()
@@ -743,6 +767,9 @@ def test_run_uses_supplied_theta():
         parameter_info={},
         location_map={},
         simulation_context={},
+        requirements=(),
+        parameter_graph = None,
+        element_info = ()
     )
 
     result = simulation.run(np.array([7.0]))
@@ -776,6 +803,9 @@ def test_run_does_not_modify_initial_values():
         parameter_info={},
         location_map={},
         simulation_context={},
+        requirements=(),
+        parameter_graph = None,
+        element_info = ()
     )
 
     simulation.run(np.array([7.0]))
@@ -875,7 +905,10 @@ def test_run_is_differentiable_with_respect_to_theta():
         steps=(step,),
         parameter_info={},
         location_map={},
-        simulation_context = {}
+        simulation_context = {},
+        requirements=(),
+        parameter_graph = None,
+        element_info = ()
     )
 
     def objective(value):

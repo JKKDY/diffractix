@@ -19,6 +19,17 @@ class SimulationStep:
     refractive_index_index: int
 
 
+@dataclass(frozen=True)
+class ElementInfo:
+    """Inspection metadata for one resolved optical element."""
+
+    type_name: str
+    label: str | None
+    path: str | None
+    parameter_names: tuple[str, ...]
+    parameter_indices: tuple[int, ...]
+
+
 class Simulation:
     """
     Compiled differentiable optical simulation.
@@ -37,6 +48,8 @@ class Simulation:
         simulation_context: Mapping,
         location_map: Mapping,
         requirements: Sequence[Callable | Node],
+        parameter_graph: CompiledAST,
+        element_info: Sequence[ElementInfo],
     ):
         self.source = source
         self.graph = graph
@@ -45,6 +58,8 @@ class Simulation:
         self.location_map = location_map
         self.requirements = tuple(requirements)
         self.simulation_context = simulation_context
+        self.parameter_graph = parameter_graph
+        self.element_info = tuple(element_info)
 
         self._result_type = result_type_for(self.source)
 
@@ -98,3 +113,96 @@ class Simulation:
             states=tuple(states),
             location_map=self.location_map,
         )
+
+
+    def __str__(self) -> str:
+        col_gap = 4  # Adjust column spacing here
+
+        def format_value(v):
+            return f"{float(v):.4g}"
+
+        def format_bound(b, is_upper=False):
+            if (np.isposinf(b) if is_upper else np.isneginf(b)):
+                return "inf" if is_upper else "-inf"
+            return format_value(b)
+
+        def format_parameters(info, vals):
+            if not info.parameter_names:
+                return "-"
+            return ", ".join(
+                f"{name}={format_value(vals[idx])}"
+                for name, idx in zip(info.parameter_names, info.parameter_indices)
+            )
+
+        def render_table(headers, rows):
+            widths = [
+                max(len(h), *(len(r[c]) for r in rows)) if rows else len(h)
+                for c, h in enumerate(headers)
+            ]
+            fmt = lambda r: (" " * col_gap).join(val.ljust(w) for val, w in zip(r, widths))
+            div = "-" * (sum(widths) + col_gap * (len(widths) - 1))
+            return [fmt(headers), div, *(fmt(r) for r in rows)]
+
+        values = self.graph.evaluate(self.initial_values)
+        parameter_values = self.parameter_graph.evaluate(self.parameter_graph.initial_values)
+
+        has_paths = any(info.path for info in self.element_info)
+        headers = ["#", "z [m]", "Type", "Label", *(["Path"] if has_paths else []), "L [m]", "n", "Parameters"]
+
+        rows = []
+        z = 0.0
+        for idx, (step, info) in enumerate(zip(self.steps, self.element_info)):
+            length = values[step.length_index]
+            n = values[step.refractive_index_index]
+            rows.append((
+                str(idx),
+                format_value(z),
+                info.type_name,
+                info.label or "-",
+                *([info.path or "-"] if has_paths else []),
+                format_value(length),
+                format_value(n),
+                format_parameters(info, parameter_values),
+            ))
+            z += length
+
+        variables = sorted(
+            (info for info in self.parameter_info.values() if info.is_variable),
+            key=lambda info: info.parameter_index,
+        )
+
+        lines = [
+            "Compiled Simulation",
+            "",
+            *render_table(headers, rows),
+            render_table(headers, rows)[1],  # bottom divider
+            "",
+            f"Source: {type(self.source).__name__}",
+            f"Total length: {format_value(z)} m",
+            f"Variables: {len(variables)}",
+            f"Requirements: {len(self.requirements)}",
+        ]
+
+        if variables:
+            var_headers = ("#", "Parameter", "Owner", "Initial", "Bounds")
+            var_rows = [
+                (
+                    str(info.parameter_index),
+                    info.name or "-",
+                    info.owner_label or info.owner_type or "-",
+                    format_value(info.value),
+                    f"[{format_bound(info.lower_bound)}, {format_bound(info.upper_bound, is_upper=True)}]",
+                )
+                for info in variables
+            ]
+            lines.extend(["", "Variables", "", *render_table(var_headers, var_rows)])
+
+        if self.requirements:
+            lines.extend([
+                "",
+                "Requirements",
+                "",
+                *(f"{i}  {req}" for i, req in enumerate(self.requirements)),
+            ])
+
+        return "\n".join(lines)
