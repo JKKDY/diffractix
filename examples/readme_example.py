@@ -16,6 +16,11 @@ system.add_input_beam(beam)
 system.add(space)
 print(system)
 
+simulation = system.build()
+print(simulation)
+result = simulation.run()
+print(result)
+
 solver = Solver(system)
 solver.target(
     lambda ctx: (ctx.after(space).w - TARGET_RADIUS) / TARGET_RADIUS
