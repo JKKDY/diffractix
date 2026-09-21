@@ -14,6 +14,7 @@ space = Space(d=distance)
 system = System()
 system.add_input_beam(beam)
 system.add(space)
+print(system)
 
 solver = Solver(system)
 solver.target(
@@ -21,6 +22,7 @@ solver.target(
 )
 
 solution = solver.solve()
+
 
 print("Success:", solution.success)
 print("Distance:", solution[distance])

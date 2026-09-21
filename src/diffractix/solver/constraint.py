@@ -1,7 +1,13 @@
 from __future__ import annotations
 
+import ast
+import inspect
+import textwrap
+import math
+
+
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import autograd.numpy as np
 
 from diffractix.graph import Comparison, Literal, Node, Relation
@@ -9,19 +15,91 @@ from diffractix.graph import Comparison, Literal, Node, Relation
 from .utils import callable_arity
 
 
+def describe_callable(func: Callable) -> str:
+    name = getattr(func, "__name__", None)
+
+    if name and name != "<lambda>":
+        return name
+
+    if name == "<lambda>":
+        try:
+            lines, start_line = inspect.getsourcelines(func)
+            source = textwrap.dedent("".join(lines))
+            tree = ast.parse(source)
+
+            target_line = func.__code__.co_firstlineno
+
+            lambdas = [
+                node
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Lambda)
+                and start_line + node.lineno - 1 == target_line
+            ]
+
+            if not lambdas:
+                lambdas = [
+                    node
+                    for node in ast.walk(tree)
+                    if isinstance(node, ast.Lambda)
+                ]
+
+            if lambdas:
+                return ast.unparse(lambdas[0])
+
+        except (OSError, TypeError, SyntaxError):
+            pass
+
+        return "<lambda>"
+
+    return type(func).__name__
+
+
+
 @dataclass(frozen=True)
 class Constraint:
-    """Hard nonlinear constraint evaluated between lower and upper bounds."""
     evaluate: Node | Callable
     lower_bound: float = -np.inf
     upper_bound: float = np.inf
     label: str | None = None
+    _repr: str = field(init=False, repr=False, compare=False)
 
     def __post_init__(self):
         if not isinstance(self.evaluate, Node) and not callable(self.evaluate):
             raise TypeError("evaluate must be a Node or callable.")
+
         if self.lower_bound > self.upper_bound:
             raise ValueError("lower_bound must be <= upper_bound.")
+
+        object.__setattr__(self, "_repr", self._make_repr())
+
+    def _make_repr(self) -> str:
+        if self.label is not None:
+            return self.label
+
+        if isinstance(self.evaluate, Node):
+            expr = repr(self.evaluate)
+        else:
+            desc = describe_callable(self.evaluate)
+            expr = f"({desc})" if desc.startswith("lambda ") else desc
+
+        has_low = not (math.isinf(self.lower_bound) and self.lower_bound < 0)
+        has_high = not (math.isinf(self.upper_bound) and self.upper_bound > 0)
+
+        lo, hi = self.lower_bound, self.upper_bound
+        match (has_low, has_high):
+            case (True, True) if lo == hi:
+                return f"{expr} == {lo:g}"
+            case (True, True):
+                return f"{lo:g} <= {expr} <= {hi:g}"
+            case (True, False):
+                return f"{expr} >= {lo:g}"
+            case (False, True):
+                return f"{expr} <= {hi:g}"
+            case _:
+                return expr
+
+    def __str__(self):
+        return self._repr
 
 
 def _from_comparison(comparison) -> Constraint:

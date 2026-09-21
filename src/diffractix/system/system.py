@@ -697,3 +697,82 @@ class System:
         return self._build_simulation(compiled)
 
 
+
+    # ------
+    # OUTPUT
+    # ------
+    def __str__(self) -> str:
+        def format_node(val):
+            if val is None:
+                return "-"
+            if isinstance(val, InputNode):
+                val = val.node
+            if isinstance(val, (Parameter, Literal)):
+                return f"{val.value:.4g}"
+            return f"{val:.4g}" if isinstance(val, Real) else str(val)
+
+        def format_parameters(element):
+            parts = []
+            for name, handle in zip(element.parameter_names, element.parameters):
+                node = handle.node
+                if node is None:
+                    parts.append(f"{name}=-")
+                elif isinstance(node, Parameter):
+                    state = "VAR" if node.is_variable else "FIX"
+                    parts.append(f"{name}={node.value:.4g} [{state}]")
+                else:
+                    parts.append(f"{name}={node} [EXPR]")
+            return ", ".join(parts) or "-"
+
+        def format_requirement(req):
+            if label := getattr(req, "label", None):
+                return label
+            if callable(req):
+                return getattr(req, "__name__", None) or type(req).__name__
+            return str(req)
+
+        rows = [
+            (
+                str(i),
+                "relative" if p.z is None else f"@{format_node(p.z)}",
+                type(p.element).__name__,
+                getattr(p.element, "label", None) or "-",
+                format_parameters(p.element),
+            )
+            for i, p in enumerate(self.placements)
+        ]
+
+        headers = ("#", "Z", "Type", "Label", "Parameters")
+        widths = [
+            max(len(h), *(len(r[c]) for r in rows)) if rows else len(h)
+            for c, h in enumerate(headers)
+        ]
+
+        col_gap = 4  # Adjust column spacing here
+        format_row = lambda r: (" " * col_gap).join(val.ljust(w) for val, w in zip(r, widths))
+        divider = "-" * (sum(widths) + col_gap * (len(widths) - 1))
+        source = type(self.beam).__name__ if self.beam is not None else "-"
+        reqs = self.requirements + self._collect_element_requirements()
+
+        lines = [
+            "Optical System",
+            "",
+            format_row(headers),
+            divider,
+            *(format_row(r) for r in rows),
+            divider,
+            "",
+            f"Source: {source}",
+            f"Ambient n: {self.ambient_n.value:.4g}",
+            f"Requirements: {len(reqs)}",
+        ]
+
+        if reqs:
+            lines.extend([
+                "",
+                "Requirements",
+                "",
+                *(f"{i}  {format_requirement(r)}" for i, r in enumerate(reqs)),
+            ])
+
+        return "\n".join(lines)

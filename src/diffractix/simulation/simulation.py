@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from diffractix.beams.base import ParaxialState
-from diffractix.graph import CompiledAST
+from diffractix.graph import CompiledAST, Node
 from diffractix.simulation.result import SimulationResult, result_type_for
 
 
@@ -36,7 +36,7 @@ class Simulation:
         parameter_info: Mapping[int, ParameterInfo],
         simulation_context: Mapping,
         location_map: Mapping,
-        requirements=(),
+        requirements: Sequence[Callable | Node],
     ):
         self.source = source
         self.graph = graph

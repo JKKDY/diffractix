@@ -319,7 +319,9 @@ class Parameter(Node):
     def is_variable(self) -> bool:
         return self._variable
 
-    def variable(self):
+    def variable(self, lower_bound: float=None,  upper_bound: float=None):
+        if lower_bound is not None: self.lower_bound = lower_bound
+        if upper_bound is not None: self.upper_bound = upper_bound
         self._variable = True
         return self
 
