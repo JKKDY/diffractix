@@ -20,7 +20,7 @@ class SimulationResult:
         z: np.ndarray,
         states: Sequence[ParaxialState],
         location_map: Mapping[int, tuple[tuple[int, int], ...]],
-        element_info: Sequence["ElementInfo"],
+        element_info: Sequence[ElementInfo],
         probe: Callable[[float], ParaxialState] | None = None,
     ):
         if len(z) != len(states):
