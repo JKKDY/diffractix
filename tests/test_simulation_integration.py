@@ -8,9 +8,9 @@ import autograd.numpy as np
 
 from autograd import grad
 
-from diffractix.beams import GaussianBeam
+from diffractix.beams import GaussianBeam, ParaxialRay
 from diffractix.beams.base import ParaxialState
-from diffractix.elements import Interface, Space, ThinLens
+from diffractix.elements import GaussianAperture, Interface, Space, ThinLens
 from diffractix.graph import Parameter
 from diffractix.system.system import System
 from diffractix.simulation import SimulationResult
@@ -106,6 +106,55 @@ def test_simulation_propagates_single_thin_lens():
     assert len(result.states) == 2
     assert np.allclose(result.z, np.array([0.0, 0.0]))
     assert result.final.q == pytest.approx(expected)
+
+
+def test_simulation_resolves_beam_execution_bindings_at_runtime():
+    beam = create_beam()
+    aperture = GaussianAperture(a=1e-3)
+
+    system = System()
+    system.add_input_beam(beam)
+    system.add(aperture)
+
+    simulation = system.build()
+    result = simulation.run()
+
+    C = -1j * beam.wavelength / (np.pi * aperture.a.value**2)
+    expected_q = beam.q / (C * beam.q + 1.0)
+
+    assert simulation.execution_context == beam.execution_context
+    assert result.final.q == pytest.approx(expected_q)
+
+
+def test_gaussian_aperture_combines_theta_and_execution_bindings():
+    beam = create_beam()
+    radius = Parameter(1e-3, name="aperture_radius").variable()
+    aperture = GaussianAperture(a=radius)
+
+    system = System()
+    system.add_input_beam(beam)
+    system.add(aperture)
+
+    simulation = system.build()
+    result = simulation.run(theta_with(simulation, (radius, 0.5e-3)))
+
+    C = -1j * beam.wavelength / (np.pi * (0.5e-3) ** 2)
+    expected_q = beam.q / (C * beam.q + 1.0)
+
+    assert result.final.q == pytest.approx(expected_q)
+
+
+def test_simulation_reports_missing_execution_binding_for_runtime_symbol():
+    aperture = GaussianAperture(a=1e-3)
+
+    system = System()
+    system.add_input_beam(ParaxialRay(x=0.0, theta=0.0))
+    system.add(aperture)
+
+    simulation = system.build()
+
+    with pytest.raises(KeyError, match="Missing runtime binding.*wavelength"):
+        simulation.run()
 
 
 def test_simulation_propagates_mixed_sequence():

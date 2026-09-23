@@ -138,8 +138,10 @@ class Simulation:
             return [fmt(headers), div, *(fmt(r) for r in rows)]
 
         values = self.graph.evaluate(self.initial_values, bindings=self.execution_context)
-        parameter_values = self.parameter_graph.evaluate(self.parameter_graph.initial_values)
-
+        values = self.graph.evaluate(
+            self.initial_values,
+            bindings=self.execution_context,
+        )
         has_paths = any(info.path for info in self.element_info)
         headers = ["#", "z [m]", "Type", "Label", *(["Path"] if has_paths else []), "L [m]", "n", "Parameters"]
 

@@ -60,10 +60,12 @@ class DummyState(ParaxialState):
 class DummyGraph:
     initial_values: np.ndarray
     evaluator: callable
+    last_bindings: object = None
 
     def evaluate(self, theta=None, *, variable_values=None, bindings=None):
         if variable_values is not None:
             theta = variable_values
+        self.last_bindings = bindings
         return self.evaluator(theta)
 
 
@@ -321,6 +323,30 @@ def test_run_forwards_location_map_to_result():
     result = simulation.run()
 
     assert result.at(location) is result.initial
+
+
+def test_run_forwards_execution_context_to_graph():
+    execution_context = {"runtime_value": 3.0}
+    graph = DummyGraph(
+        initial_values=np.array([]),
+        evaluator=lambda theta: np.array([]),
+    )
+    simulation = Simulation(
+        source=DummyState(),
+        graph=graph,
+        steps=(),
+        parameter_info={},
+        location_map={},
+        compile_context={},
+        execution_context=execution_context,
+        requirements=(),
+        parameter_graph=None,
+        element_info=(),
+    )
+
+    simulation.run()
+
+    assert graph.last_bindings is execution_context
 
 
 def test_result_rejects_inconsistent_element_info_length():

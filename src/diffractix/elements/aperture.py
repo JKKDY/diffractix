@@ -8,8 +8,7 @@ import autograd.numpy as np
 
 from .element import OpticalElement
 from diffractix.graph import Node, Symbol
-from diffractix.system import WAVELENGTH, make_symbol
-
+from diffractix.system.symbols import WAVELENGTH, make_symbol
 
 @dataclass(eq=False, kw_only=True)
 class GaussianAperture(OpticalElement):
