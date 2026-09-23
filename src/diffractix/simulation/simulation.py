@@ -36,7 +36,8 @@ class Simulation:
         graph: CompiledAST,
         steps: Sequence[SimulationStep],
         parameter_info: Mapping[int, ParameterInfo],
-        simulation_context: Mapping,
+        compile_context: Mapping,
+        execution_context: Mapping,
         location_map: Mapping,
         requirements: Sequence[Callable | Node],
         parameter_graph: CompiledAST,
@@ -48,9 +49,10 @@ class Simulation:
         self.parameter_info = parameter_info
         self.location_map = location_map
         self.requirements = tuple(requirements)
-        self.simulation_context = simulation_context
+        self.compile_context = compile_context
         self.parameter_graph = parameter_graph
         self.element_info = tuple(element_info)
+        self.execution_context = execution_context
 
         self._result_type = result_type_for(self.source)
 
@@ -76,7 +78,7 @@ class Simulation:
         if theta is None:
             theta = self.initial_values
 
-        values = self.graph.evaluate(theta)
+        values = self.graph.evaluate(variable_values=theta, bindings=self.execution_context)
 
         state = self.source
         z = 0.0
@@ -135,7 +137,7 @@ class Simulation:
             div = "-" * (sum(widths) + col_gap * (len(widths) - 1))
             return [fmt(headers), div, *(fmt(r) for r in rows)]
 
-        values = self.graph.evaluate(self.initial_values)
+        values = self.graph.evaluate(self.initial_values, bindings=self.execution_context)
         parameter_values = self.parameter_graph.evaluate(self.parameter_graph.initial_values)
 
         has_paths = any(info.path for info in self.element_info)

@@ -4,6 +4,7 @@ import autograd.numpy as np
 import cmath
 
 from .base import ParaxialState
+from diffractix.system import WAVELENGTH
 
 
 
@@ -41,6 +42,11 @@ class GaussianBeam(ParaxialState):
     #-----------
     # PROPERTIES
     #-----------
+    @property
+    def execution_context(self):
+        return {
+            WAVELENGTH.key: self.wavelength,
+        }
 
     @property
     def w(self) -> float:

@@ -43,7 +43,8 @@ def make_simulation(parameters, *, run=None):
         )
         for index, parameter in enumerate(parameters)
     }
-    simulation.simulation_context = {}
+    simulation.compile_context = {}
+    simulation.execution_context = {}
     simulation.graph = SimpleNamespace(
         initial_values=np.array([parameter.value for parameter in parameters])
     )

@@ -61,7 +61,9 @@ class DummyGraph:
     initial_values: np.ndarray
     evaluator: callable
 
-    def evaluate(self, theta):
+    def evaluate(self, theta=None, *, variable_values=None, bindings=None):
+        if variable_values is not None:
+            theta = variable_values
         return self.evaluator(theta)
 
 
@@ -75,6 +77,7 @@ def create_simulation(
     location_map=None,
     requirements=(),
     element_info=None,
+    execution_context=None,
 ):
     if source is None:
         source = DummyState()
@@ -88,6 +91,9 @@ def create_simulation(
     if element_info is None:
         element_info = element_info_for_steps(steps)
 
+    if execution_context is None:
+        execution_context = {}
+
     graph = DummyGraph(
         initial_values=np.array(initial_values),
         evaluator=lambda theta: np.array(values),
@@ -99,7 +105,8 @@ def create_simulation(
         steps=steps,
         parameter_info=parameter_info,
         location_map=location_map,
-        simulation_context={},
+        compile_context={},
+        execution_context=execution_context,
         requirements=requirements,
         parameter_graph = None,
         element_info=element_info,
@@ -124,6 +131,8 @@ def test_simulation_stores_compiled_data():
     parameter_info = {1: object()}
     location_map = {1: ((0, 1),)}
     requirements = (object(),)
+    compile_context = {"ambient_n": object()}
+    execution_context = {("result", 1, "w"): 0.01}
     element_info = ElementInfo(
         type_name="Space",
         label="Drift",
@@ -138,7 +147,8 @@ def test_simulation_stores_compiled_data():
         steps=[step],
         parameter_info=parameter_info,
         location_map=location_map,
-        simulation_context={},
+        compile_context=compile_context,
+        execution_context=execution_context,
         requirements=requirements,
         parameter_graph=graph,
         element_info=[element_info],
@@ -150,6 +160,8 @@ def test_simulation_stores_compiled_data():
     assert simulation.parameter_info == parameter_info
     assert simulation.location_map is location_map
     assert simulation.requirements == requirements
+    assert simulation.compile_context is compile_context
+    assert simulation.execution_context is execution_context
     assert simulation.parameter_graph is graph
     assert simulation.element_info == (element_info,)
 
@@ -164,7 +176,8 @@ def test_simulation_converts_sequence_fields_to_tuples():
         steps=[],
         parameter_info={},
         location_map={},
-        simulation_context={},
+        compile_context={},
+        execution_context={},
         requirements=[],
         parameter_graph=None,
         element_info=(),
@@ -188,7 +201,8 @@ def test_simulation_initial_values_are_graph_initial_values():
         steps=(),
         parameter_info={},
         location_map={},
-        simulation_context={},
+        compile_context={},
+        execution_context={},
         requirements=(),
         parameter_graph=None,
         element_info=(),
@@ -212,7 +226,8 @@ def test_simulation_rejects_non_dataclass_state():
             steps=(),
             parameter_info={},
             location_map={},
-            simulation_context = {},
+            compile_context={},
+            execution_context={},
             requirements=(),
             parameter_graph = None,
             element_info = ()
@@ -793,7 +808,8 @@ def test_run_uses_initial_values_when_theta_is_none():
         steps=(step,),
         parameter_info={},
         location_map={},
-        simulation_context={},
+        compile_context={},
+        execution_context={},
         requirements=(),
         parameter_graph=None,
         element_info=element_info_for_steps((step,)),
@@ -829,7 +845,8 @@ def test_run_uses_supplied_theta():
         steps=(step,),
         parameter_info={},
         location_map={},
-        simulation_context={},
+        compile_context={},
+        execution_context={},
         requirements=(),
         parameter_graph=None,
         element_info=element_info_for_steps((step,)),
@@ -865,7 +882,8 @@ def test_run_does_not_modify_initial_values():
         steps=(step,),
         parameter_info={},
         location_map={},
-        simulation_context={},
+        compile_context={},
+        execution_context={},
         requirements=(),
         parameter_graph=None,
         element_info=element_info_for_steps((step,)),
@@ -968,7 +986,8 @@ def test_run_is_differentiable_with_respect_to_theta():
         steps=(step,),
         parameter_info={},
         location_map={},
-        simulation_context = {},
+        compile_context={},
+        execution_context={},
         requirements=(),
         parameter_graph=None,
         element_info=element_info_for_steps((step,)),

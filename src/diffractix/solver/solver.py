@@ -95,7 +95,7 @@ class Solver:
     def _compile_node(self, node, compile_context=None):
         graph = compile_ast(
             (node,),
-            context=self.simulation.simulation_context,
+            context=self.simulation.compile_context,
             parameter_snapshot=self.simulation.parameter_info,
         )
 

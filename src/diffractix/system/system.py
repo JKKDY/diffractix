@@ -122,6 +122,7 @@ class System:
 
     def _capture_source_info(self) -> SourceInfo:
         """Capture where an element was added in user code."""
+        #Note: currently not in use, may be used later for GUI <-> code reflection  
         frame = inspect.currentframe().f_back.f_back
         filename = frame.f_code.co_filename
         lineno = frame.f_lineno
@@ -631,7 +632,8 @@ class System:
             parameter_info=parameter_info,
             location_map=location_map,
             requirements=self.requirements + self._collect_element_requirements(),
-            simulation_context=self.compile_context,
+            compile_context=self.compile_context,
+            execution_context=self.beam.execution_context,
             parameter_graph=parameter_graph,
             element_info=element_info,
         )

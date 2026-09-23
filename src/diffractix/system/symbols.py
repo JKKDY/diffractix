@@ -11,3 +11,4 @@ def make_symbol(key):
 
 
 AMBIENT_N = Symbol("ambient_n")
+WAVELENGTH = Symbol("wavelength")

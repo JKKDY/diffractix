@@ -7,6 +7,10 @@ class ParaxialState(ABC):
 
     result_columns: ClassVar[tuple[str, ...]] = ()
 
+    @property
+    def execution_context(self):
+        return {}
+
     @abstractmethod
     def propagate(self, A, B, C, D, n) -> Self:
         raise NotImplementedError

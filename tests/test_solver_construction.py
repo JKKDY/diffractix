@@ -88,7 +88,8 @@ def make_solver(value=2.0):
             upper_bound=10.0,
         ),
     }
-    simulation.simulation_context = {}
+    simulation.compile_context = {}
+    simulation.execution_context = {}
     simulation.run = lambda theta: FakeResult(theta, element)
 
     return Solver(simulation), element, parameter
