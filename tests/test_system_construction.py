@@ -8,7 +8,7 @@ from diffractix.composites import Slab
 from diffractix.composites import CompositeElement
 from diffractix.system import AMBIENT_N
 from diffractix.elements import OpticalElement, ThinLens
-from diffractix.graph import Node, Parameter
+from diffractix.graph import Node, Parameter, Symbol
 from diffractix.system.system import System, Placement, SourceInfo
 from diffractix.system.errors import SystemValidationError
 
@@ -137,7 +137,7 @@ def test_system_ambient_index_can_be_variable():
 def test_ambient_index_is_registered_in_context():
     system = System()
 
-    assert system.context[AMBIENT_N.key] is system.ambient_n
+    assert system.compile_context[AMBIENT_N.key] is system.ambient_n
 
 
 def test_system_starts_without_elements():
@@ -365,9 +365,31 @@ def test_add_numeric_context_value():
     result = system.add_context("temperature", 293.15)
 
     assert result is system
-    assert isinstance(system.context["temperature"], Parameter)
-    assert system.context["temperature"].value == pytest.approx(293.15)
-    assert not system.context["temperature"].is_variable
+    assert isinstance(system.compile_context["temperature"], Parameter)
+    assert system.compile_context["temperature"].value == pytest.approx(293.15)
+    assert not system.compile_context["temperature"].is_variable
+    assert system.compile_context["temperature"].name == "temperature"
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "",
+        None,
+        123,
+        False,
+        ("result", 1, "w"),
+    ],
+)
+def test_add_context_accepts_hashable_keys(key):
+    system = System()
+
+    result = system.add_context(key, 293.15)
+
+    assert result is system
+    assert isinstance(system.compile_context[key], Parameter)
+    assert system.compile_context[key].value == pytest.approx(293.15)
+    assert system.compile_context[key].name == (key if isinstance(key, str) else None)
 
 
 def test_add_context_preserves_node_identity():
@@ -376,7 +398,22 @@ def test_add_context_preserves_node_identity():
 
     system.add_context("temperature", temperature)
 
-    assert system.context["temperature"] is temperature
+    assert system.compile_context["temperature"] is temperature
+
+
+def test_build_resolves_hashable_compile_context_key():
+    system = System()
+    key = ("lens", "focal_length")
+
+    system.add_input_beam(make_beam())
+    system.add_context(key, 0.2)
+    system.add(ThinLens(f=Symbol(key)))
+
+    simulation = system.build()
+
+    assert simulation.parameter_graph.evaluate(
+        simulation.parameter_graph.initial_values
+    )[0] == pytest.approx(0.2)
 
 
 def test_add_context_replaces_existing_value():
@@ -385,23 +422,22 @@ def test_add_context_replaces_existing_value():
     system.add_context("temperature", 293.15)
     system.add_context("temperature", 300.0)
 
-    assert system.context["temperature"].value == pytest.approx(300.0)
+    assert system.compile_context["temperature"].value == pytest.approx(300.0)
 
 
 @pytest.mark.parametrize(
-    "name",
+    "key",
     [
-        "",
-        None,
-        123,
-        False,
+        [],
+        {},
+        {"unhashable": []},
     ],
 )
-def test_add_context_rejects_invalid_names(name):
+def test_add_context_rejects_unhashable_keys(key):
     system = System()
 
-    with pytest.raises(ValueError):
-        system.add_context(name, 1.0)
+    with pytest.raises(TypeError, match="Compile context key must be hashable"):
+        system.add_context(key, 1.0)
 
 
 # ----

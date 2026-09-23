@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import inspect
 import autograd.numpy as np
-from collections.abc import Iterable
+from collections.abc import Iterable, Hashable
 from dataclasses import dataclass
 from numbers import Real
 from typing import Any
@@ -35,7 +35,7 @@ class System:
         if ambient_n_variable:
             self.ambient_n.variable()
 
-        self.context = {
+        self.compile_context = {
             AMBIENT_N.key: self.ambient_n,
         }
 
@@ -137,36 +137,28 @@ class System:
         )
 
 
-    def add_context(self, name: str, value: Node | Real):
-        """
-        Add or replace a named value in the system build context.
-
-        Parameters
-        ----------
-        name:
-            Key used by Symbol expressions to reference the context value.
-        value:
-            Numerical value or graph Node to associate with the name. Numerical
-            values are converted to fixed system-owned Parameters.
-
-        Returns
-        -------
-        System
-            This system, allowing chained calls.
-        """
-
-        if not isinstance(name, str) or not name:
-            raise ValueError("Context name must be a non-empty string.")
+    def add_context(self, key: Hashable, value: Node | Real):
+        try:
+            hash(key)
+        except TypeError:
+            raise TypeError(
+                f"Compile context key must be hashable, "
+                f"got {type(key).__name__}."
+            ) from None
 
         if not isinstance(value, (Node, Real)) or isinstance(value, bool):
             raise TypeError(
-                f"Context value must be a Node or numeric scalar, got {type(value).__name__}."
+                "Compile context value must be a Node or numeric scalar, "
+                f"got {type(value).__name__}."
             )
 
         if not isinstance(value, Node):
-            value = Parameter(value=value, name=name)
+            value = Parameter(
+                value=value,
+                name=key if isinstance(key, str) else None,
+            )
 
-        self.context[name] = value
+        self.compile_context[key] = value
         return self
 
 
@@ -225,14 +217,16 @@ class System:
         elif not isinstance(self.beam, ParaxialState):
             errors.append(f"Input beam must be a ParaxialState, got {type(self.beam).__name__}.")
 
-        # validate context
-        for name, value in self.context.items():
-            if not isinstance(name, str) or not name:
-                errors.append(f"Context key {name!r} must be a non-empty string.")
+       # validate compile context
+        for key, value in self.compile_context.items():
+            try:
+                hash(key)
+            except TypeError:
+                errors.append(f"Compile context key {key!r} must be hashable.")
 
             if not isinstance(value, (Node, Real)) or isinstance(value, bool):
                 errors.append(
-                    f"Context value {name!r} must be a Node or numeric scalar, "
+                    f"Compile context value {key!r} must be a Node or numeric scalar, "
                     f"got {type(value).__name__}."
                 )
 
@@ -460,7 +454,7 @@ class System:
 
         graph = compile_ast(
             roots,
-            context=self.context,
+            context=self.compile_context,
         )
 
         values = graph.evaluate(graph.initial_values)
@@ -561,13 +555,13 @@ class System:
                 (step_index, step_index + 1)
             )
 
-        graph = compile_ast(roots, context=self.context)
+        graph = compile_ast(roots, context=self.compile_context)
         parameter_graph = compile_ast(
             parameter_roots,
-            context=self.context,
+            context=self.compile_context,
         )
 
-        parameters = collect_parameters(roots, context=self.context)
+        parameters = collect_parameters(roots, context=self.compile_context)
 
         variable_indices = { 
             id(parameter): index 
@@ -637,7 +631,7 @@ class System:
             parameter_info=parameter_info,
             location_map=location_map,
             requirements=self.requirements + self._collect_element_requirements(),
-            simulation_context=self.context,
+            simulation_context=self.compile_context,
             parameter_graph=parameter_graph,
             element_info=element_info,
         )
