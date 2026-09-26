@@ -583,6 +583,53 @@ def test_negative_feasibility_tolerance_fails_cleanly():
         )
 
 
+def test_solver_rejects_invalid_objective_entries_with_type_error():
+    system, _, _ = distance_system()
+    solver = Solver(system)
+    solver.objectives.append(object())
+
+    with pytest.raises(TypeError, match="objectives"):
+        solver.solve(Backend.SCIPY, method="SLSQP")
+
+
+def test_solver_rejects_invalid_constraint_entries_with_type_error():
+    system, _, _ = distance_system()
+    solver = Solver(system)
+    solver.constraints.append(object())
+
+    with pytest.raises(TypeError, match="constraints"):
+        solver.solve(Backend.SCIPY, method="SLSQP")
+
+
+@pytest.mark.parametrize("value", (np.nan, np.inf, -np.inf))
+def test_solver_rejects_nonfinite_objective_values(value):
+    system, _, _ = distance_system()
+    solver = Solver(system)
+
+    def objective(context):
+        return value
+
+    solver.target(objective)
+
+    with pytest.raises(ValueError, match="Objective.*non-finite"):
+        solver.solve(Backend.SCIPY, method="SLSQP")
+
+
+@pytest.mark.parametrize("value", (np.nan, np.inf, -np.inf))
+def test_solver_rejects_nonfinite_constraint_values(value):
+    system, _, distance = distance_system()
+    solver = Solver(system)
+    solver.target(distance - 0.2)
+
+    def constraint(context):
+        return value
+
+    solver.require(Constraint(constraint, lower_bound=0.0))
+
+    with pytest.raises(ValueError, match="Constraint.*non-finite"):
+        solver.solve(Backend.SCIPY, method="SLSQP")
+
+
 def test_unknown_runtime_element_error_propagates():
     system, _, _ = distance_system()
     missing = Space(d=0.1)

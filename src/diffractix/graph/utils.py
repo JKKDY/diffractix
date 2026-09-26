@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum, auto
+import math
 from typing import Callable
 from collections.abc import Hashable, Mapping, Sequence
 
@@ -56,9 +57,32 @@ def parameter_state(
 
     if parameter_snapshot is not None and parameter_id in parameter_snapshot:
         info = parameter_snapshot[parameter_id]
-        return info.value, info.parameter_index is not None
+        value = info.value
+        is_variable = info.parameter_index is not None
+        lower_bound = getattr(info, "lower_bound", parameter.lower_bound)
+        upper_bound = getattr(info, "upper_bound", parameter.upper_bound)
+    else:
+        value = parameter.value
+        is_variable = parameter.is_variable
+        lower_bound = parameter.lower_bound
+        upper_bound = parameter.upper_bound
 
-    return parameter.value, parameter.is_variable
+    # Fixed unbounded curvature parameters use infinity as the established
+    # representation of a plane surface.  It is never a solver input.  NaN,
+    # all variable non-finite values, and non-finite values outside bounds are
+    # still rejected below.
+    if math.isnan(value) or (is_variable and math.isinf(value)):
+        raise ValueError(
+            f"Parameter {parameter!r} has a non-finite value {value!r}."
+        )
+
+    if value < lower_bound or value > upper_bound:
+        raise ValueError(
+            f"Parameter {parameter!r} has value {value!r} outside bounds "
+            f"[{lower_bound}, {upper_bound}]."
+        )
+
+    return value, is_variable
 
 
 def evaluate_ast(

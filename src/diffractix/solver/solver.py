@@ -60,6 +60,21 @@ class Solver:
         self.constraints.extend(map(normalize_to_constraint, constraints))
         return self
 
+    @staticmethod
+    def _validate_finite_value(value, description):
+        """Reject non-finite eager values."""
+        try:
+            is_finite = bool(np.all(np.isfinite(value)))
+        except TypeError:
+            # Autodiff tracers cannot necessarily be inspected by isfinite or
+            # converted to bool. Defer validation until eager evaluation.
+            return value
+
+        if not is_finite:
+            raise ValueError(f"{description} evaluated to a non-finite value.")
+
+        return value
+
 
     def _resolve_symbol(
         self,
@@ -200,7 +215,11 @@ class Solver:
 
         lower, upper = [], []
         for c in constraints:
-            size = np.size(c.evaluate(context))
+            value = self._validate_finite_value(
+                c.evaluate(context),
+                "Constraint" if c.label is None else f"Constraint {c.label!r}"
+            )
+            size = np.size(value)
             lower.extend([c.lower_bound] * size)
             upper.extend([c.upper_bound] * size)
 
@@ -227,8 +246,11 @@ class Solver:
     ) -> Solution:
         """Solve the inverse-design problem."""
 
-        assert all(isinstance(x, Objective) for x in self.objectives)
-        assert all(isinstance(x, Constraint) for x in self.constraints)
+        if not all(isinstance(x, Objective) for x in self.objectives):
+            raise TypeError("Solver objectives must contain only Objective instances.")
+
+        if not all(isinstance(x, Constraint) for x in self.constraints):
+            raise TypeError("Solver constraints must contain only Constraint instances.")
 
         options = {} if options is None else dict(options)
 
@@ -257,7 +279,10 @@ class Solver:
         def objective_function(theta):
             context = SolverContext(theta, self.simulation.run)
             return sum(
-                obj.weight * np.sum(np.square(obj.evaluate(context)))
+                obj.weight * np.sum(np.square(self._validate_finite_value(
+                    obj.evaluate(context),
+                    "Objective" if obj.label is None else f"Objective {obj.label!r}",
+                )))
                 for obj in objectives
             )
 
@@ -272,6 +297,11 @@ class Solver:
                         "Constraint output shape changed from "
                         f"{expected_shape} to {np.shape(value)}."
                     )
+                value = self._validate_finite_value(
+                    value,
+                    "Constraint" if constraint.label is None
+                    else f"Constraint {constraint.label!r}"
+                )
                 values.append(np.atleast_1d(value))
 
             return np.concatenate(values) if values else np.array([])

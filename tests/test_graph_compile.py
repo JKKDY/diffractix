@@ -654,6 +654,25 @@ def test_initial_values_are_snapshotted():
         compiled.initial_values[0] = 3.0
 
 
+@pytest.mark.parametrize("variable", (False, True))
+@pytest.mark.parametrize("invalid_value", (np.nan, np.inf, -np.inf, 2.0))
+def test_compile_rejects_nonfinite_and_out_of_bounds_parameter_values(
+    variable,
+    invalid_value,
+):
+    parameter = Parameter(
+        0.5,
+        name="validated",
+        variable=variable,
+        lower_bound=0.0,
+        upper_bound=1.0,
+    )
+    parameter.value = invalid_value
+
+    with pytest.raises(ValueError, match="validated|Parameter"):
+        compile_ast([parameter])
+
+
 def test_evaluation_does_not_mutate_parameters():
     """
     Evaluation is pure with respect to the declarative AST.
