@@ -102,24 +102,49 @@ class Constraint:
         return self._repr
 
 
+
 def _from_comparison(comparison) -> Constraint:
     lhs, rhs, rel = comparison.left, comparison.right, comparison.relation
 
     if isinstance(rhs, Literal):
-        if rel is Relation.LE: return Constraint(lhs, upper_bound=rhs.value)
-        if rel is Relation.GE: return Constraint(lhs, lower_bound=rhs.value)
-        if rel is Relation.EQ: return Constraint(lhs, rhs.value, rhs.value)
+        if rel is Relation.LT:
+            return Constraint(lhs, upper_bound=math.nextafter(rhs.value, -math.inf))
+        if rel is Relation.LE:
+            return Constraint(lhs, upper_bound=rhs.value)
+        if rel is Relation.GT:
+            return Constraint(lhs, lower_bound=math.nextafter(rhs.value, math.inf))
+        if rel is Relation.GE:
+            return Constraint(lhs, lower_bound=rhs.value)
+        if rel is Relation.EQ:
+            return Constraint(lhs, rhs.value, rhs.value)
 
     if isinstance(lhs, Literal):
-        if rel is Relation.LE: return Constraint(rhs, lower_bound=lhs.value)
-        if rel is Relation.GE: return Constraint(rhs, upper_bound=lhs.value)
-        if rel is Relation.EQ: return Constraint(rhs, lhs.value, lhs.value)
+        if rel is Relation.LT:
+            return Constraint(rhs, lower_bound=math.nextafter(lhs.value, math.inf))
+        if rel is Relation.LE:
+            return Constraint(rhs, lower_bound=lhs.value)
+        if rel is Relation.GT:
+            return Constraint(rhs, upper_bound=math.nextafter(lhs.value, -math.inf))
+        if rel is Relation.GE:
+            return Constraint(rhs, upper_bound=lhs.value)
+        if rel is Relation.EQ:
+            return Constraint(rhs, lhs.value, lhs.value)
 
     residual = lhs - rhs
-    if rel is Relation.LE: return Constraint(residual, upper_bound=0.0)
-    if rel is Relation.GE: return Constraint(residual, lower_bound=0.0)
-    if rel is Relation.EQ: return Constraint(residual, 0.0, 0.0)
+
+    if rel is Relation.LT:
+        return Constraint(residual, upper_bound=math.nextafter(0.0, -math.inf))
+    if rel is Relation.LE:
+        return Constraint(residual, upper_bound=0.0)
+    if rel is Relation.GT:
+        return Constraint(residual, lower_bound=math.nextafter(0.0, math.inf))
+    if rel is Relation.GE:
+        return Constraint(residual, lower_bound=0.0)
+    if rel is Relation.EQ:
+        return Constraint(residual, 0.0, 0.0)
+
     raise ValueError(f"Unsupported relation {rel!r}.")
+
 
 
 def normalize_to_constraint(value) -> Constraint:

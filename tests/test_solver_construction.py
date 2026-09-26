@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass
 from types import SimpleNamespace
 
@@ -6,7 +7,7 @@ import numpy as numpy
 import pytest
 from autograd import grad
 
-from diffractix.graph import Parameter, Symbol
+from diffractix.graph import Literal, Parameter, Symbol
 from diffractix.simulation import Simulation
 from diffractix.solver.solver import (
     Backend,
@@ -17,7 +18,7 @@ from diffractix.solver.solver import (
     SolverSymbolKind,
 )
 from diffractix.solver.objective import Objective
-from diffractix.solver.constraint import Constraint
+from diffractix.solver.constraint import Constraint, normalize_to_constraint
 
 
 @dataclass
@@ -497,6 +498,76 @@ def test_dynamic_callable_falls_back_for_raw_symbol_truth_testing():
 
     assert compiled.evaluate(context(solver, [-1.0])) == 5.0
     assert compiled.evaluate(context(solver, [2.0])) == 4.0
+
+
+@pytest.mark.parametrize(
+    ("make_comparison", "lower_bound", "upper_bound"),
+    (
+        (
+            lambda parameter: parameter > 2.0,
+            math.nextafter(2.0, math.inf),
+            np.inf,
+        ),
+        (
+            lambda parameter: parameter < 2.0,
+            -np.inf,
+            math.nextafter(2.0, -math.inf),
+        ),
+        (
+            lambda parameter: Literal(2.0) < parameter,
+            math.nextafter(2.0, math.inf),
+            np.inf,
+        ),
+        (
+            lambda parameter: Literal(2.0) > parameter,
+            -np.inf,
+            math.nextafter(2.0, -math.inf),
+        ),
+    ),
+)
+def test_strict_comparisons_normalize_to_open_floating_point_bounds(
+    make_comparison,
+    lower_bound,
+    upper_bound,
+):
+    parameter = Parameter(3.0)
+
+    constraint = normalize_to_constraint(make_comparison(parameter))
+
+    assert constraint.evaluate is parameter
+    assert constraint.lower_bound == lower_bound
+    assert constraint.upper_bound == upper_bound
+
+
+@pytest.mark.parametrize(
+    ("make_comparison", "lower_bound", "upper_bound"),
+    (
+        (
+            lambda left, right: left > right,
+            math.nextafter(0.0, math.inf),
+            np.inf,
+        ),
+        (
+            lambda left, right: left < right,
+            -np.inf,
+            math.nextafter(0.0, -math.inf),
+        ),
+    ),
+)
+def test_strict_parameter_relations_normalize_to_open_residual_bounds(
+    make_comparison,
+    lower_bound,
+    upper_bound,
+):
+    left = Parameter(3.0)
+    right = Parameter(2.0)
+
+    constraint = normalize_to_constraint(make_comparison(left, right))
+
+    assert constraint.evaluate is not left
+    assert constraint.evaluate is not right
+    assert constraint.lower_bound == lower_bound
+    assert constraint.upper_bound == upper_bound
 
 
 def test_compile_direct_node_constraint():

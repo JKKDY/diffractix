@@ -89,7 +89,7 @@ class SimulationResult:
         Parameters
         ----------
         location:
-            Optical element, plane, or absolute longitudinal position z.
+            Optical element participating in the simulation.
         occurrence:
             Occurrence of the element when the same object appears multiple times.
 
@@ -98,16 +98,15 @@ class SimulationResult:
         ParaxialState
             Propagated optical state at the requested location.
         """
-        if isinstance(location, Real) and not isinstance(location, bool):
+        if isinstance(location, Real):
             if occurrence is not None:
-                raise TypeError(
-                    "occurrence may only be specified for optical elements."
-                )
+                raise TypeError("occurrence may only be specified when querying an element.")
+
             if self._probe is None:
-                raise ValueError(
-                    "This simulation result does not support arbitrary-z probing."
-                )
+                raise ValueError("This simulation result does not support arbitrary-z probing.")
+
             return self._probe(location)
+
         before, _ = self._resolve_location(location, occurrence)
         return self.states[before]
 

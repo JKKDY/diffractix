@@ -23,14 +23,15 @@ class GaussianAperture(OpticalElement):
     a: Node
     wavelength: Node = make_symbol(WAVELENGTH)
 
+    def __post_init__(self):
+        super().__post_init__()
+        self.require(self.a > 0)
+
     @property
     def matrix(self):
         return (
             (1.0, 0.0),
-            (
-                -1j * self.wavelength / (np.pi * self.a**2),
-                1.0,
-            ),
+            (-1j * self.wavelength / (np.pi * self.a**2), 1.0)
         )
 
     @property

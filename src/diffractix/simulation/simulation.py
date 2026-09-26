@@ -73,7 +73,7 @@ class Simulation:
         Returns
         -------
         SimulationResult
-            Rich numerical trace of the propagated optical state.
+            Numerical trace of the propagated optical state.
         """
         if theta is None:
             theta = self.initial_values
@@ -110,7 +110,7 @@ class Simulation:
 
 
     def __str__(self) -> str:
-        col_gap = 4  # Adjust column spacing here
+        col_gap = 4
 
         def format_value(v):
             return f"{float(v):.4g}"

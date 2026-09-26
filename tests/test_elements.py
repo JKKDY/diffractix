@@ -6,6 +6,7 @@ from diffractix.elements import (
     Space,
     Mirror,
     Interface,
+    Plane,
     ABCD,
     GaussianAperture,
     GRIN
@@ -16,6 +17,8 @@ from diffractix.graph import (
     Parameter,
     InputNode,
     Symbol,
+    Comparison,
+    Relation,
     compile_ast,
 )
 
@@ -37,6 +40,17 @@ def evaluate_matrix(element, context=None):
     values = compiled.evaluate(compiled.initial_values)
 
     return values.reshape(2, 2)
+
+
+def assert_single_parameter_requirement(element, parameter_name, relation):
+    """Assert an element declares one bound on one of its input handles."""
+    (requirement,) = element.requirements
+
+    assert isinstance(requirement, Comparison)
+    assert requirement.relation is relation
+    assert requirement.left is getattr(element, parameter_name)
+    assert isinstance(requirement.right, Literal)
+    assert requirement.right.value == 0
 
 
 # ---------
@@ -132,6 +146,10 @@ def test_space_refractive_index_does_not_affect_matrix():
     )
 
 
+def test_space_requires_nonnegative_length():
+    assert_single_parameter_requirement(Space(d=0.1), "d", Relation.GE)
+
+
 # ------
 # MIRROR
 # ------
@@ -157,6 +175,10 @@ def test_mirror_matrix():
             evaluate_matrix(mirror),
             expected,
         )
+
+
+def test_mirror_has_no_local_solver_requirement():
+    assert Mirror(R=-0.5).requirements == ()
 
 
 # ---------
@@ -210,6 +232,10 @@ def test_flat_interface_has_zero_power():
 
     assert matrix[1, 0] == 0.0
     assert matrix[1, 1] == 1.0 / 1.5
+
+
+def test_interface_has_no_local_solver_requirement():
+    assert Interface(n1=1.0, n2=1.5).requirements == ()
 
 
 # ----------
@@ -346,6 +372,10 @@ def test_abcd_refractive_index_can_be_context_dependent():
     np.testing.assert_allclose(result, [1.5])
 
 
+def test_abcd_requires_nonnegative_thickness():
+    assert_single_parameter_requirement(ABCD(thickness=0.1), "thickness", Relation.GE)
+
+
 # -----------------
 # GAUSSIAN APERTURE
 # -----------------
@@ -385,6 +415,10 @@ def test_gaussian_aperture_matrix():
     np.testing.assert_allclose(matrix, expected)
 
 
+def test_gaussian_aperture_requires_strictly_positive_radius():
+    assert_single_parameter_requirement(GaussianAperture(a=1e-3), "a", Relation.GT)
+
+
 # ----
 # GRIN
 # ----
@@ -421,3 +455,12 @@ def test_grin_parameters():
     element = GRIN(d=0.02, g=10.0, n=1.5)
 
     assert element.parameter_names == ("d", "g", "n")
+
+
+def test_grin_requires_nonnegative_length():
+    assert_single_parameter_requirement(GRIN(d=0.02, g=10.0, n=1.5), "d", Relation.GE)
+
+
+def test_thin_lens_and_plane_have_no_local_solver_requirements():
+    assert ThinLens(f=-0.1).requirements == ()
+    assert Plane().requirements == ()

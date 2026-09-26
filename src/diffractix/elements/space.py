@@ -22,6 +22,15 @@ class Space(OpticalElement):
     d: Node
     n: Node | None = None
 
+    def __post_init__(self):
+        super().__post_init__()
+        
+        length = self.element_length
+        if isinstance(length, Node):
+            self.require(length >= 0)
+        elif length < 0:
+            raise ValueError("Element length cannot be negative.")
+
     @property
     def matrix(self):
         return (

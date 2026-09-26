@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import math
+from types import SimpleNamespace
+
 import pytest
 import autograd.numpy as np
 
 from diffractix.beams import GaussianBeam
 from diffractix.composites import CompositeElement, Slab
-from diffractix.elements import Interface, Space, ThinLens
+from diffractix.elements import ABCD, GaussianAperture, GRIN, Interface, Space, ThinLens
 from diffractix.graph import Parameter
+from diffractix.solver import Solver
 from diffractix.system import System, SystemValidationError
 
 
@@ -400,20 +404,22 @@ def test_system_repeated_element_uses_same_parameter_values():
 def test_system_requirements_are_forwarded_to_simulation():
     beam = create_beam()
     requirement = object()
+    space = Space(d=0.1)
 
     system = System()
     system.add_input_beam(beam)
-    system.add(Space(d=0.1))
+    system.add(space)
     system.require(requirement)
 
     simulation = system.build()
 
-    assert simulation.requirements == (requirement,)
+    assert simulation.requirements == (requirement, space.requirements[0])
 
 
 def test_element_requirement_is_forwarded_to_simulation():
     beam = create_beam()
     element = Space(d=0.1)
+    length_requirement = element.requirements[0]
     requirement = object()
     element.require(requirement)
 
@@ -423,7 +429,7 @@ def test_element_requirement_is_forwarded_to_simulation():
 
     simulation = system.build()
 
-    assert simulation.requirements == (requirement,)
+    assert simulation.requirements == (length_requirement, requirement)
 
 
 def test_system_and_nested_element_requirements_preserve_order():
@@ -449,6 +455,8 @@ def test_system_and_nested_element_requirements_preserve_order():
         system_requirement,
         composite_requirement,
         inner_requirement,
+        inner.body.requirements[0],
+        child.requirements[0],
         child_requirement,
     )
 
@@ -466,9 +474,60 @@ def test_repeated_element_requirements_are_collected_once_without_mutation():
 
     simulation = system.build()
 
-    assert simulation.requirements == (requirement,)
+    assert simulation.requirements == original_requirements
     assert element.requirements == original_requirements
     assert system.requirements == system_requirements
+
+
+def test_builtin_element_requirements_reach_simulation_in_element_order():
+    beam = create_beam()
+    elements = (
+        Space(d=0.01),
+        GRIN(d=0.02, g=10.0, n=1.0),
+        ABCD(thickness=0.03, n=1.0),
+        GaussianAperture(a=1e-3),
+    )
+    system = System()
+    system.add_input_beam(beam)
+    system.add(elements)
+
+    simulation = system.build()
+
+    assert simulation.requirements == tuple(
+        element.requirements[0]
+        for element in elements
+    )
+
+
+def test_builtin_element_requirements_compile_for_solver():
+    elements = (
+        Space(d=0.01),
+        GRIN(d=0.02, g=10.0, n=1.0),
+        ABCD(thickness=0.03, n=1.0),
+        GaussianAperture(a=1e-3),
+    )
+    system = System()
+    system.add_input_beam(create_beam())
+    system.add(elements)
+
+    constraints = Solver(system)._compile_constraints()
+    context = SimpleNamespace(theta=np.array([]))
+
+    assert [constraint.lower_bound for constraint in constraints] == [
+        0.0,
+        0.0,
+        0.0,
+        math.nextafter(0.0, math.inf),
+    ]
+    assert [constraint.upper_bound for constraint in constraints] == [
+        math.inf,
+        math.inf,
+        math.inf,
+        math.inf,
+    ]
+    assert [constraint.evaluate(context) for constraint in constraints] == pytest.approx(
+        [0.01, 0.02, 0.03, 1e-3],
+    )
 
 
 # ----------

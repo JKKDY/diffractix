@@ -163,7 +163,7 @@ def test_real_hard_constraint_changes_the_optimum():
     assert constrained_solution.success
     assert constrained_solution.feasible
     assert constrained_solution.violations == ()
-    assert constrained_solution.constraints[0].satisfied
+    assert constrained_solution.constraints[1].satisfied
 
 
 def test_simulation_requirements_join_solver_constraints_in_order():
@@ -181,10 +181,10 @@ def test_simulation_requirements_join_solver_constraints_in_order():
     assert first.success
     assert first.feasible
     assert first[distance] == pytest.approx(0.2, abs=1e-6)
-    assert tuple(result.lower_bound for result in first.constraints) == (0.2, -numpy.inf)
-    assert tuple(result.upper_bound for result in first.constraints) == (numpy.inf, 0.25)
-    assert len(first.constraints) == 2
-    assert len(second.constraints) == 2
+    assert tuple(result.lower_bound for result in first.constraints) == (0.2, 0.0, -numpy.inf)
+    assert tuple(result.upper_bound for result in first.constraints) == (numpy.inf, numpy.inf, 0.25)
+    assert len(first.constraints) == 3
+    assert len(second.constraints) == 3
     assert len(solver.constraints) == 1
     assert simulation.requirements is requirements_before
     assert system.requirements[0] is requirements_before[0]
@@ -200,7 +200,7 @@ def test_simulation_requirement_appears_in_solution_violations():
 
     solution = solver.solve(Backend.SCIPY, method="SLSQP")
 
-    assert len(solution.constraints) == 2
+    assert len(solution.constraints) == 3
     assert solution.violations
     assert any(
         result.lower_bound == pytest.approx(0.2)
@@ -223,7 +223,7 @@ def test_multiple_constraint_kinds_are_preserved_in_solution():
 
     assert solution.success
     assert solution.feasible
-    assert len(solution.constraints) == 4
+    assert len(solution.constraints) == 5
     assert all(result.satisfied for result in solution.constraints)
     assert solution.violations == ()
     assert solution[distance] == pytest.approx(0.2, abs=1e-6)
@@ -541,7 +541,7 @@ def test_solution_reporting_tolerance_is_independent_of_backend_options(
     )
 
     assert solution.feasibility_tolerance == tolerance
-    assert solution.constraints[0].satisfied is expected
+    assert solution.constraints[1].satisfied is expected
 
 
 def test_invalid_backend_fails_clearly_before_dispatch():
