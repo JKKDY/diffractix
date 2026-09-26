@@ -765,6 +765,7 @@ def test_traced_hybrid_expression_is_autograd_differentiable():
 
     numpy.testing.assert_allclose(derivative(np.array([4.0])), [11.0])
 
+@pytest.mark.filterwarnings("ignore:Output seems independent of input.:UserWarning")
 def test_solver_builds_second_order_primitives_through_runtime_symbols(monkeypatch):
     from diffractix.solver import solver as solver_module
 

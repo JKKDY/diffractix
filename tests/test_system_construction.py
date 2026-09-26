@@ -7,7 +7,7 @@ from diffractix.beams import ParaxialRay
 from diffractix.composites import Slab
 from diffractix.composites import CompositeElement
 from diffractix.system import AMBIENT_N
-from diffractix.elements import OpticalElement, ThinLens
+from diffractix.elements import OpticalElement, Space, ThinLens
 from diffractix.graph import Node, Parameter, Symbol
 from diffractix.system.system import System, Placement, SourceInfo
 from diffractix.system.errors import SystemValidationError
@@ -414,6 +414,21 @@ def test_build_resolves_hashable_compile_context_key():
     assert simulation.parameter_graph.evaluate(
         simulation.parameter_graph.initial_values
     )[0] == pytest.approx(0.2)
+
+
+def test_build_snapshots_compile_context():
+    system = System()
+    system.add_input_beam(make_beam())
+    system.add_context("temperature", 293.15)
+    system.add(Space(d=0.1))
+
+    simulation = system.build()
+    frozen_temperature = simulation.compile_context["temperature"]
+
+    system.add_context("temperature", 300.0)
+
+    assert simulation.compile_context["temperature"] is frozen_temperature
+    assert frozen_temperature.value == pytest.approx(293.15)
 
 
 def test_add_context_replaces_existing_value():

@@ -650,6 +650,8 @@ def test_initial_values_are_snapshotted():
     x.value = 100
 
     np.testing.assert_array_equal(compiled.initial_values, [2.0])
+    with pytest.raises(ValueError):
+        compiled.initial_values[0] = 3.0
 
 
 def test_evaluation_does_not_mutate_parameters():

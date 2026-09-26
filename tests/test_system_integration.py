@@ -53,6 +53,18 @@ def test_system_builds_and_runs_single_space():
     assert np.isclose(result.final.q, beam.q + 0.2)
 
 
+def test_simulation_initial_values_are_read_only():
+    distance = Parameter(0.2).variable()
+    system = System()
+    system.add_input_beam(create_beam())
+    system.add(Space(d=distance))
+
+    simulation = system.build()
+
+    with pytest.raises(ValueError):
+        simulation.initial_values[0] = 0.3
+
+
 def test_system_builds_and_runs_single_thin_lens():
     beam = create_beam()
     lens = ThinLens(f=0.1)

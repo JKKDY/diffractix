@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import MappingProxyType
+
 import autograd.numpy as np
 
 from collections.abc import Mapping, Sequence
@@ -46,13 +48,13 @@ class Simulation:
         self.source = source
         self.graph = graph
         self.steps = tuple(steps)
-        self.parameter_info = parameter_info
-        self.location_map = location_map
+        self.parameter_info = MappingProxyType(dict(parameter_info))
+        self.location_map = MappingProxyType(dict(location_map))
         self.requirements = tuple(requirements)
-        self.compile_context = compile_context
+        self.compile_context = MappingProxyType(dict(compile_context))
         self.parameter_graph = parameter_graph
         self.element_info = tuple(element_info)
-        self.execution_context = execution_context
+        self.execution_context = MappingProxyType(dict(execution_context))
 
         self._result_type = result_type_for(self.source)
 

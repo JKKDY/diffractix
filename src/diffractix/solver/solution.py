@@ -67,12 +67,16 @@ class Solution:
                 "feasibility_tolerance must be finite and non-negative."
             )
 
-        if len(result.x) != len(simulation.initial_values):
+        x = np.array(result.x, copy=True)
+        x.setflags(write=False)
+
+        if len(x) != len(simulation.initial_values):
             raise ValueError(
                 "Backend result x length must match simulation.initial_values."
             )
 
         self._result = result
+        self._x = x
         self._problem = problem
         self._simulation = simulation
         self._objectives = tuple(objectives)
@@ -89,7 +93,7 @@ class Solution:
 
     @property
     def x(self):
-        return self._result.x
+        return self._x
 
     @cached_property
     def parameter_info(self):

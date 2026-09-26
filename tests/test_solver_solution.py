@@ -189,6 +189,19 @@ def test_solution_forwards_backend_result():
     assert solution.message == "stopped"
 
 
+def test_solution_owns_an_immutable_copy_of_backend_x():
+    backend_x = np.array([3.0])
+    simulation = make_simulation((Parameter(2.0).variable(),))
+    result = OptimizationResult(backend_x, True, 0.0, "done")
+    solution = Solution(result, make_problem(), simulation, (), ())
+
+    result.x[0] = 4.0
+
+    numpy.testing.assert_array_equal(solution.x, [3.0])
+    with pytest.raises(ValueError):
+        solution.x[0] = 5.0
+
+
 def test_solution_feasibility_tolerance_validation_and_default():
     parameter = Parameter(2.0).variable()
     simulation = make_simulation((parameter,))

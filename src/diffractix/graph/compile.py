@@ -457,6 +457,7 @@ def compile_ast(
         ],
         dtype=float,
     )
+    initial_values.setflags(write=False)
 
     symbols: list[Symbol] = []
     symbol_indices: dict[object, int] = {}

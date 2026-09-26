@@ -160,12 +160,45 @@ def test_simulation_stores_compiled_data():
     assert simulation.graph is graph
     assert simulation.steps == (step,)
     assert simulation.parameter_info == parameter_info
-    assert simulation.location_map is location_map
+    assert simulation.location_map == location_map
+    assert simulation.location_map is not location_map
     assert simulation.requirements == requirements
-    assert simulation.compile_context is compile_context
-    assert simulation.execution_context is execution_context
+    assert simulation.compile_context == compile_context
+    assert simulation.compile_context is not compile_context
+    assert simulation.execution_context == execution_context
+    assert simulation.execution_context is not execution_context
     assert simulation.parameter_graph is graph
     assert simulation.element_info == (element_info,)
+
+
+def test_simulation_snapshots_context_mappings():
+    compile_context = {"ambient_n": object()}
+    execution_context = {"runtime_value": 3.0}
+    simulation = Simulation(
+        source=DummyState(),
+        graph=DummyGraph(
+            initial_values=np.array([]),
+            evaluator=lambda theta: np.array([]),
+        ),
+        steps=(),
+        parameter_info={},
+        location_map={},
+        compile_context=compile_context,
+        execution_context=execution_context,
+        requirements=(),
+        parameter_graph=None,
+        element_info=(),
+    )
+
+    compile_context["added"] = object()
+    execution_context["runtime_value"] = 4.0
+
+    assert "added" not in simulation.compile_context
+    assert simulation.execution_context["runtime_value"] == 3.0
+    with pytest.raises(TypeError):
+        simulation.compile_context["added"] = object()
+    with pytest.raises(TypeError):
+        simulation.execution_context["runtime_value"] = 5.0
 
 
 def test_simulation_converts_sequence_fields_to_tuples():
@@ -346,7 +379,8 @@ def test_run_forwards_execution_context_to_graph():
 
     simulation.run()
 
-    assert graph.last_bindings is execution_context
+    assert graph.last_bindings == execution_context
+    assert graph.last_bindings is simulation.execution_context
 
 
 def test_result_rejects_inconsistent_element_info_length():

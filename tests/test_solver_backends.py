@@ -442,11 +442,13 @@ def test_scipy_trust_constr_constructs_native_call(monkeypatch):
     from diffractix.solver.backends import scipy as backend
 
     problem = make_constrained_problem()
-    captured = {}
+    captured = {"nonlinear_constraints": []}
 
     def nonlinear_constraint(function, lower, upper, **kwargs):
-        captured["nonlinear_constraint"] = (function, lower, upper, kwargs)
-        return "constraint"
+        captured["nonlinear_constraints"].append(
+            (function, lower, upper, kwargs)
+        )
+        return f"constraint-{len(captured['nonlinear_constraints'])}"
 
     def minimize(function, x0, **kwargs):
         captured["minimize"] = (function, x0, kwargs)
@@ -466,19 +468,69 @@ def test_scipy_trust_constr_constructs_native_call(monkeypatch):
     assert kwargs["hess"] is problem.objective_hessian
     np.testing.assert_array_equal(kwargs["bounds"].lb, problem.x_lower)
     np.testing.assert_array_equal(kwargs["bounds"].ub, problem.x_upper)
-    assert kwargs["constraints"] == ("constraint",)
+    assert kwargs["constraints"] == ("constraint-1", "constraint-2")
     assert kwargs["options"] == options
     assert kwargs["options"] is not options
 
-    constraint_function, lower, upper, constraint_kwargs = captured[
-        "nonlinear_constraint"
-    ]
-    assert constraint_function is problem.constraints
-    np.testing.assert_array_equal(lower, problem.constraint_lower)
-    np.testing.assert_array_equal(upper, problem.constraint_upper)
-    assert constraint_kwargs["jac"] is problem.jacobian
-    assert constraint_kwargs["hess"] is problem.constraint_hessian
+    equality_function, lower, upper, constraint_kwargs = captured[
+        "nonlinear_constraints"
+    ][0]
+    np.testing.assert_array_equal(lower, [3.0])
+    np.testing.assert_array_equal(upper, [3.0])
+    np.testing.assert_array_equal(equality_function(problem.x0), [-1.0])
+    np.testing.assert_array_equal(constraint_kwargs["jac"](problem.x0), [[1.0, -1.0]])
+    np.testing.assert_allclose(
+        constraint_kwargs["hess"](problem.x0, np.array([7.0])),
+        [[0.0, 0.0], [0.0, 0.0]],
+    )
+
+    inequality_function, lower, upper, constraint_kwargs = captured[
+        "nonlinear_constraints"
+    ][1]
+    np.testing.assert_array_equal(lower, [2.0, -np.inf, -4.0])
+    np.testing.assert_array_equal(upper, [5.0, 10.0, np.inf])
+    np.testing.assert_array_equal(inequality_function(problem.x0), [3.0, 1.0, 4.0])
+    np.testing.assert_array_equal(
+        constraint_kwargs["jac"](problem.x0),
+        [[1.0, 1.0], [2.0, 0.0], [0.0, 4.0]],
+    )
+    np.testing.assert_allclose(
+        constraint_kwargs["hess"](problem.x0, np.array([11.0, 13.0, 17.0])),
+        [[26.0, 0.0], [0.0, 34.0]],
+    )
     assert options == {"maxiter": 500, "gtol": 1e-8}
+
+
+@pytest.mark.parametrize("equalities", (True, False))
+def test_scipy_omits_empty_constraint_subsets(monkeypatch, equalities):
+    from diffractix.solver.backends import scipy as backend
+
+    problem = make_constrained_problem()
+    lower = np.array([2.0, 3.0, 4.0, 5.0])
+    upper = lower.copy() if equalities else lower + 1.0
+    problem = Problem(
+        **{
+            **problem.__dict__,
+            "constraint_lower": lower,
+            "constraint_upper": upper,
+        }
+    )
+    captured = []
+
+    def nonlinear_constraint(*args, **kwargs):
+        captured.append((args, kwargs))
+        return "constraint"
+
+    monkeypatch.setattr(backend, "NonlinearConstraint", nonlinear_constraint)
+    monkeypatch.setattr(
+        backend,
+        "minimize",
+        lambda *args, **kwargs: fake_result(x=np.array([1.0, 2.0])),
+    )
+
+    backend.solve_scipy(problem)
+
+    assert len(captured) == 1
 
 
 def test_scipy_slsqp_uses_first_derivatives_only(monkeypatch):
