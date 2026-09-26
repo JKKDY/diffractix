@@ -19,6 +19,7 @@ from diffractix.solver.solver import (
 )
 from diffractix.solver.objective import Objective
 from diffractix.solver.constraint import Constraint, normalize_to_constraint
+from diffractix.solver.result import OptimizationResult
 
 
 @dataclass
@@ -783,7 +784,12 @@ def test_solver_builds_second_order_primitives_through_runtime_symbols(monkeypat
 
     def solve_scipy(problem, method=None, options=None):
         captured["problem"] = problem
-        return None
+        return OptimizationResult(
+            x=np.array([2.0]),
+            success=True,
+            cost=0.0,
+            message="captured",
+        )
 
     monkeypatch.setattr(
         solver_module,

@@ -234,8 +234,25 @@ class Solver:
 
         constraints = self._compile_constraints()
         objectives = self._compile_objectives()
+
+        if not objectives and not constraints:
+            raise ValueError(
+                "Optimization problem must have at least one objective or constraint."
+            )
+
+        if len(self.simulation.initial_values) == 0:
+            raise ValueError("Optimization problem must have at least one variable parameter.")
+
         parameter_lower, parameter_upper = self._parameter_bounds()
         constraint_lower, constraint_upper = self._constraint_bounds(constraints)
+        initial_context = SolverContext(
+            self.simulation.initial_values,
+            self.simulation.run,
+        )
+        constraint_shapes = tuple(
+            np.shape(constraint.evaluate(initial_context))
+            for constraint in constraints
+        )
 
         def objective_function(theta):
             context = SolverContext(theta, self.simulation.run)
@@ -246,10 +263,17 @@ class Solver:
 
         def constraint_function(theta):
             context = SolverContext(theta, self.simulation.run)
-            values = [
-                np.atleast_1d(constraint.evaluate(context))
-                for constraint in constraints
-            ]
+            values = []
+
+            for constraint, expected_shape in zip(constraints, constraint_shapes):
+                value = constraint.evaluate(context)
+                if np.shape(value) != expected_shape:
+                    raise ValueError(
+                        "Constraint output shape changed from "
+                        f"{expected_shape} to {np.shape(value)}."
+                    )
+                values.append(np.atleast_1d(value))
+
             return np.concatenate(values) if values else np.array([])
 
         def weighted_constraints(theta, multipliers):

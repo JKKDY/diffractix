@@ -5,7 +5,7 @@ import numpy as numpy
 import pytest
 
 from diffractix.beams import GaussianBeam
-from diffractix.elements import Space
+from diffractix.elements import Space, ThinLens
 from diffractix.graph import Parameter, Symbol
 from diffractix.solver import (
     Backend,
@@ -509,7 +509,7 @@ def test_infeasible_problem_returns_non_feasible_solution():
 
 @pytest.mark.parametrize(
     ("tolerance", "expected"),
-    [(0.0, False), (1e-3, True), (np.inf, True)],
+    [(0.0, False), (1e-3, True)],
 )
 def test_solution_reporting_tolerance_is_independent_of_backend_options(
     monkeypatch,
@@ -720,22 +720,17 @@ def test_backend_exception_does_not_poison_solver_retry(monkeypatch):
     assert solution[distance] == pytest.approx(0.2)
 
 
-@pytest.mark.xfail(
-    reason="Solver should define or clearly reject an optimization with no objectives or constraints.",
-    strict=False,
-)
 def test_empty_optimization_problem_should_have_a_clear_contract():
-    system, _, _ = distance_system()
+    focal_length = Parameter(0.1, variable=True)
+    system = System()
+    system.add_input_beam(beam())
+    system.add(ThinLens(f=focal_length))
     solver = Solver(system)
 
     with pytest.raises(ValueError, match="objective|constraint|empty"):
         solver.solve(Backend.SCIPY, method="SLSQP")
 
 
-@pytest.mark.xfail(
-    reason="Solver-level validation should reject zero-variable problems before backend dispatch.",
-    strict=False,
-)
 def test_no_variables_should_raise_clear_solver_error():
     system = System()
     system.add_input_beam(beam())
@@ -747,13 +742,10 @@ def test_no_variables_should_raise_clear_solver_error():
         solver.solve(Backend.SCIPY, method="SLSQP")
 
 
-@pytest.mark.xfail(
-    reason="Future validation should reject dynamic constraint shape changes before optimization.",
-    strict=False,
-)
 def test_dynamic_constraint_shape_change_should_be_rejected_early():
     system, _, distance = distance_system(initial=0.1)
     solver = Solver(system)
+    solver.target(distance - 0.2)
 
     def changing_shape(context):
         if context.z[1] > 0.15:

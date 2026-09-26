@@ -202,13 +202,18 @@ def test_solution_feasibility_tolerance_validation_and_default():
     assert make_solution(feasibility_tolerance=1e-3).feasibility_tolerance == 1e-3
 
 
-@pytest.mark.xfail(
-    reason="A NaN reporting tolerance should be rejected as invalid input.",
-    strict=False,
-)
-def test_solution_rejects_nan_feasibility_tolerance():
+@pytest.mark.parametrize("tolerance", (np.nan, np.inf, -np.inf))
+def test_solution_rejects_nonfinite_feasibility_tolerance(tolerance):
     with pytest.raises(ValueError, match="finite|NaN|non-negative"):
-        make_solution(feasibility_tolerance=np.nan)
+        make_solution(feasibility_tolerance=tolerance)
+
+
+def test_solution_rejects_backend_result_with_wrong_x_length():
+    simulation = make_simulation((Parameter(2.0).variable(),))
+    result = OptimizationResult(np.array([2.0, 3.0]), True, 0.0, "done")
+
+    with pytest.raises(ValueError, match="x length.*initial_values"):
+        Solution(result, make_problem(), simulation, (), ())
 
 
 def test_solution_parameter_info_and_parameters_use_canonical_order():
@@ -380,10 +385,6 @@ def test_non_finite_constraint_values_are_never_reported_feasible(value):
 
 
 @pytest.mark.parametrize("x", [(), (3.0, 4.0)])
-@pytest.mark.xfail(
-    reason="Solution should reject backend theta vectors whose length does not match the Simulation snapshot.",
-    strict=False,
-)
 def test_solution_rejects_backend_theta_length_mismatch(x):
     parameter = Parameter(2.0, name="p").variable()
     simulation = make_simulation((parameter,))

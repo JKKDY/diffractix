@@ -62,8 +62,15 @@ class Solution:
         constraints,
         feasibility_tolerance: float = DEFAULT_FEASIBILITY_TOLERANCE
     ):
-        if feasibility_tolerance < 0:
-            raise ValueError("feasibility_tolerance must be non-negative.")
+        if not np.isfinite(feasibility_tolerance) or feasibility_tolerance < 0:
+            raise ValueError(
+                "feasibility_tolerance must be finite and non-negative."
+            )
+
+        if len(result.x) != len(simulation.initial_values):
+            raise ValueError(
+                "Backend result x length must match simulation.initial_values."
+            )
 
         self._result = result
         self._problem = problem

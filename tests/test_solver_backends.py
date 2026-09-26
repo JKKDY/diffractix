@@ -207,7 +207,7 @@ import numpy as numpy
 import pytest
 from autograd import hessian
 
-from diffractix.solver import Backend, OptimizationResult, Solution, Solver
+from diffractix.solver import Backend, Objective, OptimizationResult, Solution, Solver
 from diffractix.solver.problem import Problem
 
 
@@ -300,7 +300,7 @@ def test_solver_dispatch_matrix_copies_options(
         initial_values=anp.array([1.0]),
         run=lambda theta: None,
     )
-    solver._compile_objectives = lambda: ()
+    solver._compile_objectives = lambda: (Objective(lambda context: 0.0),)
     solver._compile_constraints = lambda: ()
     solver._parameter_bounds = lambda: (anp.array([0.0]), anp.array([2.0]))
     solver._constraint_bounds = lambda constraints: (anp.array([]), anp.array([]))
@@ -342,7 +342,7 @@ def test_solver_defaults_to_scipy_backend(monkeypatch):
         initial_values=anp.array([1.0]),
         run=lambda theta: None,
     )
-    solver._compile_objectives = lambda: ()
+    solver._compile_objectives = lambda: (Objective(lambda context: 0.0),)
     solver._compile_constraints = lambda: ()
     solver._parameter_bounds = lambda: (anp.array([0.0]), anp.array([2.0]))
     solver._constraint_bounds = lambda constraints: (anp.array([]), anp.array([]))
