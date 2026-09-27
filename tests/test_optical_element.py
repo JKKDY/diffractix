@@ -124,23 +124,24 @@ def test_requirements_are_empty_by_default():
 
 def test_require_adds_persistent_requirements():
     element = DummyElement(x=1.0)
-    requirement_a = object()
-    requirement_b = object()
+    requirement_a = element.x >= 0.0
+    requirement_b = element.x <= 2.0
 
     result = element.require(requirement_a, requirement_b)
 
     assert result is element
-    assert element.requirements == (requirement_a, requirement_b)
+    assert element.requirements[0] is requirement_a
+    assert element.requirements[1] is requirement_b
 
 
 def test_requirements_are_not_shared_between_elements():
     first = DummyElement(x=1.0)
     second = DummyElement(x=1.0)
-    requirement = object()
+    requirement = first.x >= 0.0
 
     first.require(requirement)
 
-    assert first.requirements == (requirement,)
+    assert first.requirements[0] is requirement
     assert second.requirements == ()
 
 
@@ -197,50 +198,6 @@ def test_optical_element_requires_element_length():
 
     with pytest.raises(TypeError):
         MissingLengthElement(x=1.0)
-
-
-# ----------
-# VALIDATION
-# ----------
-
-def test_graph_validation_is_enabled_by_default():
-    assert DummyElement.validate_graph_inputs is True
-
-
-def test_graph_validation_can_be_disabled_per_class():
-
-    @dataclass(kw_only=True)
-    class CustomElement(OpticalElement, validate_graph_inputs=False):
-
-        x: Node
-
-        @property
-        def matrix(self):
-            return ((1.0, self.x), (0.0, 1.0))
-
-        @property
-        def element_length(self):
-            return 0.0
-
-    assert CustomElement.validate_graph_inputs is False
-
-
-def test_graph_validation_setting_does_not_modify_parent():
-    @dataclass(kw_only=True)
-    class CustomElement(OpticalElement, validate_graph_inputs=False):
-
-        x: Node
-
-        @property
-        def matrix(self):
-            return ((1.0, self.x), (0.0, 1.0))
-
-        @property
-        def element_length(self):
-            return 0.0
-
-    assert CustomElement.validate_graph_inputs is False
-    assert DummyElement.validate_graph_inputs is True
 
 
 # -------

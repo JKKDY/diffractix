@@ -11,6 +11,7 @@ from diffractix.composites import CompositeElement, Slab
 from diffractix.elements import ABCD, GaussianAperture, GRIN, Interface, Space, ThinLens
 from diffractix.graph import Parameter
 from diffractix.solver import Solver
+from diffractix.solver.constraint import Constraint
 from diffractix.system import System, SystemValidationError
 
 
@@ -415,8 +416,8 @@ def test_system_repeated_element_uses_same_parameter_values():
 
 def test_system_requirements_are_forwarded_to_simulation():
     beam = create_beam()
-    requirement = object()
     space = Space(d=0.1)
+    requirement = space.d <= 0.2
 
     system = System()
     system.add_input_beam(beam)
@@ -425,14 +426,16 @@ def test_system_requirements_are_forwarded_to_simulation():
 
     simulation = system.build()
 
-    assert simulation.requirements == (requirement, space.requirements[0])
+    assert all(isinstance(requirement, Constraint) for requirement in simulation.requirements)
+    assert simulation.requirements[0].evaluate is requirement.left
+    assert simulation.requirements[1].evaluate is space.requirements[0].left
 
 
 def test_element_requirement_is_forwarded_to_simulation():
     beam = create_beam()
     element = Space(d=0.1)
     length_requirement = element.requirements[0]
-    requirement = object()
+    requirement = element.d <= 0.2
     element.require(requirement)
 
     system = System()
@@ -441,18 +444,20 @@ def test_element_requirement_is_forwarded_to_simulation():
 
     simulation = system.build()
 
-    assert simulation.requirements == (length_requirement, requirement)
+    assert all(isinstance(requirement, Constraint) for requirement in simulation.requirements)
+    assert simulation.requirements[0].evaluate is length_requirement.left
+    assert simulation.requirements[1].evaluate is requirement.left
 
 
 def test_system_and_nested_element_requirements_preserve_order():
     beam = create_beam()
-    system_requirement = object()
-    composite_requirement = object()
-    inner_requirement = object()
-    child_requirement = object()
     inner = Slab(d=0.01, n=1.5)
     child = Space(d=0.1)
     composite = NestedRequirementsComposite(inner, child)
+    system_requirement = child.d <= 0.5
+    composite_requirement = inner.d >= 0.005
+    inner_requirement = inner.n >= 1.0
+    child_requirement = child.d <= 0.2
     system = System()
     system.add_input_beam(beam)
     system.add(composite)
@@ -463,20 +468,29 @@ def test_system_and_nested_element_requirements_preserve_order():
 
     simulation = system.build()
 
-    assert simulation.requirements == (
-        system_requirement,
-        composite_requirement,
-        inner_requirement,
-        inner.body.requirements[0],
-        child.requirements[0],
-        child_requirement,
-    )
+    assert all(isinstance(requirement, Constraint) for requirement in simulation.requirements)
+    assert [requirement.lower_bound for requirement in simulation.requirements] == [
+        -math.inf,
+        0.005,
+        1.0,
+        0.0,
+        0.0,
+        -math.inf,
+    ]
+    assert [requirement.upper_bound for requirement in simulation.requirements] == [
+        0.5,
+        math.inf,
+        math.inf,
+        math.inf,
+        math.inf,
+        0.2,
+    ]
 
 
 def test_repeated_element_requirements_are_collected_once_without_mutation():
     beam = create_beam()
     element = Space(d=0.1)
-    requirement = object()
+    requirement = element.d <= 0.2
     element.require(requirement)
     original_requirements = element.requirements
     system = System()
@@ -486,7 +500,8 @@ def test_repeated_element_requirements_are_collected_once_without_mutation():
 
     simulation = system.build()
 
-    assert simulation.requirements == original_requirements
+    assert len(simulation.requirements) == len(original_requirements)
+    assert all(isinstance(requirement, Constraint) for requirement in simulation.requirements)
     assert element.requirements == original_requirements
     assert system.requirements == system_requirements
 
@@ -505,10 +520,29 @@ def test_builtin_element_requirements_reach_simulation_in_element_order():
 
     simulation = system.build()
 
-    assert simulation.requirements == tuple(
-        element.requirements[0]
-        for element in elements
-    )
+    assert all(isinstance(requirement, Constraint) for requirement in simulation.requirements)
+    assert [requirement.lower_bound for requirement in simulation.requirements] == [
+        0.0,
+        0.0,
+        0.0,
+        math.nextafter(0.0, math.inf),
+    ]
+
+
+@pytest.mark.parametrize("attach_to", ("system", "element"))
+def test_malformed_requirements_fail_during_build(attach_to):
+    element = Space(d=0.1)
+    system = System()
+    system.add_input_beam(create_beam())
+    system.add(element)
+
+    if attach_to == "system":
+        system.require(object())
+    else:
+        element.require(object())
+
+    with pytest.raises(TypeError):
+        system.build()
 
 
 def test_builtin_element_requirements_compile_for_solver():

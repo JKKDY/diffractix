@@ -203,6 +203,11 @@ class System:
 
         return tuple(requirements)
 
+    def _normalize_requirements(self):
+        from diffractix.solver.constraint import normalize_to_constraint
+        reqs = self.requirements + self._collect_element_requirements()
+        return tuple(normalize_to_constraint(requirement) for requirement in reqs)
+
 
     # ----------
     # VALIDATION
@@ -267,26 +272,6 @@ class System:
 
                     elif placement.z < 0:
                         errors.append(f"{location_str}: absolute position z cannot be negative, got {placement.z!r}.")
-
-            element = placement.element
-
-            if isinstance(element, CompositeElement):
-                for path, leaf in element.walk():
-                    try:
-                        leaf._validate_for_build()
-
-                    except Exception as exc:
-                        errors.append(
-                            f"{location_str}, child {path!r} "
-                            f"({type(leaf).__name__} '{leaf.label}'): {exc}"
-                        )
-
-            elif isinstance(element, OpticalElement):
-                try:
-                    element._validate_for_build()
-
-                except Exception as exc:
-                    errors.append(f"{location_str}: {exc}")
 
         # REQUIREMENTS
         # TODO: validate requirement objects once the requirement API is defined.
@@ -601,7 +586,7 @@ class System:
         )
 
 
-    def _build_simulation(self, compiled):
+    def _build_simulation(self, compiled, requirements):
         """
         Construct the executable Simulation from the compiled system.
 
@@ -631,7 +616,7 @@ class System:
             steps=steps,
             parameter_info=parameter_info,
             location_map=location_map,
-            requirements=self.requirements + self._collect_element_requirements(),
+            requirements=requirements,
             compile_context=self.compile_context,
             execution_context=self.beam.execution_context,
             parameter_graph=parameter_graph,
@@ -645,6 +630,8 @@ class System:
     def build(self):
         self._validate()
 
+        requirements = self._normalize_requirements()
+
         elements = self._resolve_elements()
         elements = self._resolve_layout(elements)
         elements, continuity = self._resolve_refractive_indices(elements)
@@ -653,7 +640,7 @@ class System:
 
         compiled = self._compile(elements)
 
-        return self._build_simulation(compiled)
+        return self._build_simulation(compiled, requirements)
 
 
 

@@ -187,7 +187,7 @@ def test_simulation_requirements_join_solver_constraints_in_order():
     assert len(second.constraints) == 3
     assert len(solver.constraints) == 1
     assert simulation.requirements is requirements_before
-    assert system.requirements[0] is requirements_before[0]
+    assert requirements_before[0].evaluate is system.requirements[0].left
 
 
 def test_simulation_requirement_appears_in_solution_violations():

@@ -92,6 +92,7 @@ def make_solver(value=2.0):
     }
     simulation.compile_context = {}
     simulation.execution_context = {}
+    simulation.requirements = ()
     simulation.run = lambda theta: FakeResult(theta, element)
 
     return Solver(simulation), element, parameter

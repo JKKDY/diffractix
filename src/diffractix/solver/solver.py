@@ -190,10 +190,7 @@ class Solver:
     def _compile_constraints(self):
         compiled_constraints = []
 
-        requirements = tuple(
-            normalize_to_constraint(requirement)
-            for requirement in getattr(self.simulation, "requirements", ())
-        )
+        requirements = self.simulation.requirements
 
         for constraint in (*requirements, *self.constraints):
             func = constraint.evaluate

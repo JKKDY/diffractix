@@ -45,6 +45,7 @@ def make_simulation(parameters, *, run=None):
     }
     simulation.compile_context = {}
     simulation.execution_context = {}
+    simulation.requirements = ()
     simulation.graph = SimpleNamespace(
         initial_values=np.array([parameter.value for parameter in parameters])
     )

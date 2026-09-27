@@ -8,8 +8,10 @@ from autograd import grad
 
 from diffractix.beams import GaussianBeam, ParaxialRay, RayBundle
 from diffractix.beams.base import ParaxialState
+from diffractix.graph import Literal
 from diffractix.simulation import Simulation, SimulationResult
 from diffractix.simulation.simulation import SimulationStep
+from diffractix.solver.constraint import Constraint
 from diffractix.system.info import ElementInfo
 
 
@@ -132,7 +134,7 @@ def test_simulation_stores_compiled_data():
     )
     parameter_info = {1: object()}
     location_map = {1: ((0, 1),)}
-    requirements = (object(),)
+    requirements = (Constraint(Literal(0.0)),)
     compile_context = {"ambient_n": object()}
     execution_context = {("result", 1, "w"): 0.01}
     element_info = ElementInfo(

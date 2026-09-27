@@ -40,15 +40,6 @@ class OpticalElement(ElementBase, ABC):
 
     # Static members
     _instance_counts: ClassVar[dict[type, int]] = {}
-    validate_graph_inputs: ClassVar[bool] = True
-
-    # --------------------
-    # CLASS INITIALIZATION
-    # --------------------
-
-    def __init_subclass__(cls, *, validate_graph_inputs: bool = True, **kwargs):
-        super().__init_subclass__(**kwargs)
-        cls.validate_graph_inputs = validate_graph_inputs
 
     def __post_init__(self):
         # Create a label if not explicitly set
@@ -127,23 +118,6 @@ class OpticalElement(ElementBase, ABC):
         system topology.
         """
         return None
-
-
-    # ----------
-    # VALIDATION
-    # ----------
-    def _validate_for_build(self):
-        """
-        Validate the element definition before compilation.
-
-        Dependency tracing and undeclared numerical parameter detection will be
-        implemented separately.
-        """
-        if not type(self).validate_graph_inputs:
-            return
-        # TODO: trace matrix, element_length, and element_refractive_index.
-        # TODO: detect undeclared scalar numerical dependencies.
-        return
 
 
     # -------

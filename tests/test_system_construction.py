@@ -5,7 +5,6 @@ from dataclasses import dataclass
 
 from diffractix.beams import ParaxialRay
 from diffractix.composites import Slab
-from diffractix.composites import CompositeElement
 from diffractix.system import AMBIENT_N
 from diffractix.elements import OpticalElement, Space, ThinLens
 from diffractix.graph import Node, Parameter, Symbol
@@ -26,34 +25,6 @@ def evaluate_graph(compiled, values=()):
     return np.asarray(
         compiled.graph.evaluate(np.asarray(values, dtype=float))
     )
-
-
-@dataclass(eq=False, kw_only=True)
-class FailingElement(OpticalElement):
-
-    x: Node
-
-    @property
-    def matrix(self):
-        return (
-            (1.0, self.x),
-            (0.0, 1.0),
-        )
-
-    @property
-    def element_length(self):
-        return 0.0
-
-    def _validate_for_build(self):
-        raise ValueError("intentional validation failure")
-
-
-class FailingComposite(CompositeElement):
-
-    def __init__(self):
-        self.good = ThinLens(f=0.1)
-        self.bad = FailingElement(x=1.0)
-        super().__init__()
 
 
 def make_beam():
@@ -557,51 +528,6 @@ def test_validate_rejects_invalid_fixed_absolute_positions(z):
     assert "absolute position z" in str(exc_info.value)
 
 
-def test_validate_calls_element_validation():
-    system = System()
-    system.add_input_beam(make_beam())
-    system.add(FailingElement(x=1.0, label="Broken"))
-
-    with pytest.raises(SystemValidationError) as exc_info:
-        system._validate()
-
-    text = str(exc_info.value)
-
-    assert "Broken" in text
-    assert "intentional validation failure" in text
-
-
-def test_validate_calls_leaf_validation_for_composite():
-    system = System()
-    system.add_input_beam(make_beam())
-    system.add(FailingComposite())
-
-    with pytest.raises(SystemValidationError) as exc_info:
-        system._validate()
-
-    text = str(exc_info.value)
-
-    assert "bad" in text
-    assert "FailingElement" in text
-    assert "intentional validation failure" in text
-
-
-
-def test_validate_reports_placement_location():
-    system = System()
-    system.add_input_beam(make_beam())
-    system.add(FailingElement(x=1.0, label="Broken"))
-
-    with pytest.raises(SystemValidationError) as exc_info:
-        system._validate()
-
-    text = str(exc_info.value)
-
-    assert "Placement #0" in text
-    assert "Broken" in text
-    assert Path(__file__).name in text
-
-
 def test_validate_collects_multiple_errors():
     system = System(ambient_n=-1.0)
     system.add(ThinLens(f=0.1), z=-0.5)
@@ -629,16 +555,15 @@ def test_requirements_are_empty_by_default():
 
 def test_require_adds_requirements():
     system = System()
-    first = object()
-    second = object()
+    parameter = Parameter(1.0)
+    first = parameter >= 0.0
+    second = parameter <= 2.0
 
     result = system.require(first, second)
 
     assert result is system
-    assert system.requirements == (
-        first,
-        second,
-    )
+    assert system.requirements[0] is first
+    assert system.requirements[1] is second
 
 
 def test_system_rejects_element_with_structural_equality():
