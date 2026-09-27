@@ -186,6 +186,64 @@ def test_parameter_bounds():
         x.bound(20, 5)
 
 
+@pytest.mark.parametrize("bound", (True, "invalid"))
+def test_parameter_rejects_nonreal_bounds(bound):
+    with pytest.raises(TypeError, match="bound"):
+        Parameter(1.0, lower_bound=bound)
+
+    with pytest.raises(TypeError, match="bound"):
+        Parameter(1.0, upper_bound=bound)
+
+
+@pytest.mark.parametrize("bound", (np.nan,))
+def test_parameter_rejects_nan_bounds(bound):
+    with pytest.raises(ValueError, match="NaN"):
+        Parameter(1.0, lower_bound=bound)
+
+    with pytest.raises(ValueError, match="NaN"):
+        Parameter(1.0, upper_bound=bound)
+
+
+def test_parameter_allows_infinite_bounds():
+    parameter = Parameter(1.0, lower_bound=-np.inf, upper_bound=np.inf)
+
+    assert parameter.lower_bound == -np.inf
+    assert parameter.upper_bound == np.inf
+
+
+def test_parameter_variable_validates_and_preserves_bounds_atomically():
+    parameter = Parameter(1.0, lower_bound=0.0, upper_bound=2.0)
+
+    with pytest.raises(ValueError, match="lower_bound"):
+        parameter.variable(lower_bound=2.0, upper_bound=0.0)
+
+    assert not parameter.is_variable
+    assert parameter.lower_bound == 0.0
+    assert parameter.upper_bound == 2.0
+
+    with pytest.raises(TypeError, match="lower_bound"):
+        parameter.variable(lower_bound=True)
+
+
+@pytest.mark.parametrize("method", ("bound", "variable"))
+@pytest.mark.parametrize(
+    ("kwargs", "exception"),
+    (
+        ({"lower_bound": np.nan}, ValueError),
+        ({"upper_bound": "invalid"}, TypeError),
+    ),
+)
+def test_parameter_bound_operations_reject_invalid_proposed_bounds(
+    method,
+    kwargs,
+    exception,
+):
+    parameter = Parameter(1.0)
+
+    with pytest.raises(exception):
+        getattr(parameter, method)(**kwargs)
+
+
 def test_parameter_without_name():
     """Standalone Parameters do not require names."""
     x = Parameter(10)

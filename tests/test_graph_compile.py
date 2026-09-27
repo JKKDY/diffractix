@@ -673,6 +673,32 @@ def test_compile_rejects_nonfinite_and_out_of_bounds_parameter_values(
         compile_ast([parameter])
 
 
+@pytest.mark.parametrize(
+    ("attribute", "value", "exception"),
+    (
+        ("lower_bound", np.nan, ValueError),
+        ("upper_bound", True, TypeError),
+        ("lower_bound", 2.0, ValueError),
+        ("value", 2.0, ValueError),
+    ),
+)
+def test_compile_defensively_validates_mutated_parameter_state(
+    attribute,
+    value,
+    exception,
+):
+    parameter = Parameter(
+        0.5,
+        name="mutated",
+        lower_bound=0.0,
+        upper_bound=1.0,
+    )
+    setattr(parameter, attribute, value)
+
+    with pytest.raises(exception):
+        compile_ast([parameter])
+
+
 def test_evaluation_does_not_mutate_parameters():
     """
     Evaluation is pure with respect to the declarative AST.

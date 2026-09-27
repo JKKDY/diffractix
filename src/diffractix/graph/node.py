@@ -1,5 +1,7 @@
 from __future__ import annotations
+import math
 import weakref
+from numbers import Real as RealScalar
 import autograd.numpy as np
 
 from .ops import Op
@@ -8,6 +10,21 @@ from .relations import Relation, Comparison, SymbolicControlFlowError
 
 Scalar = int | float | complex
 Real = int | float
+
+
+def _validate_parameter_bounds(lower_bound, upper_bound) -> None:
+    """Validate a Parameter's numerical interval."""
+    for name, bound in (
+        ("lower_bound", lower_bound),
+        ("upper_bound", upper_bound),
+    ):
+        if isinstance(bound, bool) or not isinstance(bound, RealScalar):
+            raise TypeError(f"{name} must be a real scalar.")
+        if math.isnan(bound):
+            raise ValueError(f"{name} must not be NaN.")
+
+    if lower_bound > upper_bound:
+        raise ValueError("lower_bound must be <= upper_bound.")
 
 class Node:
     """
@@ -299,8 +316,7 @@ class Parameter(Node):
         if isinstance(value, bool) or not isinstance(value, Real):
             raise TypeError("Parameter value must be a real scalar.")
             
-        if lower_bound > upper_bound:
-            raise ValueError("lower_bound must be <= upper_bound.")
+        _validate_parameter_bounds(lower_bound, upper_bound)
 
         if value < lower_bound or value > upper_bound:
             raise ValueError(
@@ -320,8 +336,9 @@ class Parameter(Node):
         return self._variable
 
     def variable(self, lower_bound: float=None,  upper_bound: float=None):
-        if lower_bound is not None: self.lower_bound = lower_bound
-        if upper_bound is not None: self.upper_bound = upper_bound
+        lower_bound = self.lower_bound if lower_bound is None else lower_bound
+        upper_bound = self.upper_bound if upper_bound is None else upper_bound
+        self.bound(lower_bound, upper_bound)
         self._variable = True
         return self
 
@@ -334,8 +351,7 @@ class Parameter(Node):
         lower_bound: float = -np.inf,
         upper_bound: float = np.inf,
     ):
-        if lower_bound > upper_bound:
-            raise ValueError("lower_bound must be <= upper_bound.")
+        _validate_parameter_bounds(lower_bound, upper_bound)
 
         if self.value < lower_bound or self.value > upper_bound:
             raise ValueError(
