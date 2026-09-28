@@ -583,6 +583,34 @@ def test_negative_feasibility_tolerance_fails_cleanly():
         )
 
 
+@pytest.mark.parametrize(
+    ("tolerance", "error"),
+    (
+        (-1.0, ValueError),
+        (np.nan, ValueError),
+        (np.inf, ValueError),
+        (-np.inf, ValueError),
+        (True, TypeError),
+        (1 + 0j, TypeError),
+        ("1e-3", TypeError),
+        (object(), TypeError),
+    ),
+)
+def test_solver_validates_feasibility_tolerance_before_compilation(
+    tolerance,
+    error,
+):
+    system, _, distance = distance_system()
+    solver = Solver(system)
+    solver.target(distance - 0.2)
+    solver._compile_constraints = lambda: pytest.fail(
+        "feasibility tolerance validation must precede problem compilation"
+    )
+
+    with pytest.raises(error, match="feasibility_tolerance"):
+        solver.solve(feasibility_tolerance=tolerance)
+
+
 def test_solver_rejects_invalid_objective_entries_with_type_error():
     system, _, _ = distance_system()
     solver = Solver(system)

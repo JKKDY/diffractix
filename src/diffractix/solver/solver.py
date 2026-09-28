@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from enum import Enum, auto
+from math import isfinite
+from numbers import Real
 
 import autograd.numpy as np
 from autograd import grad, hessian, jacobian
@@ -242,6 +244,15 @@ class Solver:
         feasibility_tolerance: float = DEFAULT_FEASIBILITY_TOLERANCE
     ) -> Solution:
         """Solve the inverse-design problem."""
+
+        if isinstance(feasibility_tolerance, bool) or not isinstance(
+            feasibility_tolerance, Real
+        ):
+            raise TypeError("feasibility_tolerance must be a real numeric scalar.")
+        if not isfinite(feasibility_tolerance):
+            raise ValueError("feasibility_tolerance must be finite and non-negative.")
+        if feasibility_tolerance < 0:
+            raise ValueError("feasibility_tolerance must be finite and non-negative.")
 
         if not all(isinstance(x, Objective) for x in self.objectives):
             raise TypeError("Solver objectives must contain only Objective instances.")
