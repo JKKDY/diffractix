@@ -7,7 +7,7 @@ from diffractix.simulation import Simulation
 from diffractix.system.info import ElementInfo
 from diffractix.composites import CompositeElement, Slab
 from diffractix.elements import Interface, OpticalElement, Space, ThinLens
-from diffractix.graph import Parameter
+from diffractix.graph import Parameter, compile_ast
 from diffractix.system.system import ParameterInfo, Placement, SourceInfo, System, SystemPlacement
 
 class NestedComposite(CompositeElement):
@@ -452,6 +452,59 @@ def test_validate_refractive_index_continuity_rejects_mismatched_explicit_medium
     assert "Glass" in text
     assert "Upstream medium: n=1.0000" in text
     assert "Element requires: n=1.5000" in text
+
+
+def test_build_still_rejects_initial_refractive_index_mismatch():
+    system = System(ambient_n=1.0)
+    system.add_input_beam(
+        GaussianBeam.from_waist(w0=1e-3, wavelength=1e-6)
+    )
+    system.add(Space(d=0.1, n=1.5, label="Glass"))
+
+    with pytest.raises(ValueError, match="Refractive index mismatch.*Glass"):
+        system.build()
+
+
+def test_build_appends_continuity_equality_constraint_after_existing_requirements():
+    system = System(ambient_n=1.0)
+    system.add_input_beam(
+        GaussianBeam.from_waist(w0=1e-3, wavelength=1e-6)
+    )
+    refractive_index = Parameter(1.0, name="glass_n").variable()
+    space = Space(d=0.1, n=refractive_index, label="Glass")
+    existing_requirement = space.d <= 0.2
+    space.require(existing_requirement)
+    system.add(space)
+
+    simulation = system.build()
+
+    continuity = simulation.requirements[-1]
+    assert continuity.evaluate is not existing_requirement
+    assert continuity.lower_bound == 0.0
+    assert continuity.upper_bound == 0.0
+    assert continuity.label.startswith(
+        "Refractive index continuity at Placement #0 (Space 'Glass')"
+    )
+    assert simulation.requirements[-2].upper_bound == 0.2
+    assert len(simulation.requirements) == 4
+
+
+def test_shared_refractive_index_parameter_remains_one_variable_with_continuity():
+    system = System(ambient_n=1.0, ambient_n_variable=True)
+    system.add_input_beam(
+        GaussianBeam.from_waist(w0=1e-3, wavelength=1e-6)
+    )
+    system.add(Space(d=0.1, n=system.ambient_n))
+
+    simulation = system.build()
+
+    assert simulation.graph.variables == (system.ambient_n,)
+    continuity = simulation.requirements[-1]
+    graph = compile_ast(
+        (continuity.evaluate,),
+        parameter_snapshot=simulation.parameter_info,
+    )
+    assert graph.evaluate(np.array([1.7]))[0] == pytest.approx(0.0)
 
 
 def test_resolve_refractive_indices_interface_changes_medium():

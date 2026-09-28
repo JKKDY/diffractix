@@ -477,7 +477,8 @@ def test_system_and_nested_element_requirements_preserve_order():
     assert constraints[1] == (0.005, math.inf)
     assert constraints[2] == (1.0, math.inf)
     assert constraints[3] == (math.nextafter(0.0, math.inf), math.inf)
-    assert constraints[-2:] == ((0.0, math.inf), (-math.inf, 0.2))
+    assert any(upper == pytest.approx(0.2) for _, upper in constraints)
+    assert constraints[-3:] == ((0.0, 0.0), (0.0, 0.0), (0.0, 0.0))
 
 
 def test_repeated_element_requirements_are_collected_once_without_mutation():
@@ -521,6 +522,7 @@ def test_builtin_element_requirements_reach_simulation_in_element_order():
         math.nextafter(0.0, math.inf),
         0.0,
         math.nextafter(0.0, math.inf),
+        0.0,
     ]
 
 
@@ -561,6 +563,7 @@ def test_builtin_element_requirements_compile_for_solver():
         math.nextafter(0.0, math.inf),
         0.0,
         math.nextafter(0.0, math.inf),
+        0.0,
     ]
     assert [constraint.upper_bound for constraint in constraints] == [
         math.inf,
@@ -569,9 +572,10 @@ def test_builtin_element_requirements_compile_for_solver():
         math.inf,
         math.inf,
         math.inf,
+        0.0,
     ]
     assert [constraint.evaluate(context) for constraint in constraints] == pytest.approx(
-        [0.01, 0.02, 1.0, 1.0, 0.03, 1e-3],
+        [0.01, 0.02, 1.0, 1.0, 0.03, 1e-3, 0.0],
     )
 
 
@@ -588,25 +592,36 @@ def test_grin_zero_gradient_builds_and_runs():
 
 
 def test_interface_refractive_index_requirement_restricts_optimization():
+    n1 = Parameter(1.0, variable=True, lower_bound=0.5, upper_bound=2.0)
     n2 = Parameter(1.5, variable=True, lower_bound=-2.0, upper_bound=2.0)
     system = System()
+    system.ambient_n.variable(lower_bound=0.5, upper_bound=2.0)
     system.add_input_beam(create_beam())
-    interface = Interface(n1=1.0, n2=n2)
+    system.add(Space(d=0.01))
+    interface = Interface(n1=n1, n2=n2)
     system.add(interface)
     simulation = system.build()
 
-    assert len(simulation.requirements) == 2
+    assert len(simulation.requirements) == 4
     constraints = Solver(simulation)._compile_constraints()
-    context = SimpleNamespace(theta=np.array([-1.0]))
-    assert constraints[1].evaluate(context) == pytest.approx(-1.0)
-    assert constraints[1].lower_bound > 0.0
+    context = SimpleNamespace(theta=np.array([1.0, 1.0, -1.0]))
+    assert constraints[2].evaluate(context) == pytest.approx(-1.0)
+    assert constraints[2].lower_bound > 0.0
+    assert constraints[-1].lower_bound == constraints[-1].upper_bound == 0.0
 
     solver = Solver(simulation)
-    solver.target(n2 + 0.5)
+    solver.target(
+        system.ambient_n - 1.5,
+        n1 - 1.2,
+        n2 + 0.5,
+    )
     solution = solver.solve(method="SLSQP")
 
+    assert solution[system.ambient_n] == pytest.approx(solution[n1], abs=1e-7)
+    assert solution[system.ambient_n] > 1.0
     assert solution[n2] == pytest.approx(0.0, abs=1e-8)
     assert solution[n2] > -1e-8
+    assert solution.constraints[-1].satisfied
 
 
 @pytest.mark.parametrize(

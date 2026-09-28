@@ -478,7 +478,7 @@ class System:
     # -----------
     # COMPILATION
     # -----------
-    def _compile(self, elements):
+    def _compile(self, elements, additional_roots=()):
         """
         Compile resolved element expressions into the scalar parameter program.
 
@@ -558,6 +558,7 @@ class System:
                 (step_index, step_index + 1)
             )
 
+        roots.extend(additional_roots)
         graph = compile_ast(roots, context=self.compile_context)
         parameter_graph = compile_ast(
             parameter_roots,
@@ -655,7 +656,23 @@ class System:
 
         self._validate_refractive_index_continuity(continuity)
 
-        compiled = self._compile(elements)
+        from diffractix.solver.constraint import Constraint
+        continuity_residuals = tuple(residual for _, _, _, residual in continuity)
+        continuity_requirements = tuple(
+            Constraint(
+                residual,
+                lower_bound=0.0,
+                upper_bound=0.0,
+                label=(
+                    "Refractive index continuity at "
+                    f"{placement.describe(index)}"
+                ),
+            )
+            for index, (placement, _, _, residual) in enumerate(continuity)
+        )
+        requirements = (*requirements, *continuity_requirements)
+
+        compiled = self._compile(elements, additional_roots=continuity_residuals)
 
         return self._build_simulation(compiled, requirements)
 
