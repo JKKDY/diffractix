@@ -30,12 +30,12 @@ from .context import (
 )
 
 
-class Backend(Enum):
+class Backend(str, Enum):
     """Optimization backends supported by :class:`Solver`."""
-
-    IPOPT = auto()
-    SCIPY = auto()
-    NLOPT = auto()
+    
+    IPOPT = "ipopt"
+    SCIPY = "scipy"
+    NLOPT = "nlopt"
 
 
 class Solver:
