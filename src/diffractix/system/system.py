@@ -290,9 +290,6 @@ class System:
                 except Exception as exc:
                     errors.append(f"{location_str}: {exc}")
 
-        # REQUIREMENTS
-        # TODO: validate requirement objects once the requirement API is defined.
-
         if errors:
             raise SystemValidationError(errors)
 

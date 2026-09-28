@@ -118,7 +118,7 @@ class Simulation:
             return f"{float(v):.4g}"
 
         def format_bound(b, is_upper=False):
-            if (np.isposinf(b) if is_upper else np.isneginf(b)):
+            if np.isposinf(b) if is_upper else np.isneginf(b):
                 return "inf" if is_upper else "-inf"
             return format_value(b)
 
@@ -135,23 +135,40 @@ class Simulation:
                 max(len(h), *(len(r[c]) for r in rows)) if rows else len(h)
                 for c, h in enumerate(headers)
             ]
-            fmt = lambda r: (" " * col_gap).join(val.ljust(w) for val, w in zip(r, widths))
+            fmt = lambda r: (" " * col_gap).join(
+                val.ljust(w) for val, w in zip(r, widths)
+            )
             div = "-" * (sum(widths) + col_gap * (len(widths) - 1))
             return [fmt(headers), div, *(fmt(r) for r in rows)]
 
-        values = self.graph.evaluate(self.initial_values, bindings=self.execution_context)
         values = self.graph.evaluate(
             self.initial_values,
             bindings=self.execution_context,
         )
+        parameter_values = self.parameter_graph.evaluate(
+            self.parameter_graph.initial_values,
+            bindings=self.execution_context,
+        )
+
         has_paths = any(info.path for info in self.element_info)
-        headers = ["#", "z [m]", "Type", "Label", *(["Path"] if has_paths else []), "L [m]", "n", "Parameters"]
+        headers = [
+            "#",
+            "z [m]",
+            "Type",
+            "Label",
+            *(["Path"] if has_paths else []),
+            "L [m]",
+            "n",
+            "Parameters",
+        ]
 
         rows = []
         z = 0.0
+
         for idx, (step, info) in enumerate(zip(self.steps, self.element_info)):
             length = values[step.length_index]
             n = values[step.refractive_index_index]
+
             rows.append((
                 str(idx),
                 format_value(z),
@@ -162,6 +179,7 @@ class Simulation:
                 format_value(n),
                 format_parameters(info, parameter_values),
             ))
+
             z += length
 
         variables = sorted(
@@ -169,11 +187,13 @@ class Simulation:
             key=lambda info: info.parameter_index,
         )
 
+        table = render_table(headers, rows)
+
         lines = [
             "Compiled Simulation",
             "",
-            *render_table(headers, rows),
-            render_table(headers, rows)[1],  # bottom divider
+            *table,
+            table[1],
             "",
             f"Source: {type(self.source).__name__}",
             f"Total length: {format_value(z)} m",
@@ -189,11 +209,17 @@ class Simulation:
                     info.name or "-",
                     info.owner_label or info.owner_type or "-",
                     format_value(info.value),
-                    f"[{format_bound(info.lower_bound)}, {format_bound(info.upper_bound, is_upper=True)}]",
+                    f"[{format_bound(info.lower_bound)}, "
+                    f"{format_bound(info.upper_bound, is_upper=True)}]",
                 )
                 for info in variables
             ]
-            lines.extend(["", "Variables", "", *render_table(var_headers, var_rows)])
+            lines.extend([
+                "",
+                "Variables",
+                "",
+                *render_table(var_headers, var_rows),
+            ])
 
         if self.requirements:
             lines.extend([
