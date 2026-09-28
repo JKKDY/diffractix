@@ -27,6 +27,15 @@ class Mirror(OpticalElement):
 
     R: Node = np.inf
 
+    def _validate_for_build(self):
+        super()._validate_for_build()
+        try:
+            radius = self.R.value
+        except (AttributeError, RuntimeError):
+            return
+        if radius == 0:
+            raise ValueError("Mirror radius R must not be zero.")
+
     @property
     def matrix(self):
         return (

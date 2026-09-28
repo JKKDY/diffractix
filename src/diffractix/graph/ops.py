@@ -28,6 +28,7 @@ class Op(Enum):
     SINH = auto()
     COSH = auto()
     TANH = auto()
+    SINC = auto()
 
     # binary extrema
     MAX = auto()
@@ -72,6 +73,7 @@ OP_ARITY = {
     Op.SINH: 1,
     Op.COSH: 1,
     Op.TANH: 1,
+    Op.SINC: 1,
     Op.MAX: 2,
     Op.MIN: 2,
 }
@@ -104,6 +106,7 @@ OP_UNICODE = {
     Op.SINH: "sinh",
     Op.COSH: "cosh",
     Op.TANH: "tanh",
+    Op.SINC: "sinc",
     Op.MAX: "max",
     Op.MIN: "min",
 }
@@ -128,6 +131,11 @@ OP_FUNCTIONS = {
     Op.SINH: np.sinh,
     Op.COSH: np.cosh,
     Op.TANH: np.tanh,
+    Op.SINC: lambda x: np.where(
+        x == 0,
+        1.0,
+        np.sin(x) / np.where(x == 0, 1.0, x),
+    ),
     Op.MAX: np.maximum,
     Op.MIN: np.minimum,
 }

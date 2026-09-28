@@ -8,7 +8,7 @@ import autograd.numpy as np
 
 from diffractix.beams import GaussianBeam
 from diffractix.composites import CompositeElement, Slab
-from diffractix.elements import ABCD, GaussianAperture, GRIN, Interface, Space, ThinLens
+from diffractix.elements import ABCD, GaussianAperture, GRIN, Interface, Mirror, Space, ThinLens
 from diffractix.graph import Parameter
 from diffractix.solver import Solver
 from diffractix.solver.constraint import Constraint
@@ -469,22 +469,15 @@ def test_system_and_nested_element_requirements_preserve_order():
     simulation = system.build()
 
     assert all(isinstance(requirement, Constraint) for requirement in simulation.requirements)
-    assert [requirement.lower_bound for requirement in simulation.requirements] == [
-        -math.inf,
-        0.005,
-        1.0,
-        0.0,
-        0.0,
-        -math.inf,
-    ]
-    assert [requirement.upper_bound for requirement in simulation.requirements] == [
-        0.5,
-        math.inf,
-        math.inf,
-        math.inf,
-        math.inf,
-        0.2,
-    ]
+    constraints = tuple(
+        (requirement.lower_bound, requirement.upper_bound)
+        for requirement in simulation.requirements
+    )
+    assert constraints[0] == (-math.inf, 0.5)
+    assert constraints[1] == (0.005, math.inf)
+    assert constraints[2] == (1.0, math.inf)
+    assert constraints[3] == (math.nextafter(0.0, math.inf), math.inf)
+    assert constraints[-2:] == ((0.0, math.inf), (-math.inf, 0.2))
 
 
 def test_repeated_element_requirements_are_collected_once_without_mutation():
@@ -524,6 +517,8 @@ def test_builtin_element_requirements_reach_simulation_in_element_order():
     assert [requirement.lower_bound for requirement in simulation.requirements] == [
         0.0,
         0.0,
+        math.nextafter(0.0, math.inf),
+        math.nextafter(0.0, math.inf),
         0.0,
         math.nextafter(0.0, math.inf),
     ]
@@ -562,6 +557,8 @@ def test_builtin_element_requirements_compile_for_solver():
     assert [constraint.lower_bound for constraint in constraints] == [
         0.0,
         0.0,
+        math.nextafter(0.0, math.inf),
+        math.nextafter(0.0, math.inf),
         0.0,
         math.nextafter(0.0, math.inf),
     ]
@@ -570,10 +567,63 @@ def test_builtin_element_requirements_compile_for_solver():
         math.inf,
         math.inf,
         math.inf,
+        math.inf,
+        math.inf,
     ]
     assert [constraint.evaluate(context) for constraint in constraints] == pytest.approx(
-        [0.01, 0.02, 0.03, 1e-3],
+        [0.01, 0.02, 1.0, 1.0, 0.03, 1e-3],
     )
+
+
+def test_grin_zero_gradient_builds_and_runs():
+    system = System()
+    system.add_input_beam(create_beam())
+    system.add(GRIN(d=0.02, g=0.0, n=1.0))
+
+    simulation = system.build()
+    result = simulation.run(simulation.initial_values)
+
+    assert result.z[-1] == pytest.approx(0.02)
+    assert len(result.states) == 2
+
+
+def test_interface_refractive_index_requirement_restricts_optimization():
+    n2 = Parameter(1.5, variable=True, lower_bound=-2.0, upper_bound=2.0)
+    system = System()
+    system.add_input_beam(create_beam())
+    interface = Interface(n1=1.0, n2=n2)
+    system.add(interface)
+    simulation = system.build()
+
+    assert len(simulation.requirements) == 2
+    constraints = Solver(simulation)._compile_constraints()
+    context = SimpleNamespace(theta=np.array([-1.0]))
+    assert constraints[1].evaluate(context) == pytest.approx(-1.0)
+    assert constraints[1].lower_bound > 0.0
+
+    solver = Solver(simulation)
+    solver.target(n2 + 0.5)
+    solution = solver.solve(method="SLSQP")
+
+    assert solution[n2] == pytest.approx(0.0, abs=1e-8)
+    assert solution[n2] > -1e-8
+
+
+@pytest.mark.parametrize(
+    "element",
+    (
+        ThinLens(f=0.0),
+        Interface(n1=1.0, n2=1.5, R=0.0),
+        Mirror(R=0.0),
+    ),
+)
+def test_system_build_rejects_singular_curvature_or_focal_length(element):
+    system = System()
+    system.add_input_beam(create_beam())
+    system.add(element)
+
+    with pytest.raises(SystemValidationError, match="must not be zero"):
+        system.build()
 
 
 # ----------

@@ -126,6 +126,9 @@ class Node:
     def tanh(self) -> UnaryOp:
         return Node._make_unary_op(Op.TANH, self)
 
+    def sinc(self) -> UnaryOp:
+        return Node._make_unary_op(Op.SINC, self)
+
     # --------
     # Addition
     # --------

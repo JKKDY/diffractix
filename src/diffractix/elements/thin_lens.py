@@ -21,6 +21,15 @@ class ThinLens(OpticalElement):
 
     f: Node
 
+    def _validate_for_build(self):
+        super()._validate_for_build()
+        try:
+            focal_length = self.f.value
+        except (AttributeError, RuntimeError):
+            return
+        if focal_length == 0:
+            raise ValueError("ThinLens focal length f must not be zero.")
+
     @property
     def matrix(self):
         return (

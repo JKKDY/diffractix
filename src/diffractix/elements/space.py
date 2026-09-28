@@ -24,6 +24,9 @@ class Space(OpticalElement):
 
     def __post_init__(self):
         super().__post_init__()
+
+        if self.n.node is not None:
+            self.require(self.n > 0)
         
         length = self.element_length
         if isinstance(length, Node):

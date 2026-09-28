@@ -96,6 +96,16 @@ def test_thin_lens_matrix_tracks_input_handle():
     assert matrix[1][0].value == -5.0
 
 
+@pytest.mark.parametrize("focal_length", (-0.5, 0.1, np.inf))
+def test_thin_lens_build_validation_accepts_nonzero_focal_length(focal_length):
+    ThinLens(f=focal_length)._validate_for_build()
+
+
+def test_thin_lens_build_validation_rejects_zero_focal_length():
+    with pytest.raises(ValueError, match="focal length.*zero"):
+        ThinLens(f=0.0)._validate_for_build()
+
+
 # -----
 # SPACE
 # -----
@@ -150,6 +160,14 @@ def test_space_requires_nonnegative_length():
     assert_single_parameter_requirement(Space(d=0.1), "d", Relation.GE)
 
 
+def test_space_requires_positive_explicit_refractive_index():
+    space = Space(d=0.1, n=1.5)
+
+    assert len(space.requirements) == 2
+    assert space.requirements[0].relation is Relation.GT
+    assert space.requirements[0].left is space.n
+
+
 # ------
 # MIRROR
 # ------
@@ -175,6 +193,16 @@ def test_mirror_matrix():
             evaluate_matrix(mirror),
             expected,
         )
+
+
+@pytest.mark.parametrize("radius", (0.5, -0.5, np.inf, -np.inf))
+def test_mirror_build_validation_accepts_nonzero_radius(radius):
+    Mirror(R=radius)._validate_for_build()
+
+
+def test_mirror_build_validation_rejects_zero_radius():
+    with pytest.raises(ValueError, match="radius R.*zero"):
+        Mirror(R=0.0)._validate_for_build()
 
 
 def test_mirror_has_no_local_solver_requirement():
@@ -234,8 +262,23 @@ def test_flat_interface_has_zero_power():
     assert matrix[1, 1] == 1.0 / 1.5
 
 
-def test_interface_has_no_local_solver_requirement():
-    assert Interface(n1=1.0, n2=1.5).requirements == ()
+@pytest.mark.parametrize("radius", (0.5, -0.5, np.inf, -np.inf))
+def test_interface_build_validation_accepts_nonzero_radius(radius):
+    Interface(n1=1.0, n2=1.5, R=radius)._validate_for_build()
+
+
+def test_interface_build_validation_rejects_zero_radius():
+    with pytest.raises(ValueError, match="radius R.*zero"):
+        Interface(n1=1.0, n2=1.5, R=0.0)._validate_for_build()
+
+
+def test_interface_requires_positive_refractive_indices():
+    interface = Interface(n1=1.0, n2=1.5)
+
+    assert len(interface.requirements) == 2
+    assert all(requirement.relation is Relation.GT for requirement in interface.requirements)
+    assert interface.requirements[0].left is interface.n1
+    assert interface.requirements[1].left is interface.n2
 
 
 # ----------
@@ -376,6 +419,13 @@ def test_abcd_requires_nonnegative_thickness():
     assert_single_parameter_requirement(ABCD(thickness=0.1), "thickness", Relation.GE)
 
 
+def test_abcd_requires_positive_explicit_refractive_index():
+    element = ABCD(thickness=0.1, n=1.5)
+
+    assert element.requirements[0].relation is Relation.GT
+    assert element.requirements[0].left is element.n
+
+
 # -----------------
 # GAUSSIAN APERTURE
 # -----------------
@@ -439,6 +489,27 @@ def test_grin_matrix():
     np.testing.assert_allclose(matrix, expected)
 
 
+def test_grin_zero_gradient_matrix_is_free_space_limit():
+    element = GRIN(d=0.02, g=0.0, n=1.5)
+
+    np.testing.assert_allclose(
+        evaluate_matrix(element),
+        [[1.0, 0.02], [0.0, 1.0]],
+    )
+
+
+def test_grin_sinc_matrix_term_is_differentiable_at_zero():
+    from autograd import grad
+
+    element = GRIN(d=0.02, g=Parameter(0.0, variable=True), n=1.5)
+    compiled = compile_ast(
+        [element.matrix[0][1]],
+        parameter_snapshot=None,
+    )
+
+    assert grad(lambda theta: compiled.evaluate(theta)[0])(compiled.initial_values)[0] == pytest.approx(0.0)
+
+
 def test_grin_element_length():
     element = GRIN(d=0.02, g=10.0, n=1.5)
 
@@ -458,7 +529,18 @@ def test_grin_parameters():
 
 
 def test_grin_requires_nonnegative_length():
-    assert_single_parameter_requirement(GRIN(d=0.02, g=10.0, n=1.5), "d", Relation.GE)
+    element = GRIN(d=0.02, g=10.0, n=1.5)
+
+    assert element.requirements[0].relation is Relation.GE
+    assert element.requirements[0].left is element.d
+
+
+def test_grin_requires_positive_refractive_index():
+    element = GRIN(d=0.02, g=10.0, n=1.5)
+    requirement = element.requirements[-1]
+
+    assert requirement.relation is Relation.GT
+    assert requirement.left is element.n
 
 
 def test_thin_lens_and_plane_have_no_local_solver_requirements():

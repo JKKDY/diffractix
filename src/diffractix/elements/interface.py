@@ -25,6 +25,19 @@ class Interface(OpticalElement):
     n2: Node
     R: Node = np.inf
 
+    def __post_init__(self):
+        super().__post_init__()
+        self.require(self.n1 > 0, self.n2 > 0)
+
+    def _validate_for_build(self):
+        super()._validate_for_build()
+        try:
+            radius = self.R.value
+        except (AttributeError, RuntimeError):
+            return
+        if radius == 0:
+            raise ValueError("Interface radius R must not be zero.")
+
     @property
     def matrix(self):
         return (

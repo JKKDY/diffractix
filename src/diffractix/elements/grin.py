@@ -31,12 +31,13 @@ class GRIN(OpticalElement):
             self.require(length >= 0)
         elif length < 0:
             raise ValueError("Element length cannot be negative.")
+        self.require(self.n > 0)
 
     @property
     def matrix(self):
         phase = self.g * self.d
         return (
-            (phase.cos(), phase.sin() / self.g),
+            (phase.cos(), self.d * phase.sinc()),
             (-self.g * phase.sin(), phase.cos()),
         )
 
