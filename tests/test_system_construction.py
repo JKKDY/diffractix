@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from diffractix.beams import ParaxialRay
 from diffractix.composites import Slab
+from diffractix.composites import CompositeElement
 from diffractix.system import AMBIENT_N
 from diffractix.elements import OpticalElement, Space, ThinLens
 from diffractix.graph import Node, Parameter, Symbol
@@ -25,6 +26,42 @@ def evaluate_graph(compiled, values=()):
     return np.asarray(
         compiled.graph.evaluate(np.asarray(values, dtype=float))
     )
+
+
+@dataclass(eq=False, kw_only=True)
+class FailingElement(OpticalElement):
+    x: Node
+
+    @property
+    def matrix(self):
+        return ((1.0, self.x), (0.0, 1.0))
+
+    @property
+    def element_length(self):
+        return 0.0
+
+    def _validate_for_build(self):
+        raise ValueError("intentional validation failure")
+
+
+class FailingComposite(CompositeElement):
+    def __init__(self):
+        self.good = ThinLens(f=0.1)
+        self.bad = FailingElement(x=1.0)
+        super().__init__()
+
+
+@dataclass(eq=False, kw_only=True)
+class MalformedMatrixElement(OpticalElement):
+    x: Node
+
+    @property
+    def matrix(self):
+        return ((1.0, self.x),)
+
+    @property
+    def element_length(self):
+        return 0.0
 
 
 def make_beam():
@@ -526,6 +563,60 @@ def test_validate_rejects_invalid_fixed_absolute_positions(z):
         system._validate()
 
     assert "absolute position z" in str(exc_info.value)
+
+
+def test_validate_calls_element_validation():
+    system = System()
+    system.add_input_beam(make_beam())
+    system.add(FailingElement(x=1.0, label="Broken"))
+
+    with pytest.raises(SystemValidationError) as exc_info:
+        system._validate()
+
+    text = str(exc_info.value)
+    assert "Broken" in text
+    assert "intentional validation failure" in text
+
+
+def test_validate_calls_leaf_validation_for_composite():
+    system = System()
+    system.add_input_beam(make_beam())
+    system.add(FailingComposite())
+
+    with pytest.raises(SystemValidationError) as exc_info:
+        system._validate()
+
+    text = str(exc_info.value)
+    assert "bad" in text
+    assert "FailingElement" in text
+    assert "intentional validation failure" in text
+
+
+def test_validate_reports_element_validation_location():
+    system = System()
+    system.add_input_beam(make_beam())
+    system.add(FailingElement(x=1.0, label="Broken"))
+
+    with pytest.raises(SystemValidationError) as exc_info:
+        system._validate()
+
+    text = str(exc_info.value)
+    assert "Placement #0" in text
+    assert "Broken" in text
+    assert Path(__file__).name in text
+
+
+def test_build_reports_actual_element_graph_validation_error():
+    system = System()
+    system.add_input_beam(make_beam())
+    system.add(MalformedMatrixElement(x=1.0, label="Malformed"))
+
+    with pytest.raises(SystemValidationError) as exc_info:
+        system.build()
+
+    text = str(exc_info.value)
+    assert "Malformed" in text
+    assert "matrix must have exactly 2 rows" in text
 
 
 def test_validate_collects_multiple_errors():

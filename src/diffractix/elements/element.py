@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, fields
-from numbers import Real
+from numbers import Number, Real
 from typing import Any, ClassVar, get_type_hints
 
 from .base import ElementBase, annotation_contains_node
-from ..graph import Node, Parameter
-
+from ..graph import InputNode, Node, Parameter, walk_ast
 
 _GRAPH_PARAMETER = object()
 
@@ -40,6 +39,11 @@ class OpticalElement(ElementBase, ABC):
 
     # Static members
     _instance_counts: ClassVar[dict[type, int]] = {}
+    validate_graph_inputs: ClassVar[bool] = True
+
+    def __init_subclass__(cls, *, validate_graph_inputs: bool = True, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls.validate_graph_inputs = validate_graph_inputs
 
     def __post_init__(self):
         # Create a label if not explicitly set
@@ -118,6 +122,78 @@ class OpticalElement(ElementBase, ABC):
         system topology.
         """
         return None
+
+
+    # ----------
+    # VALIDATION
+    # ----------
+    def _validate_for_build(self):
+        """Validate this element's ABCD representation before system compilation."""
+        if not type(self).validate_graph_inputs:
+            return
+
+        matrix = self.matrix
+        length = self.element_length
+        refractive_index = self.element_refractive_index
+
+        # Validate matrix shape.
+        try:
+            rows = tuple(matrix)
+        except TypeError:
+            raise TypeError("matrix must be a 2x2 structure of Nodes or numeric scalars.") from None
+
+        if len(rows) != 2:
+            raise ValueError(f"matrix must have exactly 2 rows, got {len(rows)}.")
+
+        matrix_entries = []
+        for i, row in enumerate(rows):
+            try:
+                entries = tuple(row)
+            except TypeError:
+                raise TypeError(f"matrix row {i} must contain exactly 2 entries.") from None
+
+            if len(entries) != 2:
+                raise ValueError(f"matrix row {i} must contain exactly 2 entries, got {len(entries)}.")
+
+            for j, value in enumerate(entries):
+                if not isinstance(value, Node) and (
+                    isinstance(value, bool) or not isinstance(value, Number)
+                ):
+                    raise TypeError(
+                        f"matrix[{i}][{j}] must be a Node or numeric scalar, "
+                        f"got {type(value).__name__}."
+                    )
+                matrix_entries.append(value)
+
+        # Validate physical length.
+        if not isinstance(length, Node) and (
+            isinstance(length, bool) or not isinstance(length, Real)
+        ):
+            raise TypeError(
+                "element_length must be a Node or real numeric scalar, "
+                f"got {type(length).__name__}."
+            )
+
+        # Validate refractive index.
+        if refractive_index is not None and not isinstance(refractive_index, Node) and (
+            isinstance(refractive_index, bool) or not isinstance(refractive_index, Real)
+        ):
+            raise TypeError(
+                "element_refractive_index must be a Node, real numeric scalar, "
+                f"or None; got {type(refractive_index).__name__}."
+            )
+
+        # Validate every reachable symbolic dependency.
+        roots = [
+            v for v in (*matrix_entries, length, refractive_index)
+            if isinstance(v, Node)
+            and not (
+                v is refractive_index
+                and isinstance(v, InputNode)
+                and v.node is None
+            )
+        ]
+        tuple(walk_ast(roots))
 
 
     # -------

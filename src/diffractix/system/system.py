@@ -273,6 +273,23 @@ class System:
                     elif placement.z < 0:
                         errors.append(f"{location_str}: absolute position z cannot be negative, got {placement.z!r}.")
 
+            element = placement.element
+
+            if isinstance(element, CompositeElement):
+                for path, leaf in element.walk():
+                    try:
+                        leaf._validate_for_build()
+                    except Exception as exc:
+                        errors.append(
+                            f"{location_str}, child {path!r} "
+                            f"({type(leaf).__name__} '{leaf.label}'): {exc}"
+                        )
+            elif isinstance(element, OpticalElement):
+                try:
+                    element._validate_for_build()
+                except Exception as exc:
+                    errors.append(f"{location_str}: {exc}")
+
         # REQUIREMENTS
         # TODO: validate requirement objects once the requirement API is defined.
 

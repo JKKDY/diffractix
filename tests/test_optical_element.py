@@ -4,6 +4,11 @@ from dataclasses import dataclass
 
 from diffractix.elements.element import OpticalElement, parameter
 from diffractix.graph import Node, Parameter, InputNode
+from diffractix.graph.utils import (
+    ASTCycleError,
+    UnresolvedInputError,
+    UnsupportedNodeError,
+)
 
 
 @dataclass(kw_only=True)
@@ -40,6 +45,29 @@ class ExplicitParameterElement(OpticalElement):
     @property
     def element_length(self):
         return 0.0
+
+
+@dataclass(kw_only=True)
+class ValidationElement(OpticalElement):
+    matrix_value: object = ((1.0, 0.0), (0.0, 1.0))
+    length_value: object = 0.0
+    refractive_index_value: object | None = None
+
+    @property
+    def matrix(self):
+        return self.matrix_value
+
+    @property
+    def element_length(self):
+        return self.length_value
+
+    @property
+    def element_refractive_index(self):
+        return self.refractive_index_value
+
+
+class UnsupportedTestNode(Node):
+    pass
 
 
 # ---------------------
@@ -198,6 +226,108 @@ def test_optical_element_requires_element_length():
 
     with pytest.raises(TypeError):
         MissingLengthElement(x=1.0)
+
+
+# ----------------------
+# BUILD REPRESENTATION
+# ----------------------
+
+def test_builtin_element_graph_validation_defaults_to_enabled():
+    assert OpticalElement.validate_graph_inputs is True
+    assert DummyElement.validate_graph_inputs is True
+
+
+def test_graph_validation_can_be_disabled_per_subclass():
+    @dataclass(kw_only=True)
+    class UnvalidatedElement(ValidationElement, validate_graph_inputs=False):
+        pass
+
+    invalid = UnvalidatedElement(
+        matrix_value=((True,),),
+        length_value="invalid",
+        refractive_index_value=False,
+    )
+
+    assert not UnvalidatedElement.validate_graph_inputs
+    assert DummyElement.validate_graph_inputs
+    invalid._validate_for_build()
+
+
+@pytest.mark.parametrize(
+    ("matrix", "error", "message"),
+    (
+        (None, TypeError, "matrix must be a 2x2"),
+        (((1.0, 0.0),), ValueError, "exactly 2 rows"),
+        (((1.0, 0.0), (0.0, 1.0), (1.0, 1.0)), ValueError, "exactly 2 rows"),
+        (((1.0,), (0.0, 1.0)), ValueError, "matrix row 0"),
+        (((1.0, 0.0, 1.0), (0.0, 1.0, 1.0)), ValueError, "matrix row 0"),
+        ((1.0, (0.0, 1.0)), TypeError, "matrix row 0"),
+        (((True, 0.0), (0.0, 1.0)), TypeError, r"matrix\[0\]\[0\]"),
+        ((("bad", 0.0), (0.0, 1.0)), TypeError, r"matrix\[0\]\[0\]"),
+    ),
+)
+def test_build_validation_rejects_invalid_matrix_structure(matrix, error, message):
+    element = ValidationElement(matrix_value=matrix)
+
+    with pytest.raises(error, match=message):
+        element._validate_for_build()
+
+
+@pytest.mark.parametrize("length", (True, 1j, "0.1"))
+def test_build_validation_rejects_invalid_element_length(length):
+    element = ValidationElement(length_value=length)
+
+    with pytest.raises(TypeError, match="element_length"):
+        element._validate_for_build()
+
+
+@pytest.mark.parametrize("index", (True, 1j, "1.5"))
+def test_build_validation_rejects_invalid_refractive_index(index):
+    element = ValidationElement(refractive_index_value=index)
+
+    with pytest.raises(TypeError, match="element_refractive_index"):
+        element._validate_for_build()
+
+
+def test_build_validation_accepts_numeric_scalars_nodes_and_optional_index():
+    element = ValidationElement(
+        matrix_value=((1, Parameter(0.1)), (0.0, 1.0)),
+        length_value=Parameter(0.0),
+        refractive_index_value=None,
+    )
+
+    element._validate_for_build()
+
+
+def test_build_validation_rejects_empty_input_nodes():
+    element = ValidationElement(matrix_value=((InputNode(None), 0.0), (0.0, 1.0)))
+
+    with pytest.raises(UnresolvedInputError, match="empty InputNode"):
+        element._validate_for_build()
+
+
+def test_build_validation_allows_empty_optional_refractive_index_handle():
+    element = ValidationElement(refractive_index_value=InputNode(None))
+
+    element._validate_for_build()
+
+
+def test_build_validation_rejects_graph_cycles():
+    cyclic = InputNode(None)
+    cyclic.node = cyclic
+    element = ValidationElement(matrix_value=((cyclic, 0.0), (0.0, 1.0)))
+
+    with pytest.raises(ASTCycleError, match="Cycle detected"):
+        element._validate_for_build()
+
+
+def test_build_validation_rejects_unsupported_node_types():
+    element = ValidationElement(
+        matrix_value=((UnsupportedTestNode(), 0.0), (0.0, 1.0))
+    )
+
+    with pytest.raises(UnsupportedNodeError, match="Unsupported AST node type"):
+        element._validate_for_build()
 
 
 # -------
