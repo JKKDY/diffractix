@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import inspect
 import autograd.numpy as np
 from collections.abc import Iterable, Hashable
@@ -624,16 +625,17 @@ class System:
             parameter_graph,
             element_info,
         ) = compiled
-        
+
+        source = copy.deepcopy(self.beam)
         return Simulation(
-            source=self.beam,
+            source=source,
             graph=graph,
             steps=steps,
             parameter_info=parameter_info,
             location_map=location_map,
             requirements=requirements,
             compile_context=self.compile_context,
-            execution_context=self.beam.execution_context,
+            execution_context=source.execution_context,
             parameter_graph=parameter_graph,
             element_info=element_info,
         )

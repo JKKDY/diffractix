@@ -6,7 +6,7 @@ import autograd.numpy as np
 import numpy as numpy
 import pytest
 
-from diffractix.graph import Parameter
+from diffractix.graph import Parameter, Symbol
 from diffractix.simulation import Simulation
 from diffractix.solver import (
     Backend,
@@ -264,6 +264,23 @@ def test_solution_value_of_and_getitem_use_solved_snapshot():
     assert solution.value_of(parameter) == pytest.approx(5.0)
     assert solution[parameter] == pytest.approx(5.0)
     assert solution[expression] == pytest.approx(17.0)
+
+
+def test_solution_value_of_resolves_runtime_symbol_from_execution_context():
+    parameter = Parameter(2.0, name="p").variable()
+    simulation = make_simulation((parameter,))
+    key = ("result", "beam_width")
+    simulation.execution_context = {key: 2.5}
+    solution = make_solution(x=(5.0,), simulation=simulation)
+
+    assert solution.value_of(parameter + Symbol(key)) == pytest.approx(7.5)
+
+
+def test_solution_value_of_reports_missing_runtime_symbol_binding():
+    solution = make_solution()
+
+    with pytest.raises(KeyError, match="Missing runtime binding.*missing_result"):
+        solution.value_of(Symbol("missing_result"))
 
 
 def test_solution_run_uses_solved_theta():

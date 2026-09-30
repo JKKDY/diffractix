@@ -54,8 +54,10 @@ def test_simulation_supports_empty_optical_path():
 
     assert simulation.steps == ()
     assert len(result.states) == 1
-    assert result.initial is beam
-    assert result.final is beam
+    assert result.initial is simulation.source
+    assert result.initial is not beam
+    assert result.initial == beam
+    assert result.final is result.initial
     assert np.allclose(result.z, np.array([0.0]))
 
 
@@ -83,10 +85,13 @@ def test_simulation_propagates_single_space():
     system.add_input_beam(beam)
     system.add(space)
 
-    result = system.build().run()
+    simulation = system.build()
+    result = simulation.run()
 
     assert len(result.states) == 2
-    assert result.initial is beam
+    assert result.initial is simulation.source
+    assert result.initial is not beam
+    assert result.initial == beam
     assert result.z[-1] == pytest.approx(0.2)
     assert result.final.q == pytest.approx(beam.q + 0.2)
 
@@ -906,17 +911,64 @@ def test_run_does_not_mutate_source_beam():
     assert beam.n == original_n
 
 
-def test_result_initial_is_original_source_object():
+def test_simulation_owns_an_equivalent_source_snapshot():
     beam = create_beam()
 
     system = System()
     system.add_input_beam(beam)
     system.add(Space(d=0.5))
 
-    result = system.build().run()
+    simulation = system.build()
+    result = simulation.run()
 
-    assert result.initial is beam
-    assert result.source is beam
+    assert simulation.source is not beam
+    assert result.initial is simulation.source
+    assert result.source is simulation.source
+    assert simulation.source.q == beam.q
+    assert simulation.source.wavelength == beam.wavelength
+    assert simulation.source.n == beam.n
+
+
+def test_original_beam_mutation_does_not_change_simulation_or_existing_results():
+    beam = create_beam()
+    system = System()
+    system.add_input_beam(beam)
+    system.add(Space(d=0.1))
+    system.add(GaussianAperture(a=2e-3))
+
+    simulation = system.build()
+    source_snapshot = simulation.source
+    execution_context_snapshot = dict(simulation.execution_context)
+    original_result = simulation.run()
+    original_values = (
+        original_result.initial.q,
+        original_result.initial.wavelength,
+        original_result.initial.n,
+        original_result.final.q,
+        original_result.final.w,
+    )
+
+    beam.q = 0.02 + 0.03j
+    beam.wavelength = 532e-9
+    beam.n = 1.7
+
+    later_result = simulation.run()
+    later_values = (
+        later_result.initial.q,
+        later_result.initial.wavelength,
+        later_result.initial.n,
+        later_result.final.q,
+        later_result.final.w,
+    )
+
+    assert simulation.source is source_snapshot
+    assert simulation.source is not beam
+    assert simulation.execution_context == execution_context_snapshot
+    assert simulation.execution_context == simulation.source.execution_context
+    assert later_values == pytest.approx(original_values)
+    assert original_result.initial.q == source_snapshot.q
+    assert original_result.initial.wavelength == source_snapshot.wavelength
+    assert original_result.initial.n == source_snapshot.n
 
 
 # -----------------
