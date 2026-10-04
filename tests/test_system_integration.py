@@ -553,7 +553,8 @@ def test_builtin_element_requirements_compile_for_solver():
     system.add_input_beam(create_beam())
     system.add(elements)
 
-    constraints = Solver(system)._compile_constraints()
+    simulation = system.build()
+    constraints = Solver(simulation)._compile_constraints(simulation.requirements)
     context = SimpleNamespace(theta=np.array([]))
 
     assert [constraint.lower_bound for constraint in constraints] == [
@@ -603,7 +604,7 @@ def test_interface_refractive_index_requirement_restricts_optimization():
     simulation = system.build()
 
     assert len(simulation.requirements) == 4
-    constraints = Solver(simulation)._compile_constraints()
+    constraints = Solver(simulation)._compile_constraints(simulation.requirements)
     context = SimpleNamespace(theta=np.array([1.0, 1.0, -1.0]))
     assert constraints[2].evaluate(context) == pytest.approx(-1.0)
     assert constraints[2].lower_bound > 0.0

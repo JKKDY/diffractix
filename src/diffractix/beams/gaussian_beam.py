@@ -74,7 +74,7 @@ class GaussianBeam(ParaxialState):
         """
         # q = (z - z_waist) + i*z_r
         # Real(q) = z - z_waist. If we define current z=0, then Real(q) = -z_waist.
-        return -self.q.real
+        return -np.real(self.q)
 
     @property
     def w0(self) -> float:

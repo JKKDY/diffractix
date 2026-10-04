@@ -19,7 +19,13 @@ from ..simulation import Simulation
 from ..system import System
 from .solution import DEFAULT_FEASIBILITY_TOLERANCE, Solution
 from .objective import Objective, normalize_to_objective
-from .constraint import Constraint, normalize_to_constraint
+from .constraint import (
+    Constraint, 
+    normalize_to_constraint, 
+    remove_bound_redundant_constraints,
+    remove_affine_redundant_constraints,
+    remove_nonlinear_redundant_constraints
+)
 from .problem import Problem
 from .backends import solve_ipopt, solve_nlopt, solve_scipy
 from .context import (
@@ -52,6 +58,7 @@ class Solver:
         self.objectives = []
         self.constraints = []
 
+
     def target(self, *objectives):
         """Add soft optimization objectives."""
         self.objectives.extend(map(normalize_to_objective, objectives))
@@ -61,6 +68,7 @@ class Solver:
         """Add hard optimization constraints."""
         self.constraints.extend(map(normalize_to_constraint, constraints))
         return self
+
 
     @staticmethod
     def _validate_finite_value(value, description):
@@ -189,12 +197,10 @@ class Solver:
         return tuple(compiled_objectives)
 
 
-    def _compile_constraints(self):
+    def _compile_constraints(self, constraints):
         compiled_constraints = []
 
-        requirements = self.simulation.requirements
-
-        for constraint in (*requirements, *self.constraints):
+        for constraint in constraints:
             func = constraint.evaluate
             evaluate = self._compile_node(func) if isinstance(func, Node) else self._compile_callable(func)
 
@@ -208,6 +214,7 @@ class Solver:
             )
 
         return tuple(compiled_constraints)
+
 
     def _constraint_bounds(self, constraints):
         context = SolverContext(self.simulation.initial_values, self.simulation.run)
@@ -262,7 +269,9 @@ class Solver:
 
         options = {} if options is None else dict(options)
 
-        constraints = self._compile_constraints()
+        parameter_lower, parameter_upper = self._parameter_bounds()
+
+        constraints = (*self.simulation.requirements, *self.constraints)
         objectives = self._compile_objectives()
 
         if not objectives and not constraints:
@@ -273,12 +282,39 @@ class Solver:
         if len(self.simulation.initial_values) == 0:
             raise ValueError("Optimization problem must have at least one variable parameter.")
 
-        parameter_lower, parameter_upper = self._parameter_bounds()
+        all_constraints = self._compile_constraints(constraints)
+
+        constraints = remove_bound_redundant_constraints(
+            constraints,
+            parameter_info=self.simulation.parameter_info,
+            parameter_lower=parameter_lower,
+            parameter_upper=parameter_upper,
+        )
+
+        constraints = remove_affine_redundant_constraints(
+            constraints,
+            parameter_info=self.simulation.parameter_info,
+            parameter_lower=parameter_lower,
+            parameter_upper=parameter_upper,
+        )
+
+        constraints = self._compile_constraints(constraints)
+
+        constraints = remove_nonlinear_redundant_constraints(
+            constraints,
+            x0=self.simulation.initial_values,
+            parameter_lower=parameter_lower,
+            parameter_upper=parameter_upper,
+            run=self.simulation.run,
+        )
+
         constraint_lower, constraint_upper = self._constraint_bounds(constraints)
+
         initial_context = SolverContext(
             self.simulation.initial_values,
             self.simulation.run,
         )
+
         constraint_shapes = tuple(
             np.shape(constraint.evaluate(initial_context))
             for constraint in constraints
@@ -344,6 +380,6 @@ class Solver:
             problem,
             self.simulation,
             objectives,
-            constraints,
+            all_constraints,
             feasibility_tolerance,
         )

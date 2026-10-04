@@ -603,7 +603,7 @@ def test_solver_validates_feasibility_tolerance_before_compilation(
     system, _, distance = distance_system()
     solver = Solver(system)
     solver.target(distance - 0.2)
-    solver._compile_constraints = lambda: pytest.fail(
+    solver._compile_constraints = lambda constraints: pytest.fail(
         "feasibility tolerance validation must precede problem compilation"
     )
 

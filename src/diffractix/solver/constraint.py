@@ -169,3 +169,16 @@ def normalize_to_constraint(value) -> Constraint:
     if not isinstance(result, Node):
         raise TypeError("A zero-argument Constraint callable must return a Node.")
     return Constraint(result, value.lower_bound, value.upper_bound, value.label)
+
+
+
+def remove_bound_redundant_constraints(constraints, *, parameter_info, parameter_lower, parameter_upper):
+    return tuple(constraints)
+
+
+def remove_affine_redundant_constraints(constraints, *, parameter_info, parameter_lower, parameter_upper):
+    return tuple(constraints)
+
+
+def remove_nonlinear_redundant_constraints(constraints, *, x0, parameter_lower, parameter_upper, run):
+    return tuple(constraints)

@@ -582,7 +582,7 @@ def test_compile_direct_node_constraint():
         ),
     )
 
-    constraint, = solver._compile_constraints()
+    constraint, = solver._compile_constraints(solver.constraints)
 
     assert constraint.lower_bound == 1.0
     assert constraint.upper_bound == 5.0
@@ -598,7 +598,7 @@ def test_compile_traced_runtime_constraint():
         ),
     ]
 
-    constraint, = solver._compile_constraints()
+    constraint, = solver._compile_constraints(solver.constraints)
 
     assert constraint.evaluate(context(solver, [3.0])) == -5.0
     assert constraint.lower_bound == 0.0
@@ -615,7 +615,7 @@ def test_compile_multiple_constraints_preserves_order_and_bounds():
         ),
     )
 
-    direct, traced = solver._compile_constraints()
+    direct, traced = solver._compile_constraints(solver.constraints)
     runtime_context = context(solver, [3.0])
 
     assert (direct.lower_bound, direct.upper_bound, direct.label) == (1.0, 5.0, "direct")
@@ -640,7 +640,7 @@ def test_compile_dynamic_constraint():
         ),
     ]
 
-    compiled, = solver._compile_constraints()
+    compiled, = solver._compile_constraints(solver.constraints)
 
     assert compiled.evaluate(context(solver, [1.0])) == 0.0
     assert compiled.evaluate(context(solver, [4.0])) == 8.0
@@ -700,7 +700,7 @@ def test_tracing_does_not_run_simulation():
     ]
 
     solver._compile_objectives()
-    solver._compile_constraints()
+    solver._compile_constraints(solver.constraints)
 
     assert calls == 0
 
@@ -887,7 +887,7 @@ def test_empty_objective_and_constraint_collections_compile_to_empty_tuples():
     solver, _, _ = make_solver()
 
     assert solver._compile_objectives() == ()
-    assert solver._compile_constraints() == ()
+    assert solver._compile_constraints(()) == ()
 
 
 def test_multiple_objectives_compile_and_evaluate_in_order():
@@ -928,7 +928,7 @@ def test_multiple_constraints_compile_and_evaluate_in_order():
         Constraint(dynamic, lower_bound=-2.0, upper_bound=8.0, label="dynamic"),
     )
 
-    constraints = solver._compile_constraints()
+    constraints = solver._compile_constraints(solver.constraints)
     runtime_context = context(solver, [4.0])
 
     assert [constraint.evaluate(runtime_context) for constraint in constraints] == [4.0, -6.0, 8.0]
@@ -955,7 +955,7 @@ def test_public_normalization_composes_static_and_runtime_expressions():
     )
 
     objectives = solver._compile_objectives()
-    constraints = solver._compile_constraints()
+    constraints = solver._compile_constraints(solver.constraints)
     runtime_context = context(solver, [3.0])
 
     assert [objective.evaluate(runtime_context) for objective in objectives] == [0.0, 0.0, 22.0]
