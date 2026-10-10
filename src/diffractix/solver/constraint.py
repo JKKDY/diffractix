@@ -551,5 +551,34 @@ def remove_affine_redundant_constraints(constraints, *, parameter_info, paramete
     )
 
 
-def remove_nonlinear_redundant_constraints(constraints, *, x0, parameter_lower, parameter_upper, run):
-    return tuple(constraints)
+def remove_duplicate_constraints(constraints):
+    retained = []
+
+    for constraint in constraints:
+        if (
+            constraint.lower_bound == -np.inf
+            and constraint.upper_bound == np.inf
+        ):
+            continue
+
+        if any(
+            other.evaluate is constraint.evaluate
+            and other.lower_bound >= constraint.lower_bound
+            and other.upper_bound <= constraint.upper_bound
+            for other in retained
+        ):
+            continue
+
+        retained = [
+            other
+            for other in retained
+            if not (
+                other.evaluate is constraint.evaluate
+                and constraint.lower_bound >= other.lower_bound
+                and constraint.upper_bound <= other.upper_bound
+            )
+        ]
+
+        retained.append(constraint)
+
+    return tuple(retained)

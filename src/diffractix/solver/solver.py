@@ -24,7 +24,7 @@ from .constraint import (
     normalize_to_constraint, 
     remove_bound_redundant_constraints,
     remove_affine_redundant_constraints,
-    remove_nonlinear_redundant_constraints
+    remove_duplicate_constraints
 )
 from .problem import Problem
 from .backends import solve_ipopt, solve_nlopt, solve_scipy
@@ -299,14 +299,7 @@ class Solver:
         )
 
         constraints = self._compile_constraints(constraints)
-
-        constraints = remove_nonlinear_redundant_constraints(
-            constraints,
-            x0=self.simulation.initial_values,
-            parameter_lower=parameter_lower,
-            parameter_upper=parameter_upper,
-            run=self.simulation.run,
-        )
+        constraints = remove_duplicate_constraints(constraints)
 
         constraint_lower, constraint_upper = self._constraint_bounds(constraints)
 
