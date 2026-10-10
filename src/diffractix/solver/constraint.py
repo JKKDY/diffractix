@@ -10,7 +10,14 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 import autograd.numpy as np
 
-from diffractix.graph import Comparison, Literal, Node, Relation
+from diffractix.graph import (
+    Comparison,
+    InputNode,
+    Literal,
+    Node,
+    Parameter,
+    Relation,
+)
 
 from .utils import callable_arity
 
@@ -172,8 +179,82 @@ def normalize_to_constraint(value) -> Constraint:
 
 
 
+
+def _direct_parameter(node):
+    """Resolve InputNode indirection to a direct Parameter."""
+    seen = set()
+
+    while isinstance(node, InputNode):
+        if id(node) in seen or node.node is None:
+            return None
+
+        seen.add(id(node))
+        node = node.node
+
+    return node if isinstance(node, Parameter) else None
+
+
+
 def remove_bound_redundant_constraints(constraints, *, parameter_info, parameter_lower, parameter_upper):
-    return tuple(constraints)
+    """Remove constraints implied by the canonical parameter bounds."""
+    if len(parameter_lower) != len(parameter_upper):
+        raise ValueError("Parameter bounds must have matching lengths.")
+
+    reduced = []
+
+    for constraint in constraints:
+        parameter = _direct_parameter(constraint.evaluate)
+
+        if parameter is None:
+            reduced.append(constraint)
+            continue
+
+        info = parameter_info.get(id(parameter))
+
+        if info is None:
+            reduced.append(constraint)
+            continue
+
+        if info.parameter_index is None:
+            domain_lower = domain_upper = info.value
+        else:
+            index = info.parameter_index
+
+            if not 0 <= index < len(parameter_lower):
+                raise ValueError("Invalid parameter index.")
+
+            domain_lower = parameter_lower[index]
+            domain_upper = parameter_upper[index]
+
+        lower_redundant = domain_lower >= constraint.lower_bound
+        upper_redundant = domain_upper <= constraint.upper_bound
+
+        # Entire constraint is implied by the parameter domain.
+        if lower_redundant and upper_redundant:
+            continue
+
+        # Preserve equality constraints unless fully redundant.
+        if constraint.lower_bound == constraint.upper_bound:
+            reduced.append(constraint)
+            continue
+
+        lower = -np.inf if lower_redundant else constraint.lower_bound
+        upper = np.inf if upper_redundant else constraint.upper_bound
+
+        if lower == constraint.lower_bound and upper == constraint.upper_bound:
+            reduced.append(constraint)
+            continue
+
+        reduced.append(
+            Constraint(
+                evaluate=constraint.evaluate,
+                lower_bound=lower,
+                upper_bound=upper,
+                label=constraint.label,
+            )
+        )
+
+    return tuple(reduced)
 
 
 def remove_affine_redundant_constraints(constraints, *, parameter_info, parameter_lower, parameter_upper):
