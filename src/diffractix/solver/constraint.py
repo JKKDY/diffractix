@@ -5,6 +5,9 @@ import inspect
 import textwrap
 import math
 
+from fractions import Fraction
+
+from scipy.optimize import linprog
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -18,6 +21,9 @@ from diffractix.graph import (
     Parameter,
     Relation,
 )
+
+from diffractix.graph.node import BinaryOp, UnaryOp
+from diffractix.graph.ops import Op
 
 from .utils import callable_arity
 
@@ -257,8 +263,292 @@ def remove_bound_redundant_constraints(constraints, *, parameter_info, parameter
     return tuple(reduced)
 
 
+
+def _affine_form(node, parameter_info, n):
+    """Return (a, b) for an affine expression, or None."""
+    visiting = set()
+    memo = {}
+
+    def form(a, b):
+        try:
+            a = np.asarray(a, dtype=float)
+            b = float(b)
+        except (TypeError, ValueError, OverflowError):
+            return None
+
+        if (
+            a.shape != (n,)
+            or not np.all(np.isfinite(a))
+            or not math.isfinite(b)
+        ):
+            return None
+
+        return a, b
+
+    def visit(node):
+        key = id(node)
+
+        if key in memo:
+            return memo[key]
+
+        if key in visiting:
+            return None
+
+        visiting.add(key)
+        result = None
+
+        try:
+            if isinstance(node, InputNode):
+                if node.node is not None:
+                    result = visit(node.node)
+
+            elif isinstance(node, Literal):
+                result = form(np.zeros(n), node.value)
+
+            elif isinstance(node, Parameter):
+                info = parameter_info.get(id(node))
+
+                if info is not None:
+                    if info.parameter_index is None:
+                        result = form(np.zeros(n), info.value)
+                    else:
+                        index = info.parameter_index
+
+                        if not 0 <= index < n:
+                            raise ValueError(
+                                "Invalid canonical parameter index."
+                            )
+
+                        a = np.zeros(n)
+                        a[index] = 1.0
+                        result = (a, 0.0)
+
+            elif isinstance(node, UnaryOp):
+                operand = visit(node.operand)
+
+                if operand is not None:
+                    a, b = operand
+
+                    if node.op is Op.NEG:
+                        result = form(-a, -b)
+                    elif node.op is Op.POS:
+                        result = operand
+                    elif not np.any(a):
+                        try:
+                            result = form(
+                                np.zeros(n),
+                                node.op.func(b),
+                            )
+                        except (ArithmeticError, TypeError, ValueError):
+                            pass
+
+            elif isinstance(node, BinaryOp):
+                left = visit(node.left)
+                right = visit(node.right)
+
+                if left is not None and right is not None:
+                    a, b = left
+                    c, d = right
+
+                    if node.op is Op.ADD:
+                        result = form(a + c, b + d)
+
+                    elif node.op is Op.SUB:
+                        result = form(a - c, b - d)
+
+                    elif node.op is Op.MUL:
+                        if not np.any(a):
+                            result = form(b * c, b * d)
+                        elif not np.any(c):
+                            result = form(d * a, d * b)
+
+                    elif (
+                        node.op is Op.DIV
+                        and not np.any(c)
+                        and d != 0
+                    ):
+                        result = form(a / d, b / d)
+
+                    elif (
+                        node.op is Op.POW
+                        and not np.any(c)
+                        and d == 1
+                    ):
+                        result = left
+
+                    elif not np.any(a) and not np.any(c):
+                        try:
+                            result = form(
+                                np.zeros(n),
+                                node.op.func(b, d),
+                            )
+                        except (ArithmeticError, TypeError, ValueError):
+                            pass
+
+        finally:
+            visiting.remove(key)
+
+        memo[key] = result
+        return result
+
+    return visit(node) if isinstance(node, Node) else None
+
+
 def remove_affine_redundant_constraints(constraints, *, parameter_info, parameter_lower, parameter_upper):
-    return tuple(constraints)
+    """Remove affine constraints implied by other affine constraints and bounds."""
+    lower = np.asarray(parameter_lower, dtype=float)
+    upper = np.asarray(parameter_upper, dtype=float)
+
+    if (
+        lower.ndim != 1
+        or lower.shape != upper.shape
+        or np.any(lower > upper)
+    ):
+        raise ValueError("Invalid canonical parameter bounds.")
+
+    retained = list(constraints)
+    forms = [
+        _affine_form(c.evaluate, parameter_info, len(lower))
+        for c in retained
+    ]
+
+    bounds = list(zip(lower, upper))
+
+    def implied(index, side):
+        constraint = retained[index]
+        a, b = forms[index]
+
+        bound = (
+            constraint.lower_bound
+            if side == "lower"
+            else constraint.upper_bound
+        )
+
+        if not np.isfinite(bound):
+            return bound == (
+                -np.inf if side == "lower" else np.inf
+            )
+
+        # Express the candidate as row @ theta <= rhs.
+        row = -a if side == "lower" else a
+        rhs = b - bound if side == "lower" else bound - b
+
+        if not np.isfinite(rhs):
+            return False
+
+        # Constant constraint.
+        if not np.any(row):
+            return rhs >= 0
+
+        rows = []
+        limits = []
+
+        for j, (other, affine) in enumerate(
+            zip(retained, forms)
+        ):
+            if other is None or affine is None:
+                continue
+
+            other_a, other_b = affine
+            equality = other.lower_bound == other.upper_bound
+
+            # Exclude the candidate side itself.
+            # For equalities, exclude both sides.
+            if j == index and equality:
+                continue
+
+            if (
+                other.lower_bound > -np.inf
+                and (j != index or side == "upper")
+            ):
+                rows.append(-other_a)
+                limits.append(
+                    other_b - other.lower_bound
+                )
+
+            if (
+                other.upper_bound < np.inf
+                and (j != index or side == "lower")
+            ):
+                rows.append(other_a)
+                limits.append(
+                    other.upper_bound - other_b
+                )
+
+        # Exact matching inequalities: avoid LP tolerance issues.
+        for other_row, other_rhs in zip(rows, limits):
+            if (
+                np.array_equal(other_row, row)
+                and other_rhs <= rhs
+            ):
+                return True
+
+        # Maximize row @ theta over the remaining feasible region.
+        result = linprog(
+            c=-row,
+            A_ub=np.asarray(rows) if rows else None,
+            b_ub=np.asarray(limits) if limits else None,
+            bounds=bounds,
+            method="highs",
+        )
+
+        # Unbounded, infeasible, or unsuccessful: preserve constraint.
+        if not result.success or not np.isfinite(result.fun):
+            return False
+
+        maximum = -result.fun
+
+        # LP solutions are approximate. Require clear numerical slack.
+        safety = 1e-7 * max(
+            1.0,
+            abs(rhs),
+            abs(maximum),
+        )
+
+        return maximum <= rhs - safety
+
+    for i, constraint in enumerate(retained):
+        if forms[i] is None:
+            continue
+
+        # Keep equality constraints intact unless fully redundant.
+        if constraint.lower_bound == constraint.upper_bound:
+            if implied(i, "lower") and implied(i, "upper"):
+                retained[i] = None
+            continue
+
+        lower_redundant = implied(i, "lower")
+
+        if lower_redundant:
+            retained[i] = Constraint(
+                evaluate=constraint.evaluate,
+                lower_bound=-np.inf,
+                upper_bound=constraint.upper_bound,
+                label=constraint.label,
+            )
+
+        # Test the upper side against the now-retained lower side.
+        upper_redundant = implied(i, "upper")
+
+        if upper_redundant:
+            retained[i] = Constraint(
+                evaluate=constraint.evaluate,
+                lower_bound=retained[i].lower_bound,
+                upper_bound=np.inf,
+                label=constraint.label,
+            )
+
+        if (
+            retained[i].lower_bound == -np.inf
+            and retained[i].upper_bound == np.inf
+        ):
+            retained[i] = None
+
+    return tuple(
+        constraint
+        for constraint in retained
+        if constraint is not None
+    )
 
 
 def remove_nonlinear_redundant_constraints(constraints, *, x0, parameter_lower, parameter_upper, run):
