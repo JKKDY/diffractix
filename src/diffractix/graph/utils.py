@@ -18,6 +18,7 @@ from .node import (
     _validate_parameter_bounds,
 )
 from .ops import Op
+from .relations import Comparison
 
 
 
@@ -338,3 +339,78 @@ def clone_ast(roots: Sequence[Node], *, preserve_owners: bool = True) -> tuple[N
 
 
 
+def _literal_key(value):
+    if isinstance(value, float):
+        return float, value.hex()
+
+    if isinstance(value, complex):
+        return complex, value.real.hex(), value.imag.hex()
+
+    return type(value), value
+
+
+def ast_equal(left: Node | Comparison, right: Node | Comparison) -> bool:
+    """Compare AST structure without invoking symbolic comparisons."""
+    memo = {}
+    active = set()
+
+    def equal(a, b):
+        pair = (id(a), id(b))
+
+        if pair in active:
+            raise ASTCycleError("Cycle detected during AST comparison.")
+
+        if pair in memo:
+            return memo[pair]
+
+        active.add(pair)
+
+        try:
+            if isinstance(a, InputNode):
+                result = a.node is not None and equal(a.node, b)
+
+            elif isinstance(b, InputNode):
+                result = b.node is not None and equal(a, b.node)
+
+            elif type(a) is not type(b):
+                result = False
+
+            elif isinstance(a, Parameter):
+                result = a is b
+
+            elif isinstance(a, Literal):
+                result = _literal_key(a.value) == _literal_key(b.value)
+
+            elif isinstance(a, Symbol):
+                result = a.key == b.key
+
+            elif isinstance(a, UnaryOp):
+                result = (
+                    a.op is b.op
+                    and equal(a.operand, b.operand)
+                )
+
+            elif isinstance(a, BinaryOp):
+                result = (
+                    a.op is b.op
+                    and equal(a.left, b.left)
+                    and equal(a.right, b.right)
+                )
+
+            elif isinstance(a, Comparison):
+                result = (
+                    a.relation is b.relation
+                    and equal(a.left, b.left)
+                    and equal(a.right, b.right)
+                )
+
+            else:
+                result = a is b
+
+        finally:
+            active.remove(pair)
+
+        memo[pair] = result
+        return result
+
+    return equal(left, right)

@@ -24,6 +24,7 @@ from diffractix.graph import (
 
 from diffractix.graph.node import BinaryOp, UnaryOp
 from diffractix.graph.ops import Op
+from diffractix.graph.utils import ast_equal
 
 from .utils import callable_arity
 
@@ -264,291 +265,271 @@ def remove_bound_redundant_constraints(constraints, *, parameter_info, parameter
 
 
 
+def _rational(value):
+    """Exact rational representation of a finite numeric scalar, or None."""
+    try:
+        return Fraction(value)
+    except (TypeError, ValueError, OverflowError, ZeroDivisionError):
+        return None
+
+
 def _affine_form(node, parameter_info, n):
-    """Return (a, b) for an affine expression, or None."""
-    visiting = set()
-    memo = {}
+    """Return (coefficients, offset) as Fractions, or None if not provably affine."""
+    zero = (Fraction(0),) * n
+    visiting, memo = set(), {}
 
-    def form(a, b):
-        try:
-            a = np.asarray(a, dtype=float)
-            b = float(b)
-        except (TypeError, ValueError, OverflowError):
-            return None
-
-        if (
-            a.shape != (n,)
-            or not np.all(np.isfinite(a))
-            or not math.isfinite(b)
-        ):
-            return None
-
-        return a, b
-
-    def visit(node):
-        key = id(node)
-
+    def visit(current):
+        key = id(current)
         if key in memo:
             return memo[key]
-
         if key in visiting:
             return None
 
         visiting.add(key)
         result = None
-
         try:
-            if isinstance(node, InputNode):
-                if node.node is not None:
-                    result = visit(node.node)
+            if isinstance(current, InputNode):
+                if current.node is not None:
+                    result = visit(current.node)
 
-            elif isinstance(node, Literal):
-                result = form(np.zeros(n), node.value)
+            elif isinstance(current, Literal):
+                if (value := _rational(current.value)) is not None:
+                    result = (zero, value)
 
-            elif isinstance(node, Parameter):
-                info = parameter_info.get(id(node))
-
+            elif isinstance(current, Parameter):
+                info = parameter_info.get(id(current))
                 if info is not None:
-                    if info.parameter_index is None:
-                        result = form(np.zeros(n), info.value)
-                    else:
+                    if info.parameter_index is None and (value := _rational(info.value)) is not None:
+                        result = (zero, value)
+                    elif info.parameter_index is not None:
                         index = info.parameter_index
-
                         if not 0 <= index < n:
-                            raise ValueError(
-                                "Invalid canonical parameter index."
-                            )
+                            raise ValueError('Invalid canonical parameter index.')
+                        coefficients = list(zero)
+                        coefficients[index] = Fraction(1)
+                        result = (tuple(coefficients), Fraction(0))
 
-                        a = np.zeros(n)
-                        a[index] = 1.0
-                        result = (a, 0.0)
-
-            elif isinstance(node, UnaryOp):
-                operand = visit(node.operand)
-
-                if operand is not None:
+            elif isinstance(current, UnaryOp):
+                if (operand := visit(current.operand)) is not None:
                     a, b = operand
-
-                    if node.op is Op.NEG:
-                        result = form(-a, -b)
-                    elif node.op is Op.POS:
+                    if current.op is Op.POS:
                         result = operand
-                    elif not np.any(a):
-                        try:
-                            result = form(
-                                np.zeros(n),
-                                node.op.func(b),
-                            )
-                        except (ArithmeticError, TypeError, ValueError):
-                            pass
+                    elif current.op is Op.NEG:
+                        result = (tuple(-v for v in a), -b)
+                    elif current.op is Op.ABS and a == zero:
+                        result = (zero, abs(b))
 
-            elif isinstance(node, BinaryOp):
-                left = visit(node.left)
-                right = visit(node.right)
-
+            elif isinstance(current, BinaryOp):
+                left, right = visit(current.left), visit(current.right)
                 if left is not None and right is not None:
                     a, b = left
                     c, d = right
-
-                    if node.op is Op.ADD:
-                        result = form(a + c, b + d)
-
-                    elif node.op is Op.SUB:
-                        result = form(a - c, b - d)
-
-                    elif node.op is Op.MUL:
-                        if not np.any(a):
-                            result = form(b * c, b * d)
-                        elif not np.any(c):
-                            result = form(d * a, d * b)
-
-                    elif (
-                        node.op is Op.DIV
-                        and not np.any(c)
-                        and d != 0
-                    ):
-                        result = form(a / d, b / d)
-
-                    elif (
-                        node.op is Op.POW
-                        and not np.any(c)
-                        and d == 1
-                    ):
-                        result = left
-
-                    elif not np.any(a) and not np.any(c):
-                        try:
-                            result = form(
-                                np.zeros(n),
-                                node.op.func(b, d),
-                            )
-                        except (ArithmeticError, TypeError, ValueError):
-                            pass
-
+                    if current.op is Op.ADD:
+                        result = (tuple(x + y for x, y in zip(a, c)), b + d)
+                    elif current.op is Op.SUB:
+                        result = (tuple(x - y for x, y in zip(a, c)), b - d)
+                    elif current.op is Op.MUL:
+                        if a == zero:
+                            result = (tuple(b * x for x in c), b * d)
+                        elif c == zero:
+                            result = (tuple(d * x for x in a), d * b)
+                    elif current.op is Op.DIV and c == zero and d != 0:
+                        result = (tuple(x / d for x in a), b / d)
+                    elif current.op is Op.POW and c == zero:
+                        if d == 0:
+                            result = (zero, Fraction(1))
+                        elif d == 1:
+                            result = left
+                    elif current.op is Op.MAX and a == c == zero:
+                        result = (zero, max(b, d))
+                    elif current.op is Op.MIN and a == c == zero:
+                        result = (zero, min(b, d))
         finally:
             visiting.remove(key)
-
         memo[key] = result
         return result
 
     return visit(node) if isinstance(node, Node) else None
 
 
-def remove_affine_redundant_constraints(constraints, *, parameter_info, parameter_lower, parameter_upper):
-    """Remove affine constraints implied by other affine constraints and bounds."""
-    lower = np.asarray(parameter_lower, dtype=float)
-    upper = np.asarray(parameter_upper, dtype=float)
+def _affine_inequalities(constraints, forms, exclude_index, exclude_side, lower, upper):
+    """Build exact inequalities A @ x <= b from retained constraints and box."""
+    rows = []
+    for i, (constraint, form) in enumerate(zip(constraints, forms)):
+        if constraint is None or form is None:
+            continue
+        a, offset = form
+        if i == exclude_index and constraint.lower_bound == constraint.upper_bound:
+            continue
+        if i != exclude_index or exclude_side != 'upper':
+            if (bound := _rational(constraint.upper_bound)) is not None:
+                rows.append((a, bound - offset))
+        if i != exclude_index or exclude_side != 'lower':
+            if (bound := _rational(constraint.lower_bound)) is not None:
+                rows.append((tuple(-v for v in a), offset - bound))
 
-    if (
-        lower.ndim != 1
-        or lower.shape != upper.shape
-        or np.any(lower > upper)
-    ):
-        raise ValueError("Invalid canonical parameter bounds.")
+    for j, (lo, hi) in enumerate(zip(lower, upper)):
+        if (hi := _rational(hi)) is not None:
+            row = [Fraction(0)] * len(lower)
+            row[j] = Fraction(1)
+            rows.append((tuple(row), hi))
+        if (lo := _rational(lo)) is not None:
+            row = [Fraction(0)] * len(lower)
+            row[j] = Fraction(-1)
+            rows.append((tuple(row), -lo))
+    return rows
+
+
+def _box_implies(row, rhs, lower, upper):
+    """Prove row @ x <= rhs from parameter bounds alone."""
+    maximum = Fraction(0)
+    for coefficient, lo, hi in zip(row, lower, upper):
+        if coefficient == 0:
+            continue
+        endpoint = hi if coefficient > 0 else lo
+        if (value := _rational(endpoint)) is None:
+            return False
+        maximum += coefficient * value
+    return maximum <= rhs
+
+
+def _recover_exact_weights(rows, target, approximate):
+    """Solve A.T @ weights = target exactly on the LP's active support."""
+    if not (active := [i for i, value in enumerate(approximate) if value > 0]):
+        return None
+    matrix = [
+        [rows[i][0][j] for i in active] + [target[j]]
+        for j in range(len(target))
+    ]
+    pivot_columns, pivot_row = [], 0
+    for col in range(len(active)):
+        row = next((r for r in range(pivot_row, len(matrix)) if matrix[r][col]), None)
+        if row is None:
+            continue
+        matrix[pivot_row], matrix[row] = matrix[row], matrix[pivot_row]
+        pivot = matrix[pivot_row][col]
+        matrix[pivot_row] = [v / pivot for v in matrix[pivot_row]]
+        for r in range(len(matrix)):
+            if r != pivot_row and (multiplier := matrix[r][col]):
+                matrix[r] = [x - multiplier * y for x, y in zip(matrix[r], matrix[pivot_row])]
+        pivot_columns.append(col)
+        pivot_row += 1
+        if pivot_row == len(matrix):
+            break
+    if any(all(v == 0 for v in row[:-1]) and row[-1] != 0 for row in matrix):
+        return None
+
+    # Take free variables as zero; solve pivot multipliers exactly.
+    free_columns = [j for j in range(len(active)) if j not in pivot_columns]
+    weights = [Fraction(0)] * len(active)
+    for r, col in enumerate(pivot_columns):
+        weights[col] = matrix[r][-1] - sum(matrix[r][j] * weights[j] for j in free_columns)
+
+    full = [Fraction(0)] * len(rows)
+    for i, value in zip(active, weights):
+        full[i] = value
+    return full
+
+
+def _affine_certificate(rows, target, rhs):
+    """Use HiGHS to propose a Farkas certificate; verify it over rational affine forms."""
+    if not rows:
+        return False
+    if any(a == target and b <= rhs for a, b in rows):
+        return True
+    if not target:
+        return False
+
+    try:
+        result = linprog(
+            c=np.asarray([float(b) for _, b in rows]),
+            A_eq=np.asarray([[float(a[j]) for a, _ in rows] for j in range(len(target))]),
+            b_eq=np.asarray([float(v) for v in target]),
+            bounds=(0, None),
+            method='highs',
+        )
+    except (ValueError, OverflowError, FloatingPointError):
+        return False
+
+    if not result.success or result.x is None or not np.all(np.isfinite(result.x)):
+        return False
+
+    weights = _recover_exact_weights(rows, target, result.x)
+    if weights is None or any(w < 0 for w in weights):
+        return False
+
+    # Exact Farkas conditions: A.T @ w == target, b @ w <= rhs.
+    return (
+        all(sum(w * a[j] for w, (a, _) in zip(weights, rows)) == target[j] for j in range(len(target)))
+        and sum(w * b for w, (_, b) in zip(weights, rows)) <= rhs
+    )
+
+
+def remove_affine_redundant_constraints(constraints, *, parameter_info, parameter_lower, parameter_upper):
+    """Remove affine bounds implied under real-arithmetic interpretation of the AST."""
+    lower, upper = tuple(parameter_lower), tuple(parameter_upper)
+    if len(lower) != len(upper) or any(np.isnan(lo) or np.isnan(hi) or lo > hi for lo, hi in zip(lower, upper)):
+        raise ValueError('Invalid canonical parameter bounds.')
 
     retained = list(constraints)
-    forms = [
-        _affine_form(c.evaluate, parameter_info, len(lower))
-        for c in retained
-    ]
+    forms = [_affine_form(c.evaluate, parameter_info, len(lower)) for c in retained]
 
-    bounds = list(zip(lower, upper))
+    def implied(i, side):
+        constraint = retained[i]
+        a, offset = forms[i]
+        if side == 'lower':
+            if (bound := _rational(constraint.lower_bound)) is None:
+                return constraint.lower_bound == -np.inf
+            row, rhs = tuple(-v for v in a), offset - bound
+        else:
+            if (bound := _rational(constraint.upper_bound)) is None:
+                return constraint.upper_bound == np.inf
+            row, rhs = a, bound - offset
 
-    def implied(index, side):
-        constraint = retained[index]
-        a, b = forms[index]
-
-        bound = (
-            constraint.lower_bound
-            if side == "lower"
-            else constraint.upper_bound
-        )
-
-        if not np.isfinite(bound):
-            return bound == (
-                -np.inf if side == "lower" else np.inf
-            )
-
-        # Express the candidate as row @ theta <= rhs.
-        row = -a if side == "lower" else a
-        rhs = b - bound if side == "lower" else bound - b
-
-        if not np.isfinite(rhs):
-            return False
-
-        # Constant constraint.
-        if not np.any(row):
-            return rhs >= 0
-
-        rows = []
-        limits = []
-
-        for j, (other, affine) in enumerate(
-            zip(retained, forms)
-        ):
-            if other is None or affine is None:
-                continue
-
-            other_a, other_b = affine
-            equality = other.lower_bound == other.upper_bound
-
-            # Exclude the candidate side itself.
-            # For equalities, exclude both sides.
-            if j == index and equality:
-                continue
-
-            if (
-                other.lower_bound > -np.inf
-                and (j != index or side == "upper")
-            ):
-                rows.append(-other_a)
-                limits.append(
-                    other_b - other.lower_bound
-                )
-
-            if (
-                other.upper_bound < np.inf
-                and (j != index or side == "lower")
-            ):
-                rows.append(other_a)
-                limits.append(
-                    other.upper_bound - other_b
-                )
-
-        # Exact matching inequalities: avoid LP tolerance issues.
-        for other_row, other_rhs in zip(rows, limits):
-            if (
-                np.array_equal(other_row, row)
-                and other_rhs <= rhs
-            ):
-                return True
-
-        # Maximize row @ theta over the remaining feasible region.
-        result = linprog(
-            c=-row,
-            A_ub=np.asarray(rows) if rows else None,
-            b_ub=np.asarray(limits) if limits else None,
-            bounds=bounds,
-            method="highs",
-        )
-
-        # Unbounded, infeasible, or unsuccessful: preserve constraint.
-        if not result.success or not np.isfinite(result.fun):
-            return False
-
-        maximum = -result.fun
-
-        # LP solutions are approximate. Require clear numerical slack.
-        safety = 1e-7 * max(
-            1.0,
-            abs(rhs),
-            abs(maximum),
-        )
-
-        return maximum <= rhs - safety
+        if _box_implies(row, rhs, lower, upper):
+            return True
+        rows = _affine_inequalities(retained, forms, i, side, lower, upper)
+        return _affine_certificate(rows, row, rhs)
 
     for i, constraint in enumerate(retained):
         if forms[i] is None:
             continue
 
-        # Keep equality constraints intact unless fully redundant.
         if constraint.lower_bound == constraint.upper_bound:
-            if implied(i, "lower") and implied(i, "upper"):
+            if implied(i, 'lower') and implied(i, 'upper'):
                 retained[i] = None
             continue
 
-        lower_redundant = implied(i, "lower")
-
-        if lower_redundant:
+        if implied(i, 'lower') and constraint.lower_bound != -np.inf:
             retained[i] = Constraint(
-                evaluate=constraint.evaluate,
-                lower_bound=-np.inf,
-                upper_bound=constraint.upper_bound,
-                label=constraint.label,
+                constraint.evaluate, 
+                lower_bound=-np.inf, 
+                upper_bound=constraint.upper_bound, 
+                label=constraint.label
             )
 
-        # Test the upper side against the now-retained lower side.
-        upper_redundant = implied(i, "upper")
-
-        if upper_redundant:
+        if implied(i, 'upper') and retained[i].upper_bound != np.inf:
             retained[i] = Constraint(
-                evaluate=constraint.evaluate,
-                lower_bound=retained[i].lower_bound,
-                upper_bound=np.inf,
-                label=constraint.label,
+                constraint.evaluate, 
+                lower_bound=retained[i].lower_bound, 
+                upper_bound=np.inf, 
+                label=constraint.label
             )
 
-        if (
-            retained[i].lower_bound == -np.inf
-            and retained[i].upper_bound == np.inf
-        ):
+        if retained[i].lower_bound == -np.inf and retained[i].upper_bound == np.inf:
             retained[i] = None
 
-    return tuple(
-        constraint
-        for constraint in retained
-        if constraint is not None
-    )
+    return tuple(c for c in retained if c is not None)
+
+    
+def _same_evaluator(a, b):
+    if a is b:
+        return True
+
+    if isinstance(a, Node) and isinstance(b, Node):
+        return ast_equal(a, b)
+
+    return False
 
 
 def remove_duplicate_constraints(constraints):
@@ -562,7 +543,7 @@ def remove_duplicate_constraints(constraints):
             continue
 
         if any(
-            other.evaluate is constraint.evaluate
+            _same_evaluator(other.evaluate, constraint.evaluate)
             and other.lower_bound >= constraint.lower_bound
             and other.upper_bound <= constraint.upper_bound
             for other in retained
@@ -573,7 +554,7 @@ def remove_duplicate_constraints(constraints):
             other
             for other in retained
             if not (
-                other.evaluate is constraint.evaluate
+                _same_evaluator(other.evaluate, constraint.evaluate)
                 and constraint.lower_bound >= other.lower_bound
                 and constraint.upper_bound <= other.upper_bound
             )
