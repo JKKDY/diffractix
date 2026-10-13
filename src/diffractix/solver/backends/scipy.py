@@ -80,4 +80,5 @@ def solve_scipy(
         message=str(res.message),
         iterations=getattr(res, "nit", None),
         raw=res,
+        scaling=problem.scaling
     )

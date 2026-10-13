@@ -183,4 +183,5 @@ def solve_nlopt(
             "algorithm": optimizer.get_algorithm_name(),
             "evaluations": optimizer.get_numevals(),
         },
+        scaling=problem.scaling
     )

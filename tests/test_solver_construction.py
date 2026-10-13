@@ -787,10 +787,11 @@ def test_solver_builds_second_order_primitives_through_runtime_symbols(monkeypat
     def solve_scipy(problem, method=None, options=None):
         captured["problem"] = problem
         return OptimizationResult(
-            x=np.array([2.0]),
+            x=problem.x0,
             success=True,
-            cost=0.0,
+            cost=problem.objective(problem.x0),
             message="captured",
+            scaling=problem.scaling,
         )
 
     monkeypatch.setattr(
@@ -804,7 +805,12 @@ def test_solver_builds_second_order_primitives_through_runtime_symbols(monkeypat
     problem = captured["problem"]
 
     numpy.testing.assert_allclose(
-        problem.objective_hessian(
+        problem.objective_hessian(problem.x0),
+        [[15000.0]],
+    )
+
+    numpy.testing.assert_allclose(
+        problem.unscale().objective_hessian(
             np.array([2.0]),
         ),
         [[150.0]],
@@ -812,7 +818,7 @@ def test_solver_builds_second_order_primitives_through_runtime_symbols(monkeypat
 
     numpy.testing.assert_allclose(
         problem.constraint_hessian(
-            np.array([2.0]),
+            problem.x0,
             np.array([]),
         ),
         [[0.0]],

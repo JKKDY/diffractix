@@ -78,4 +78,5 @@ def solve_ipopt(
         cost=float(info["obj_val"]),
         message=str(message),
         raw=info,
+        scaling=problem.scaling
     )

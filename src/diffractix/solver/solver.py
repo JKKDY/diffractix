@@ -366,7 +366,9 @@ class Solver:
             case Backend.NLOPT: solve = solve_nlopt
             case _: raise ValueError(f"Unsupported backend: {backend}")
 
-        result = solve(problem, method=method, options=options)
+        scaled_problem = problem.scale()
+        result = solve(scaled_problem, method=method, options=options)
+        result = problem.scaling.unscale(result)
 
         return Solution(
             result,

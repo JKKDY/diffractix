@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import importlib
 import sys
+from dataclasses import replace
 from types import ModuleType
 
 import numpy as np
 
-from diffractix.solver.problem import Problem
+from diffractix.solver.problem import Problem, Scaling
 
 
 def make_problem(
@@ -252,10 +253,10 @@ def test_problem_rejects_inconsistent_bound_lengths():
     problem = make_problem()
 
     with pytest.raises(ValueError, match="Variable bounds"):
-        Problem(**{**problem.__dict__, "x_upper": anp.array([1.0, 2.0])})
+        replace(problem, x_upper=anp.array([1.0, 2.0]))
 
     with pytest.raises(ValueError, match="Constraint bounds"):
-        Problem(**{**problem.__dict__, "constraint_upper": anp.array([1.0])})
+        replace(problem, constraint_upper=anp.array([1.0]))
 
 
 def test_optimization_result_has_uniform_backend_neutral_shape():
@@ -265,6 +266,7 @@ def test_optimization_result_has_uniform_backend_neutral_shape():
         success=True,
         cost=2.0,
         message="done",
+        scaling=make_problem().scaling,
         iterations=3,
         raw=raw,
     )
@@ -275,6 +277,161 @@ def test_optimization_result_has_uniform_backend_neutral_shape():
     assert result.message == "done"
     assert result.iterations == 3
     assert result.raw is raw
+
+
+def test_scaling_round_trip_preserves_problem_and_result_values():
+    problem = make_problem()
+    scaling = problem.scaling
+    assert isinstance(scaling, Scaling)
+    raw = object()
+    result = OptimizationResult(
+        x=np.array([1.5]),
+        success=True,
+        cost=2.25,
+        message="done",
+        scaling=scaling,
+        raw=raw,
+    )
+
+    scaled = problem.scale()
+    numpy.testing.assert_array_equal(scaled.x0, [0.0])
+    numpy.testing.assert_array_equal(scaled.x_lower, [-1.0])
+    numpy.testing.assert_array_equal(scaled.x_upper, [1.0])
+    assert scaled.objective(np.array([0.5])) == pytest.approx(2.25)
+
+    restored = scaled.unscale()
+    for name in ("x0", "x_lower", "x_upper", "constraint_lower", "constraint_upper"):
+        numpy.testing.assert_array_equal(getattr(restored, name), getattr(problem, name))
+    x = np.array([1.5])
+    for name in ("objective", "gradient", "objective_hessian", "constraints", "jacobian"):
+        numpy.testing.assert_allclose(getattr(restored, name)(x), getattr(problem, name)(x))
+    numpy.testing.assert_allclose(
+        restored.constraint_hessian(x, np.array([])),
+        problem.constraint_hessian(x, np.array([])),
+    )
+
+    scaled_result = scaling.scale(result)
+    numpy.testing.assert_array_equal(scaled_result.x, [0.5])
+    restored_result = scaling.unscale(scaled_result)
+    numpy.testing.assert_array_equal(restored_result.x, result.x)
+    numpy.testing.assert_array_equal(result.x, [1.5])
+    assert restored_result.raw is raw
+    assert restored_result.scaling is scaling
+    assert restored_result.cost == result.cost
+    assert restored_result.success == result.success
+    assert restored_result.message == result.message
+
+
+def make_scaling_problem() -> Problem:
+    return Problem(
+        x0=np.array([1.0, 2.0]),
+        x_lower=np.array([-3.0, 0.0]),
+        x_upper=np.array([5.0, 6.0]),
+        objective=lambda x: x[0] ** 2 + x[0] * x[1] + 3.0 * x[1] ** 2,
+        gradient=lambda x: np.array([2.0 * x[0] + x[1], x[0] + 6.0 * x[1]]),
+        objective_hessian=lambda x: np.array([[2.0, 1.0], [1.0, 6.0]]),
+        constraints=lambda x: np.array([x[0] ** 2 + x[0] * x[1], x[1] ** 2 - x[0], 7.0]),
+        jacobian=lambda x: np.array([
+            [2.0 * x[0] + x[1], x[0]], [-1.0, 2.0 * x[1]], [0.0, 0.0],
+        ]),
+        constraint_hessian=lambda x, v: np.array([
+            [2.0 * v[0], v[0]], [v[0], 2.0 * v[1]],
+        ]),
+        constraint_lower=np.array([0.0, -np.inf, 7.0]),
+        constraint_upper=np.array([32.0, 24.0, 7.0]),
+    )
+
+
+def test_variable_constraint_scaling_initialization_and_zero_sensitivity():
+    problem = make_scaling_problem()
+    scaling = problem.scaling
+
+    np.testing.assert_allclose(scaling.x_center, [1.0, 2.0])
+    np.testing.assert_allclose(scaling.x_scale, [4.0, 3.0])
+    np.testing.assert_allclose(scaling.constraint_center, [0.0, 0.0, 0.0])
+    # Normalized Jacobian rows are [16, 3], [-4, 12], and [0, 0].
+    # The constant constraint uses the fallback scale of one.
+    np.testing.assert_allclose(scaling.constraint_scale, [16.0, 12.0, 1.0])
+
+
+def test_variable_constraint_scaling_transforms_bounds_and_values():
+    scaled = make_scaling_problem().scale()
+
+    np.testing.assert_allclose(scaled.x0, [0.0, 0.0])
+    np.testing.assert_allclose(scaled.x_lower, [-1.0, -2.0 / 3.0])
+    np.testing.assert_allclose(scaled.x_upper, [1.0, 4.0 / 3.0])
+    np.testing.assert_allclose(scaled.constraint_lower, [0.0, -np.inf, 7.0])
+    np.testing.assert_allclose(scaled.constraint_upper, [2.0, 2.0, 7.0])
+
+    # y = [1/2, -1/3] represents physical x = [3, 1].
+    y = np.array([0.5, -1.0 / 3.0])
+    np.testing.assert_allclose(scaled.objective(y), 15.0)
+    np.testing.assert_allclose(scaled.constraints(y), [0.75, -1.0 / 6.0, 7.0])
+
+
+def test_variable_constraint_scaling_derivatives_and_multipliers():
+    scaled = make_scaling_problem().scale()
+    y = np.array([0.5, -1.0 / 3.0])
+
+    np.testing.assert_allclose(scaled.gradient(y), [28.0, 27.0])
+    np.testing.assert_allclose(scaled.objective_hessian(y), [[32.0, 12.0], [12.0, 54.0]])
+    np.testing.assert_allclose(scaled.jacobian(y), [
+        [1.75, 9.0 / 16.0], [-1.0 / 3.0, 0.5], [0.0, 0.0],
+    ])
+    # Numerical multipliers [8, 6, 5] become physical [1/2, 1/2, 5].
+    np.testing.assert_allclose(
+        scaled.constraint_hessian(y, np.array([8.0, 6.0, 5.0])),
+        [[16.0, 6.0], [6.0, 9.0]],
+    )
+
+
+def test_variable_constraint_scaling_problem_round_trip():
+    problem = make_scaling_problem()
+    restored = problem.scale().unscale()
+
+    for name in ("x0", "x_lower", "x_upper", "constraint_lower", "constraint_upper"):
+        np.testing.assert_allclose(getattr(restored, name), getattr(problem, name))
+    x = np.array([3.0, 1.0])
+    for name in ("objective", "gradient", "objective_hessian", "constraints", "jacobian"):
+        np.testing.assert_allclose(getattr(restored, name)(x), getattr(problem, name)(x))
+    multipliers = np.array([2.0, 3.0, 4.0])
+    np.testing.assert_allclose(
+        restored.constraint_hessian(x, multipliers),
+        problem.constraint_hessian(x, multipliers),
+    )
+
+
+def test_variable_constraint_scaling_result_returns_physical_coordinates():
+    problem = make_scaling_problem()
+    y = np.array([0.5, -1.0 / 3.0])
+    raw = {"x": y.copy(), "diagnostic": "backend coordinates"}
+    result = OptimizationResult(y.copy(), True, 15.0, "done", raw=raw, scaling=problem.scaling)
+
+    physical = problem.scaling.unscale(result)
+
+    np.testing.assert_allclose(physical.x, [3.0, 1.0])
+    np.testing.assert_allclose(result.x, y)
+    np.testing.assert_allclose(raw["x"], y)
+    assert physical.raw is raw
+    assert physical.scaling is problem.scaling
+    assert physical.cost == result.cost
+    assert physical.success == result.success
+
+
+def test_variable_constraint_scaling_scipy_constrained_quadratic():
+    from diffractix.solver.backends.scipy import solve_scipy
+
+    # Project the unconstrained optimum [2, 1] onto x[0] + x[1] >= 4.
+    problem = replace(constrained_problem(), constraint_lower=np.array([4.0]))
+    result = solve_scipy(problem.scale(), method="SLSQP", options={"ftol": 1e-12})
+    physical = problem.scaling.unscale(result)
+
+    assert physical.success, physical.message
+    np.testing.assert_allclose(physical.x, [2.5, 1.5], atol=1e-7)
+    np.testing.assert_allclose(physical.cost, 0.5, atol=1e-10)
+    values = problem.constraints(physical.x)
+    assert np.all(values >= problem.constraint_lower - 1e-8)
+    assert np.all(values <= problem.constraint_upper + 1e-8)
 
 
 @pytest.mark.parametrize(
@@ -307,16 +464,16 @@ def test_solver_dispatch_matrix_copies_options(
     solver._parameter_bounds = lambda: (anp.array([0.0]), anp.array([2.0]))
     solver._constraint_bounds = lambda constraints: (anp.array([]), anp.array([]))
     received = {}
-    backend_result = OptimizationResult(
-        x=anp.array([1.5]),
-        success=True,
-        cost=0.25,
-        message="solved",
-    )
-
     def solve(problem, method=None, options=None):
         received.update(problem=problem, method=method, options=options)
-        return backend_result
+        numerical_x = (anp.array([1.5]) - problem.scaling.x_center) / problem.scaling.x_scale
+        return OptimizationResult(
+            x=numerical_x,
+            success=True,
+            cost=0.25,
+            message="solved",
+            scaling=problem.scaling,
+        )
 
     monkeypatch.setattr(solver_module, function_name, solve)
     options = {"maxeval": 100}
@@ -359,6 +516,7 @@ def test_solver_defaults_to_scipy_backend(monkeypatch):
             success=True,
             cost=0.0,
             message="solved",
+            scaling=problem.scaling,
         )
 
     monkeypatch.setattr(solver_module, "solve_scipy", solve_scipy)
@@ -512,13 +670,7 @@ def test_scipy_omits_empty_constraint_subsets(monkeypatch, equalities):
     problem = make_constrained_problem()
     lower = np.array([2.0, 3.0, 4.0, 5.0])
     upper = lower.copy() if equalities else lower + 1.0
-    problem = Problem(
-        **{
-            **problem.__dict__,
-            "constraint_lower": lower,
-            "constraint_upper": upper,
-        }
-    )
+    problem = replace(problem, constraint_lower=lower, constraint_upper=upper)
     captured = []
 
     def nonlinear_constraint(*args, **kwargs):
@@ -590,7 +742,8 @@ def test_scipy_standardizes_result(monkeypatch):
     )
     monkeypatch.setattr(backend, "minimize", lambda *args, **kwargs: raw)
 
-    result = backend.solve_scipy(make_problem())
+    problem = make_problem()
+    result = backend.solve_scipy(problem)
 
     assert isinstance(result, OptimizationResult)
     np.testing.assert_array_equal(result.x, [0.25])
@@ -598,6 +751,20 @@ def test_scipy_standardizes_result(monkeypatch):
     assert result.cost == 1.5
     assert result.message == "stopped"
     assert result.iterations == 9
+    assert result.raw is raw
+    assert result.scaling is problem.scaling
+
+
+def test_scipy_forwards_problem_scaling_to_result(monkeypatch):
+    from diffractix.solver.backends import scipy as backend
+
+    problem = make_problem()
+    raw = fake_result()
+    monkeypatch.setattr(backend, "minimize", lambda *args, **kwargs: raw)
+
+    result = backend.solve_scipy(problem)
+
+    assert result.scaling is problem.scaling
     assert result.raw is raw
 
 
@@ -710,6 +877,16 @@ def test_ipopt_standardizes_status_and_result(monkeypatch, status, success):
         "obj_val": 0.125,
         "status_msg": b"finished",
     }
+    assert result.scaling is problem.scaling
+
+
+def test_ipopt_forwards_problem_scaling_to_result(monkeypatch):
+    backend, _, solvers = import_fake_cyipopt_backend(monkeypatch)
+    problem = make_problem()
+    result = backend.solve_ipopt(problem)
+
+    assert result.scaling is problem.scaling
+    assert result.raw is solvers[0].info
 
 
 
@@ -817,7 +994,7 @@ def test_nlopt_derivative_free_constraints_do_not_evaluate_jacobian(monkeypatch)
     def forbidden_jacobian(x):
         raise AssertionError("Jacobian should not be evaluated")
 
-    problem = Problem(**{**base.__dict__, "jacobian": forbidden_jacobian})
+    problem = replace(base, jacobian=forbidden_jacobian)
     backend.solve_nlopt(problem, method="LN_COBYLA")
     optimizer = optimizers[0]
     x = np.array([1.0, 2.0])
@@ -898,7 +1075,8 @@ def test_nlopt_status_policy_and_standardized_result(
     backend, nlopt, _ = import_fake_nlopt_backend(monkeypatch)
     nlopt.next_status = getattr(nlopt, status_name)
 
-    result = backend.solve_nlopt(make_problem())
+    problem = make_problem()
+    result = backend.solve_nlopt(problem)
 
     assert isinstance(result, OptimizationResult)
     np.testing.assert_array_equal(result.x, [0.5])
@@ -910,6 +1088,15 @@ def test_nlopt_status_policy_and_standardized_result(
         "algorithm": "fake algorithm",
         "evaluations": 7,
     }
+    assert result.scaling is problem.scaling
+
+
+def test_nlopt_forwards_problem_scaling_to_result(monkeypatch):
+    backend, _, _ = import_fake_nlopt_backend(monkeypatch)
+    problem = make_problem()
+    result = backend.solve_nlopt(problem)
+
+    assert result.scaling is problem.scaling
 
 
 

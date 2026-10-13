@@ -524,11 +524,13 @@ def test_solution_reporting_tolerance_is_independent_of_backend_options(
     solver.require(distance >= 0.2005)
 
     def solve_scipy(problem, method=None, options=None):
+        numerical_x = (np.array([0.2]) - problem.scaling.x_center) / problem.scaling.x_scale
         return OptimizationResult(
-            x=np.array([0.2]),
+            x=numerical_x,
             success=True,
             cost=0.0,
             message="mocked reporting point",
+            scaling=problem.scaling,
         )
 
     monkeypatch.setattr(solver_module, "solve_scipy", solve_scipy)
@@ -775,11 +777,13 @@ def test_backend_exception_does_not_poison_solver_retry(monkeypatch):
         calls += 1
         if calls == 1:
             raise RuntimeError("backend failure")
+        numerical_x = (np.array([0.2]) - problem.scaling.x_center) / problem.scaling.x_scale
         return OptimizationResult(
-            x=np.array([0.2]),
+            x=numerical_x,
             success=True,
-            cost=problem.objective(np.array([0.2])),
+            cost=problem.objective(numerical_x),
             message="recovered",
+            scaling=problem.scaling,
         )
 
     monkeypatch.setattr(solver_module, "solve_scipy", flaky_backend)

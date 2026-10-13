@@ -86,14 +86,16 @@ def make_solution(
         parameter = Parameter(2.0, name="p").variable()
         simulation = make_simulation((parameter,))
 
+    problem = make_problem(len(x))
     return Solution(
         OptimizationResult(
             x=np.array(x),
             success=success,
             cost=cost,
             message=message,
+            scaling=problem.scaling,
         ),
-        make_problem(len(x)),
+        problem,
         simulation,
         objectives,
         constraints,
@@ -193,8 +195,9 @@ def test_solution_forwards_backend_result():
 def test_solution_owns_an_immutable_copy_of_backend_x():
     backend_x = np.array([3.0])
     simulation = make_simulation((Parameter(2.0).variable(),))
-    result = OptimizationResult(backend_x, True, 0.0, "done")
-    solution = Solution(result, make_problem(), simulation, (), ())
+    problem = make_problem()
+    result = OptimizationResult(backend_x, True, 0.0, "done", scaling=problem.scaling)
+    solution = Solution(result, problem, simulation, (), ())
 
     result.x[0] = 4.0
 
@@ -206,12 +209,13 @@ def test_solution_owns_an_immutable_copy_of_backend_x():
 def test_solution_feasibility_tolerance_validation_and_default():
     parameter = Parameter(2.0).variable()
     simulation = make_simulation((parameter,))
-    result = OptimizationResult(np.array([2.0]), True, 0.0, "done")
+    problem = make_problem()
+    result = OptimizationResult(np.array([2.0]), True, 0.0, "done", scaling=problem.scaling)
 
     with pytest.raises(ValueError, match="non-negative"):
-        Solution(result, make_problem(), simulation, (), (), -1.0)
+        Solution(result, problem, simulation, (), (), -1.0)
 
-    default_solution = Solution(result, make_problem(), simulation, (), ())
+    default_solution = Solution(result, problem, simulation, (), ())
     assert default_solution.feasibility_tolerance == DEFAULT_FEASIBILITY_TOLERANCE
     assert make_solution(feasibility_tolerance=1e-3).feasibility_tolerance == 1e-3
 
@@ -224,10 +228,11 @@ def test_solution_rejects_nonfinite_feasibility_tolerance(tolerance):
 
 def test_solution_rejects_backend_result_with_wrong_x_length():
     simulation = make_simulation((Parameter(2.0).variable(),))
-    result = OptimizationResult(np.array([2.0, 3.0]), True, 0.0, "done")
+    problem = make_problem()
+    result = OptimizationResult(np.array([2.0, 3.0]), True, 0.0, "done", scaling=problem.scaling)
 
     with pytest.raises(ValueError, match="x length.*initial_values"):
-        Solution(result, make_problem(), simulation, (), ())
+        Solution(result, problem, simulation, (), ())
 
 
 def test_solution_parameter_info_and_parameters_use_canonical_order():

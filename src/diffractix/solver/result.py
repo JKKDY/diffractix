@@ -5,10 +5,12 @@ from typing import Any
 
 import numpy as np
 
+from .scale import Scaling
+
 
 @dataclass(frozen=True)
 class OptimizationResult:
-    """Backend-independent numerical optimization result."""
+    """Optimization result; Solver returns x in physical SI coordinates."""
 
     x: np.ndarray
     success: bool
@@ -16,3 +18,4 @@ class OptimizationResult:
     message: str
     iterations: int | None = None
     raw: Any = None
+    scaling: Scaling | None = None
