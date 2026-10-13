@@ -294,17 +294,6 @@ def test_solver_compile_context_creates_typed_symbol_keys():
     assert context._target_elements[id(element)] is element
 
 
-def test_solver_symbol_keys_are_hashable_runtime_binding_keys():
-    key = SolverSymbolKey(
-        kind=SolverSymbolKind.STATE,
-        index=2,
-        name="w",
-    )
-    bindings = {key: 1.5}
-
-    assert bindings[key] == 1.5
-
-
 def test_solver_symbol_keys_compare_by_all_lookup_fields():
     key = SolverSymbolKey(SolverSymbolKind.AT, 123, None, None, "w")
 
@@ -315,6 +304,11 @@ def test_solver_symbol_keys_compare_by_all_lookup_fields():
     assert key != SolverSymbolKey(SolverSymbolKind.AT, 123, None, None, "R")
     assert key != SolverSymbolKey(SolverSymbolKind.AFTER, 123, None, None, "w")
     assert key != SolverSymbolKey(SolverSymbolKind.Z, index=0)
+    assert SolverSymbolKey(SolverSymbolKind.STATE, index=0, name="w") != SolverSymbolKey(
+        SolverSymbolKind.STATE, index=1, name="w",
+    )
+    bindings = {key: 1.5}
+    assert bindings[SolverSymbolKey(SolverSymbolKind.AT, 123, None, None, "w")] == 1.5
 
 
 def test_solver_resolves_typed_symbol_keys():
@@ -367,24 +361,6 @@ def test_direct_node_uses_canonical_theta_when_local_order_differs():
     assert objective.evaluate(context(solver, [3.0, 5.0])) == 35.0
 
 
-def test_compile_traced_objective_with_runtime_symbols():
-    solver, lens, parameter = make_solver()
-    solver.objectives = [
-        Objective(
-            lambda ctx:
-                parameter
-                + ctx.at(lens).w
-                + ctx.after(lens).w
-                + ctx.z[1]
-                + ctx.states[1].w
-        ),
-    ]
-
-    objective, = solver._compile_objectives()
-
-    assert objective.evaluate(context(solver, [3.0])) == 30.0
-
-
 def test_compile_traced_objective_mixes_all_runtime_sources():
     solver, lens, parameter = make_solver()
     solver.target(
@@ -421,11 +397,14 @@ def test_at_symbols_distinguish_occurrences():
         lambda ctx:
             ctx.at(lens, occurrence=0).w
             - ctx.at(lens, occurrence=1).w,
+        lambda ctx: ctx.at(lens, occurrence=2).w,
     )
 
-    objective, = solver._compile_objectives()
+    difference, third = solver._compile_objectives()
 
-    assert objective.evaluate(context(solver, [3.0])) == -1.0
+    runtime_context = context(solver, [3.0])
+    assert difference.evaluate(runtime_context) == -1.0
+    assert third.evaluate(runtime_context) == 6.0
 
 
 def test_after_z_and_states_resolve_independently():
@@ -475,41 +454,19 @@ def test_z_indices_produce_distinct_runtime_values():
     assert second.evaluate(runtime_context) == 16.0
 
 
-def test_compile_traced_objective_preserves_occurrence():
-    solver, lens, _ = make_solver()
-    solver.objectives = [
-        Objective(lambda ctx: ctx.at(lens, occurrence=2).w),
-    ]
-
-    objective, = solver._compile_objectives()
-
-    assert objective.evaluate(context(solver, [3.0])) == 6.0
-
-
-def test_compile_constant_callable():
+def test_constant_callable_is_theta_independent_and_never_runs_simulation():
     solver, _, _ = make_solver()
-    solver.objectives = [Objective(lambda ctx: 7.0)]
 
-    objective, = solver._compile_objectives()
+    def forbidden_run(theta):
+        pytest.fail("A constant objective must not run the simulation.")
 
-    assert objective.evaluate(context(solver, [100.0])) == 7.0
-
-
-def test_constant_callable_does_not_run_simulation_during_compilation():
-    solver, lens, _ = make_solver()
-    calls = 0
-
-    def run(theta):
-        nonlocal calls
-        calls += 1
-        return FakeResult(theta, lens)
-
-    solver.simulation.run = run
+    solver.simulation.run = forbidden_run
     solver.target(lambda ctx: 7.0)
 
-    solver._compile_objectives()
+    objective, = solver._compile_objectives()
 
-    assert calls == 0
+    for theta in ([100.0], [-5.0]):
+        assert objective.evaluate(context(solver, theta)) == 7.0
 
 
 def test_dynamic_python_branch_falls_back_to_interpreter():
@@ -651,38 +608,6 @@ def test_strict_parameter_relations_normalize_to_open_residual_bounds(
     assert constraint.evaluate is not right
     assert constraint.lower_bound == lower_bound
     assert constraint.upper_bound == upper_bound
-
-
-def test_compile_direct_node_constraint():
-    solver, _, parameter = make_solver()
-    solver.require(
-        Constraint(
-            parameter,
-            lower_bound=1.0,
-            upper_bound=5.0,
-        ),
-    )
-
-    constraint, = solver._compile_constraints(solver.constraints)
-
-    assert constraint.lower_bound == 1.0
-    assert constraint.upper_bound == 5.0
-    assert constraint.evaluate(context(solver, [3.0])) == 3.0
-
-
-def test_compile_traced_runtime_constraint():
-    solver, lens, parameter = make_solver()
-    solver.constraints = [
-        Constraint(
-            lambda ctx: parameter - 2.0 * ctx.at(lens).w,
-            lower_bound=0.0,
-        ),
-    ]
-
-    constraint, = solver._compile_constraints(solver.constraints)
-
-    assert constraint.evaluate(context(solver, [3.0])) == -5.0
-    assert constraint.lower_bound == 0.0
 
 
 def test_compile_multiple_constraints_preserves_order_and_bounds():

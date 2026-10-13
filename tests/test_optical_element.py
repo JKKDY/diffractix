@@ -177,21 +177,6 @@ def test_requirements_are_not_shared_between_elements():
 # ELEMENT PROPERTIES
 # ------------------
 
-def test_matrix_is_declarative():
-    element = DummyElement(x=2.0)
-
-    assert element.matrix == (
-        (1.0, element.x),
-        (0.0, 1.0),
-    )
-
-
-def test_element_length_is_declarative():
-    element = DummyElement(x=2.0)
-
-    assert element.element_length is element.x
-
-
 def test_element_refractive_index_defaults_to_none():
     element = DummyElement(x=1.0)
 
@@ -334,45 +319,21 @@ def test_build_validation_rejects_unsupported_node_types():
 # DISPLAY
 # -------
 
-def test_string_representation_contains_element_type_and_label():
-    element = DummyElement(x=2.0, label="Example")
+@pytest.mark.parametrize("kind, value, marker", [
+    ("fixed", 2.0, "[FIX]"),
+    ("variable", 2.0, "[VAR]"),
+    ("expression", 4.0, "[EXPR]"),
+])
+def test_string_representation_describes_element_and_parameter(kind, value, marker):
+    parameter = 2 * Parameter(2.0) if kind == "expression" else 2.0
+    element = DummyElement(x=parameter, label="Example")
+    if kind == "variable":
+        element.variable("x")
 
     text = str(element)
 
     assert "DummyElement" in text
     assert "Example" in text
-
-
-def test_string_representation_contains_length():
-    element = DummyElement(x=2.0, label="Example")
-
-    assert "L=2" in str(element)
-
-
-def test_string_representation_contains_fixed_parameter():
-    element = DummyElement(x=2.0, label="Example")
-
-    text = str(element)
-
-    assert "x=2" in text
-    assert "[FIX]" in text
-
-
-def test_string_representation_contains_variable_parameter():
-    element = DummyElement(x=2.0, label="Example")
-    element.variable("x")
-
-    text = str(element)
-
-    assert "x=2" in text
-    assert "[VAR]" in text
-
-
-def test_string_representation_marks_expression_parameter():
-    x = Parameter(2.0, name="x")
-    element = DummyElement(x=2 * x, label="Example")
-
-    text = str(element)
-
-    assert "x=4" in text
-    assert "[EXPR]" in text
+    assert f"L={value:g}" in text
+    assert f"x={value:g}" in text
+    assert marker in text

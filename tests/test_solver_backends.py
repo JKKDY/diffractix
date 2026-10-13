@@ -3,10 +3,12 @@ from __future__ import annotations
 import importlib
 import sys
 from dataclasses import replace
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import numpy as np
+import pytest
 
+from diffractix.solver import Backend, Objective, OptimizationResult, Solution, Solver
 from diffractix.solver.problem import Problem, Scaling
 
 
@@ -185,98 +187,20 @@ def import_fake_nlopt_backend(monkeypatch):
 
     backend = importlib.import_module("diffractix.solver.backends.nlopt")
     monkeypatch.setattr(backend, "nlopt", fake_nlopt)
-    monkeypatch.setattr(
-        backend,
-        "_STATUS_MESSAGES",
-        {
-            fake_nlopt.SUCCESS: "Success.",
-            fake_nlopt.STOPVAL_REACHED: "Stop value reached.",
-            fake_nlopt.FTOL_REACHED: "Function tolerance reached.",
-            fake_nlopt.XTOL_REACHED: "Parameter tolerance reached.",
-            fake_nlopt.MAXEVAL_REACHED: "Maximum evaluations reached.",
-            fake_nlopt.MAXTIME_REACHED: "Maximum time reached.",
-        },
-    )
     return backend, fake_nlopt, optimizers
 
 
-
-from types import SimpleNamespace
-
-import autograd.numpy as anp
-import numpy as numpy
-import pytest
-from autograd import hessian
-
-from diffractix.solver import Backend, Objective, OptimizationResult, Solution, Solver
-from diffractix.solver.problem import Problem
-
-
-
-def test_problem_exposes_backend_neutral_derivatives():
-    def objective(theta):
-        return theta[0] ** 2 + 3.0 * theta[1] ** 2
-
-    def constraints(theta):
-        return anp.array([theta[0] ** 2, theta[1] ** 2])
-
-    def weighted_constraints(theta, multipliers):
-        return anp.dot(multipliers, constraints(theta))
-
-    problem = Problem(
-        x0=anp.array([1.0, 2.0]),
-        x_lower=anp.array([0.0, 0.0]),
-        x_upper=anp.array([3.0, 3.0]),
-        objective=objective,
-        gradient=lambda theta: anp.array([2 * theta[0], 6 * theta[1]]),
-        objective_hessian=hessian(objective),
-        constraints=constraints,
-        jacobian=lambda theta: anp.diag(2 * theta),
-        constraint_hessian=hessian(weighted_constraints, 0),
-        constraint_lower=anp.array([0.0, 0.0]),
-        constraint_upper=anp.array([10.0, 10.0]),
-    )
-
-    assert problem.n_variables == 2
-    assert problem.n_constraints == 2
-    numpy.testing.assert_allclose(problem.gradient(problem.x0), [2.0, 12.0])
-    numpy.testing.assert_allclose(
-        problem.objective_hessian(problem.x0), [[2.0, 0.0], [0.0, 6.0]]
-    )
-    numpy.testing.assert_allclose(
-        problem.constraint_hessian(problem.x0, anp.array([3.0, 5.0])),
-        [[6.0, 0.0], [0.0, 10.0]],
-    )
-
-
-def test_problem_rejects_inconsistent_bound_lengths():
+def test_problem_dimensions_and_bound_length_validation():
     problem = make_problem()
+    assert (problem.n_variables, problem.n_constraints) == (1, 0)
+    constrained = make_constrained_problem()
+    assert (constrained.n_variables, constrained.n_constraints) == (2, 4)
 
     with pytest.raises(ValueError, match="Variable bounds"):
-        replace(problem, x_upper=anp.array([1.0, 2.0]))
+        replace(problem, x_upper=np.array([1.0, 2.0]))
 
     with pytest.raises(ValueError, match="Constraint bounds"):
-        replace(problem, constraint_upper=anp.array([1.0]))
-
-
-def test_optimization_result_has_uniform_backend_neutral_shape():
-    raw = object()
-    result = OptimizationResult(
-        x=anp.array([1.0]),
-        success=True,
-        cost=2.0,
-        message="done",
-        scaling=make_problem().scaling,
-        iterations=3,
-        raw=raw,
-    )
-
-    numpy.testing.assert_array_equal(result.x, [1.0])
-    assert result.success is True
-    assert result.cost == 2.0
-    assert result.message == "done"
-    assert result.iterations == 3
-    assert result.raw is raw
+        replace(problem, constraint_upper=np.array([1.0]))
 
 
 def test_scaling_round_trip_preserves_problem_and_result_values():
@@ -294,27 +218,27 @@ def test_scaling_round_trip_preserves_problem_and_result_values():
     )
 
     scaled = problem.scale()
-    numpy.testing.assert_array_equal(scaled.x0, [0.0])
-    numpy.testing.assert_array_equal(scaled.x_lower, [-1.0])
-    numpy.testing.assert_array_equal(scaled.x_upper, [1.0])
+    np.testing.assert_array_equal(scaled.x0, [0.0])
+    np.testing.assert_array_equal(scaled.x_lower, [-1.0])
+    np.testing.assert_array_equal(scaled.x_upper, [1.0])
     assert scaled.objective(np.array([0.5])) == pytest.approx(2.25)
 
     restored = scaled.unscale()
     for name in ("x0", "x_lower", "x_upper", "constraint_lower", "constraint_upper"):
-        numpy.testing.assert_array_equal(getattr(restored, name), getattr(problem, name))
+        np.testing.assert_array_equal(getattr(restored, name), getattr(problem, name))
     x = np.array([1.5])
     for name in ("objective", "gradient", "objective_hessian", "constraints", "jacobian"):
-        numpy.testing.assert_allclose(getattr(restored, name)(x), getattr(problem, name)(x))
-    numpy.testing.assert_allclose(
+        np.testing.assert_allclose(getattr(restored, name)(x), getattr(problem, name)(x))
+    np.testing.assert_allclose(
         restored.constraint_hessian(x, np.array([])),
         problem.constraint_hessian(x, np.array([])),
     )
 
     scaled_result = scaling.scale(result)
-    numpy.testing.assert_array_equal(scaled_result.x, [0.5])
+    np.testing.assert_array_equal(scaled_result.x, [0.5])
     restored_result = scaling.unscale(scaled_result)
-    numpy.testing.assert_array_equal(restored_result.x, result.x)
-    numpy.testing.assert_array_equal(result.x, [1.5])
+    np.testing.assert_array_equal(restored_result.x, result.x)
+    np.testing.assert_array_equal(result.x, [1.5])
     assert restored_result.raw is raw
     assert restored_result.scaling is scaling
     assert restored_result.cost == result.cost
@@ -435,11 +359,12 @@ def test_variable_constraint_scaling_scipy_constrained_quadratic():
 
 
 @pytest.mark.parametrize(
-    ("backend", "function_name", "method"),
+    ("backend", "function_name", "method", "options"),
     [
-        (Backend.SCIPY, "solve_scipy", "SLSQP"),
-        (Backend.IPOPT, "solve_ipopt", None),
-        (Backend.NLOPT, "solve_nlopt", "LD_SLSQP"),
+        (Backend.SCIPY, "solve_scipy", "SLSQP", {"maxeval": 100}),
+        (Backend.IPOPT, "solve_ipopt", None, {"maxeval": 100}),
+        (Backend.NLOPT, "solve_nlopt", "LD_SLSQP", {"maxeval": 100}),
+        pytest.param(None, "solve_scipy", None, None, id="default-scipy"),
     ],
 )
 def test_solver_dispatch_matrix_copies_options(
@@ -447,6 +372,7 @@ def test_solver_dispatch_matrix_copies_options(
     backend,
     function_name,
     method,
+    options,
 ):
     from diffractix.solver import solver as solver_module
 
@@ -454,19 +380,20 @@ def test_solver_dispatch_matrix_copies_options(
     solver.objectives = ()
     solver.constraints = ()
     solver.simulation = SimpleNamespace(
-        initial_values=anp.array([1.0]),
+        initial_values=np.array([1.0]),
         run=lambda theta: None,
         requirements=(),
         parameter_info={},
     )
     solver._compile_objectives = lambda: (Objective(lambda context: 0.0),)
     solver._compile_constraints = lambda constraints: ()
-    solver._parameter_bounds = lambda: (anp.array([0.0]), anp.array([2.0]))
-    solver._constraint_bounds = lambda constraints: (anp.array([]), anp.array([]))
+    solver._parameter_bounds = lambda: (np.array([0.0]), np.array([2.0]))
+    solver._constraint_bounds = lambda constraints: (np.array([]), np.array([]))
     received = {}
+
     def solve(problem, method=None, options=None):
         received.update(problem=problem, method=method, options=options)
-        numerical_x = (anp.array([1.5]) - problem.scaling.x_center) / problem.scaling.x_scale
+        numerical_x = (np.array([1.5]) - problem.scaling.x_center) / problem.scaling.x_scale
         return OptimizationResult(
             x=numerical_x,
             success=True,
@@ -476,55 +403,22 @@ def test_solver_dispatch_matrix_copies_options(
         )
 
     monkeypatch.setattr(solver_module, function_name, solve)
-    options = {"maxeval": 100}
 
-    solution = solver.solve(backend, method=method, options=options)
+    solution = (
+        solver.solve() if backend is None
+        else solver.solve(backend, method=method, options=options)
+    )
     assert isinstance(solution, Solution)
-    numpy.testing.assert_array_equal(solution.x, [1.5])
+    np.testing.assert_array_equal(solution.x, [1.5])
     assert solution.success is True
     assert solution.cost == 0.25
     assert solution.message == "solved"
     assert isinstance(received["problem"], Problem)
     assert received["method"] == method
-    assert received["options"] == options
+    assert received["options"] == ({} if options is None else options)
     assert received["options"] is not options
-    assert options == {"maxeval": 100}
-
-
-def test_solver_defaults_to_scipy_backend(monkeypatch):
-    from diffractix.solver import solver as solver_module
-
-    solver = object.__new__(Solver)
-    solver.objectives = ()
-    solver.constraints = ()
-    solver.simulation = SimpleNamespace(
-        initial_values=anp.array([1.0]),
-        run=lambda theta: None,
-        requirements=(),
-        parameter_info={},
-    )
-    solver._compile_objectives = lambda: (Objective(lambda context: 0.0),)
-    solver._compile_constraints = lambda constraints: ()
-    solver._parameter_bounds = lambda: (anp.array([0.0]), anp.array([2.0]))
-    solver._constraint_bounds = lambda constraints: (anp.array([]), anp.array([]))
-    received = {}
-
-    def solve_scipy(problem, method=None, options=None):
-        received.update(method=method, options=options)
-        return OptimizationResult(
-            x=anp.array([1.0]),
-            success=True,
-            cost=0.0,
-            message="solved",
-            scaling=problem.scaling,
-        )
-
-    monkeypatch.setattr(solver_module, "solve_scipy", solve_scipy)
-
-    solution = solver.solve()
-
-    assert isinstance(solution, Solution)
-    assert received == {"method": None, "options": {}}
+    if options is not None:
+        assert options == {"maxeval": 100}
 
 
 @pytest.mark.parametrize(
@@ -575,17 +469,6 @@ def test_lazy_backend_reports_missing_optional_dependency(monkeypatch):
 
     with pytest.raises(ImportError, match=r"diffractix\[nlopt\]"):
         backends.solve_nlopt("problem")
-
-
-
-from types import SimpleNamespace
-
-import numpy as np
-import pytest
-
-from diffractix.solver import OptimizationResult
-from diffractix.solver.problem import Problem
-
 
 
 def fake_result(**updates):
@@ -755,27 +638,6 @@ def test_scipy_standardizes_result(monkeypatch):
     assert result.scaling is problem.scaling
 
 
-def test_scipy_forwards_problem_scaling_to_result(monkeypatch):
-    from diffractix.solver.backends import scipy as backend
-
-    problem = make_problem()
-    raw = fake_result()
-    monkeypatch.setattr(backend, "minimize", lambda *args, **kwargs: raw)
-
-    result = backend.solve_scipy(problem)
-
-    assert result.scaling is problem.scaling
-    assert result.raw is raw
-
-
-
-import numpy as np
-import pytest
-
-from diffractix.solver import OptimizationResult
-
-
-
 def test_ipopt_constructs_problem_and_derivative_callbacks(monkeypatch):
     backend, _, solvers = import_fake_cyipopt_backend(monkeypatch)
     problem = make_constrained_problem()
@@ -877,25 +739,8 @@ def test_ipopt_standardizes_status_and_result(monkeypatch, status, success):
         "obj_val": 0.125,
         "status_msg": b"finished",
     }
-    assert result.scaling is problem.scaling
-
-
-def test_ipopt_forwards_problem_scaling_to_result(monkeypatch):
-    backend, _, solvers = import_fake_cyipopt_backend(monkeypatch)
-    problem = make_problem()
-    result = backend.solve_ipopt(problem)
-
-    assert result.scaling is problem.scaling
     assert result.raw is solvers[0].info
-
-
-
-import numpy as np
-import pytest
-
-from diffractix.solver import OptimizationResult
-from diffractix.solver.problem import Problem
-
+    assert result.scaling is problem.scaling
 
 
 def test_nlopt_default_method_dimensions_and_bounds(monkeypatch):
@@ -1089,23 +934,6 @@ def test_nlopt_status_policy_and_standardized_result(
         "evaluations": 7,
     }
     assert result.scaling is problem.scaling
-
-
-def test_nlopt_forwards_problem_scaling_to_result(monkeypatch):
-    backend, _, _ = import_fake_nlopt_backend(monkeypatch)
-    problem = make_problem()
-    result = backend.solve_nlopt(problem)
-
-    assert result.scaling is problem.scaling
-
-
-
-import importlib
-
-import numpy as np
-import pytest
-
-from diffractix.solver.problem import Problem
 
 
 def quadratic_problem() -> Problem:

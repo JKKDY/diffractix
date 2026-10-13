@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import ClassVar
 
 import pytest
 import autograd.numpy as np
@@ -183,22 +182,6 @@ def test_simulation_propagates_mixed_sequence():
         np.array([0.0, 0.1, 0.1, 0.4]),
     )
     assert result.final.q == pytest.approx(q3)
-
-
-def test_simulation_records_state_after_every_step():
-    beam = create_beam()
-
-    system = System()
-    system.add_input_beam(beam)
-    system.add(Space(d=0.1))
-    system.add(ThinLens(f=0.2))
-    system.add(Space(d=0.3))
-
-    simulation = system.build()
-    result = simulation.run()
-
-    assert len(result.states) == len(simulation.steps) + 1
-    assert len(result.z) == len(result.states)
 
 
 def test_result_receives_frozen_element_info_in_propagation_order():
@@ -1113,20 +1096,8 @@ def test_location_lookup_rejects_element_not_in_simulation():
 # GENERIC PARAXIAL STATE API
 # --------------------------
 
-class AffineResult:
-
-    @property
-    def values(self):
-        return np.stack([
-            state.value
-            for state in self.states
-        ])
-
-
 @dataclass(frozen=True)
 class AffineState(ParaxialState):
-    result_type: ClassVar[type] = AffineResult
-
     value: float
 
     def propagate(self, A, B, C, D, n):

@@ -145,22 +145,6 @@ def test_variable_slab_thickness_controls_simulation_length():
     assert result.z[-1] == pytest.approx(0.05)
 
 
-def test_variable_slab_index_is_single_shared_dimension():
-    beam = create_beam()
-    slab = Slab(
-        d=0.02,
-        n=1.5,
-    ).variable("n")
-
-    system = System()
-    system.add_input_beam(beam)
-    system.add(slab)
-
-    simulation = system.build()
-
-    assert len(simulation.initial_values) == 1
-
-
 def test_variable_slab_index_updates_all_internal_media():
     beam = create_beam()
     slab = Slab(
@@ -173,6 +157,8 @@ def test_variable_slab_index_updates_all_internal_media():
     system.add(slab)
 
     simulation = system.build()
+    assert simulation.graph.variables == (slab.n.node,)
+    assert simulation.parameter_info[id(slab.n.node)].parameter_index == 0
     result = simulation.run(np.array([1.8]))
 
     assert result.states[1].n == pytest.approx(1.8)
@@ -259,6 +245,19 @@ def test_variable_thick_lens_radii_are_independent_dimensions():
     simulation = system.build()
 
     assert len(simulation.initial_values) == 2
+    first = simulation.parameter_info[id(lens.R1.node)].parameter_index
+    second = simulation.parameter_info[id(lens.R2.node)].parameter_index
+    assert first is not None and second is not None and first != second
+    assert simulation.graph.variables[first] is lens.R1.node
+    assert simulation.graph.variables[second] is lens.R2.node
+
+    for parameter, value in ((lens.R1.node, 0.2), (lens.R2.node, -0.3)):
+        theta = simulation.initial_values.copy()
+        theta[simulation.parameter_info[id(parameter)].parameter_index] = value
+        R1, R2 = theta[first], theta[second]
+        q = propagate_interface(beam.q, n1=1.0, n2=1.5, R=R1)
+        q = propagate_interface(q + 0.01, n1=1.5, n2=1.0, R=R2)
+        assert simulation.run(theta).final.q == pytest.approx(q)
 
 
 
@@ -666,13 +665,14 @@ def test_variable_ambient_can_drive_interface_input_index():
 # CURVED INTERFACES
 # -----------------
 
-def test_positive_curved_interface_matches_abcd_formula():
+@pytest.mark.parametrize("radius", [0.1, -0.1], ids=["positive", "negative"])
+def test_curved_interface_matches_abcd_formula(radius):
     beam = create_beam(n=1.0)
 
     interface = Interface(
         n1=1.0,
         n2=1.5,
-        R=0.1,
+        R=radius,
     )
 
     system = System(ambient_n=1.0)
@@ -685,65 +685,11 @@ def test_positive_curved_interface_matches_abcd_formula():
         beam.q,
         n1=1.0,
         n2=1.5,
-        R=0.1,
+        R=radius,
     )
 
     assert result.final.q == pytest.approx(expected)
     assert result.final.n == pytest.approx(1.5)
-
-
-def test_negative_curved_interface_matches_abcd_formula():
-    beam = create_beam(n=1.0)
-
-    interface = Interface(
-        n1=1.0,
-        n2=1.5,
-        R=-0.1,
-    )
-
-    system = System(ambient_n=1.0)
-    system.add_input_beam(beam)
-    system.add(interface)
-
-    result = system.build().run()
-
-    expected = propagate_interface(
-        beam.q,
-        n1=1.0,
-        n2=1.5,
-        R=-0.1,
-    )
-
-    assert result.final.q == pytest.approx(expected)
-
-
-def test_opposite_interface_curvatures_produce_different_states():
-    first_beam = create_beam()
-    second_beam = create_beam()
-
-    positive_system = System()
-    positive_system.add_input_beam(first_beam)
-    positive_system.add(Interface(
-        n1=1.0,
-        n2=1.5,
-        R=0.1,
-    ))
-
-    negative_system = System()
-    negative_system.add_input_beam(second_beam)
-    negative_system.add(Interface(
-        n1=1.0,
-        n2=1.5,
-        R=-0.1,
-    ))
-
-    positive = positive_system.build().run()
-    negative = negative_system.build().run()
-
-    assert not np.isclose(
-        positive.final.q,
-        negative.final.q,
-    )
 
 
 def test_curved_interface_propagates_new_medium_downstream():
@@ -781,13 +727,11 @@ def test_variable_curved_interface_radius_changes_result():
 
     simulation = system.build()
 
-    first = simulation.run(np.array([0.1]))
-    second = simulation.run(np.array([0.2]))
-
-    assert not np.isclose(
-        first.final.q,
-        second.final.q,
-    )
+    for radius in (0.1, 0.2):
+        result = simulation.run(np.array([radius]))
+        expected = propagate_interface(beam.q, n1=1.0, n2=1.5, R=radius)
+        assert result.final.q == pytest.approx(expected)
+        assert result.final.n == pytest.approx(1.5)
 
 
 def test_curved_interface_radius_is_differentiable():
@@ -979,7 +923,7 @@ def test_mutation_between_builds_only_affects_later_build():
     assert second.z[-1] == pytest.approx(0.6)
 
 
-def test_system_context_mutation_does_not_change_existing_simulation():
+def test_variable_parameter_value_mutation_does_not_change_existing_simulation():
     glass_n = Parameter(1.5, name="glass_n").variable()
     element = ABCD(n=glass_n)
 

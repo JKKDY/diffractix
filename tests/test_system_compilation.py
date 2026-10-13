@@ -41,18 +41,10 @@ def test_resolve_elements_preserves_optical_element():
     original = system.placements[0]
     resolved = system._resolve_elements()
 
+    assert isinstance(resolved, tuple)
     assert resolved == (original,)
     assert resolved[0] is original
     assert resolved[0].element is lens
-
-
-def test_resolve_elements_returns_tuple():
-    system = System()
-    system.add(ThinLens(f=0.1))
-
-    resolved = system._resolve_elements()
-
-    assert isinstance(resolved, tuple)
 
 
 def test_resolve_elements_flattens_composite():
@@ -186,18 +178,10 @@ def test_resolve_layout_preserves_relative_element():
     placements = system._resolve_elements()
     resolved = system._resolve_layout(placements)
 
+    assert isinstance(resolved, tuple)
     assert len(resolved) == 1
     assert resolved[0].element is lens
     assert resolved[0].z is None
-
-
-def test_resolve_layout_returns_tuple():
-    system = System()
-    system.add(ThinLens(f=0.1))
-
-    resolved = system._resolve_layout(system._resolve_elements())
-
-    assert isinstance(resolved, tuple)
 
 
 def test_resolve_layout_inserts_space_for_absolute_position():

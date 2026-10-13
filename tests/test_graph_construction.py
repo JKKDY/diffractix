@@ -206,24 +206,15 @@ def test_parameter_variable_and_fixed_are_fluent():
     assert x.fixed() is x
     assert x.is_variable is False
 
+    expression = 2 * x
+    x.value = 20
+    assert expression.value == 40
+
 
 def test_parameter_constructor_can_make_variable():
     x = Parameter(10, name="x", variable=True)
 
     assert x.is_variable is True
-
-
-def test_parameter_value_is_mutable():
-    """
-    Fixed Parameters remain mutable design values.
-
-    'Fixed' only means excluded from the optimization variable vector.
-    """
-    x = Parameter(10, name="x")
-
-    x.value = 20
-
-    assert x.value == 20
 
 
 def test_parameter_bounds():

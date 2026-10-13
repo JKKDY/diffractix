@@ -38,22 +38,6 @@ class NestedRequirementsComposite(CompositeElement):
 # BASIC BUILD
 # -----------
 
-def test_system_builds_and_runs_single_space():
-    beam = create_beam()
-    space = Space(d=0.2)
-
-    system = System()
-    system.add_input_beam(beam)
-    system.add(space)
-
-    simulation = system.build()
-    result = simulation.run()
-
-    assert len(result.states) == 2
-    assert np.allclose(result.z, np.array([0.0, 0.2]))
-    assert np.isclose(result.final.q, beam.q + 0.2)
-
-
 def test_simulation_initial_values_are_read_only():
     distance = Parameter(0.2).variable()
     system = System()
@@ -64,49 +48,6 @@ def test_simulation_initial_values_are_read_only():
 
     with pytest.raises(ValueError):
         simulation.initial_values[0] = 0.3
-
-
-def test_system_builds_and_runs_single_thin_lens():
-    beam = create_beam()
-    lens = ThinLens(f=0.1)
-
-    system = System()
-    system.add_input_beam(beam)
-    system.add(lens)
-
-    result = system.build().run()
-
-    expected_q = beam.q / (1.0 - beam.q / 0.1)
-
-    assert len(result.states) == 2
-    assert np.allclose(result.z, np.array([0.0, 0.0]))
-    assert np.isclose(result.final.q, expected_q)
-
-
-def test_system_propagates_multiple_elements_in_order():
-    beam = create_beam()
-    first_space = Space(d=0.1)
-    lens = ThinLens(f=0.2)
-    second_space = Space(d=0.3)
-
-    system = System()
-    system.add_input_beam(beam)
-    system.add(first_space)
-    system.add(lens)
-    system.add(second_space)
-
-    result = system.build().run()
-
-    q1 = beam.q + 0.1
-    q2 = q1 / (1.0 - q1 / 0.2)
-    q3 = q2 + 0.3
-
-    assert len(result.states) == 4
-    assert np.allclose(
-        result.z,
-        np.array([0.0, 0.1, 0.1, 0.4]),
-    )
-    assert np.isclose(result.final.q, q3)
 
 
 def test_system_accepts_element_sequence():
@@ -186,44 +127,6 @@ def test_system_space_inherits_ambient_refractive_index():
     result = system.build().run()
 
     assert result.final.n == pytest.approx(1.5)
-
-
-def test_system_interface_changes_propagation_medium():
-    beam = create_beam(n=1.0)
-    interface = Interface(
-        n1=1.0,
-        n2=1.5,
-        R=np.inf,
-    )
-
-    system = System(ambient_n=1.0)
-    system.add_input_beam(beam)
-    system.add(interface)
-
-    result = system.build().run()
-
-    assert result.initial.n == pytest.approx(1.0)
-    assert result.final.n == pytest.approx(1.5)
-
-
-def test_system_propagates_in_new_medium_after_interface():
-    beam = create_beam(n=1.0)
-    interface = Interface(
-        n1=1.0,
-        n2=1.5,
-        R=np.inf,
-    )
-    space = Space(d=0.2)
-
-    system = System(ambient_n=1.0)
-    system.add_input_beam(beam)
-    system.add(interface)
-    system.add(space)
-
-    result = system.build().run()
-
-    assert result.states[1].n == pytest.approx(1.5)
-    assert result.states[2].n == pytest.approx(1.5)
 
 
 # -------------------

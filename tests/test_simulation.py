@@ -1,8 +1,8 @@
 from dataclasses import dataclass
-from typing import ClassVar
 
 import pytest
 import autograd.numpy as np
+from numpy.testing import assert_allclose, assert_array_equal
 
 from autograd import grad
 
@@ -13,10 +13,6 @@ from diffractix.simulation import Simulation, SimulationResult
 from diffractix.simulation.simulation import SimulationStep
 from diffractix.solver.constraint import Constraint
 from diffractix.system.info import ElementInfo
-
-
-class DummyResult:
-    pass
 
 
 def element_info_for_steps(steps):
@@ -46,8 +42,6 @@ def create_result(**kwargs):
 
 @dataclass(frozen=True)
 class DummyState(ParaxialState):
-    result_type: ClassVar[type] = DummyResult
-
     value: float = 0.0
     calls: tuple = ()
 
@@ -294,17 +288,6 @@ def test_concrete_state_result_columns_reference_existing_properties():
         assert state.result_columns
         assert all(hasattr(state, name) for name in state.result_columns)
 
-def test_run_returns_simulation_result():
-    simulation = create_simulation(
-        values=(),
-        steps=(),
-    )
-
-    result = simulation.run()
-
-    assert isinstance(result, SimulationResult)
-
-
 def test_run_returns_generated_source_specific_result_type():
     simulation = create_simulation(
         values=(),
@@ -312,7 +295,7 @@ def test_run_returns_generated_source_specific_result_type():
     )
     result = simulation.run()
     assert isinstance(result, SimulationResult)
-    assert hasattr(type(result), "value")
+    assert_array_equal(result.value, [simulation.source.value])
 
 
 def test_run_records_source_as_initial_state():
@@ -724,6 +707,7 @@ def test_run_propagates_steps_sequentially():
     result = simulation.run()
 
     assert len(result.states) == 3
+    assert_allclose(result.z, [0.0, 0.1, 0.3])
     assert result.states[1].calls == (
         (1.0, 2.0, 3.0, 4.0, 1.0),
     )
@@ -731,31 +715,6 @@ def test_run_propagates_steps_sequentially():
         (1.0, 2.0, 3.0, 4.0, 1.0),
         (5.0, 6.0, 7.0, 8.0, 1.5),
     )
-
-
-def test_run_records_state_after_every_step():
-    first = SimulationStep(
-        matrix_indices=((0, 1), (2, 3)),
-        length_index=4,
-        refractive_index_index=5,
-    )
-    second = SimulationStep(
-        matrix_indices=((6, 7), (8, 9)),
-        length_index=10,
-        refractive_index_index=11,
-    )
-
-    simulation = create_simulation(
-        values=(
-            1.0, 0.0, 0.0, 1.0, 0.1, 1.0,
-            1.0, 0.0, 0.0, 1.0, 0.2, 1.0,
-        ),
-        steps=(first, second),
-    )
-
-    result = simulation.run()
-
-    assert len(result.states) == len(simulation.steps) + 1
 
 
 # ---------
@@ -815,30 +774,6 @@ def test_run_preserves_duplicate_positions_for_zero_length_step():
         result.z,
         np.array([0.0, 0.0]),
     )
-
-
-def test_run_positions_align_with_states():
-    step = SimulationStep(
-        matrix_indices=((0, 1), (2, 3)),
-        length_index=4,
-        refractive_index_index=5,
-    )
-
-    simulation = create_simulation(
-        values=(
-            1.0,
-            0.0,
-            0.0,
-            1.0,
-            0.1,
-            1.0,
-        ),
-        steps=(step,),
-    )
-
-    result = simulation.run()
-
-    assert len(result.z) == len(result.states)
 
 
 # -----

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 from diffractix.graph.node import Literal, Parameter, Symbol, InputNode
 from diffractix.graph.compile import CompiledAST, compile_ast, Opcode
+from diffractix.graph.ops import Op
 from diffractix.graph.utils import (
     ASTCycleError,
     UnresolvedInputError,
@@ -180,6 +181,11 @@ def test_shared_subexpression():
 
     compiled = compile_ast([root])
 
+    additions = [
+        instruction for instruction in compiled.program.instructions
+        if instruction.opcode is Opcode.BINARY and instruction.op is Op.ADD
+    ]
+    assert len(additions) == 1
     assert compiled.evaluate(np.array([4.0]))[0] == 25.0
 
 

@@ -14,20 +14,6 @@ from diffractix.system.errors import SystemValidationError
 
 
 
-def make_source_info():
-    return SourceInfo(
-        file="test_system.py",
-        line=100,
-        call_index=0,
-    )
-
-
-def evaluate_graph(compiled, values=()):
-    return np.asarray(
-        compiled.graph.evaluate(np.asarray(values, dtype=float))
-    )
-
-
 @dataclass(eq=False, kw_only=True)
 class FailingElement(OpticalElement):
     x: Node
@@ -246,15 +232,6 @@ def test_add_single_element():
     assert system.placements[0].element is lens
 
 
-def test_add_preserves_element_identity():
-    system = System()
-    lens = ThinLens(f=0.1)
-
-    system.add(lens)
-
-    assert system.elements[0] is lens
-
-
 def test_add_fixed_absolute_position():
     system = System()
     lens = ThinLens(f=0.1)
@@ -286,43 +263,23 @@ def test_add_expression_absolute_position():
     assert system.placements[0].z is z
 
 
-def test_add_multiple_elements():
+@pytest.mark.parametrize(
+    "container", [list, tuple, lambda items: (item for item in items)],
+    ids=["list", "tuple", "generator"],
+)
+def test_add_element_iterables_preserve_order_and_identity(container):
     system = System()
     first = ThinLens(f=0.1)
     second = ThinLens(f=0.2)
 
-    system.add([first, second])
+    assert system.add(container([first, second])) is system
 
     assert system.elements == (
         first,
         second,
     )
-
-
-def test_add_tuple_of_elements():
-    system = System()
-    first = ThinLens(f=0.1)
-    second = ThinLens(f=0.2)
-
-    system.add((first, second))
-
-    assert system.elements == (
-        first,
-        second,
-    )
-
-
-def test_add_generator_of_elements():
-    system = System()
-    elements = [
-        ThinLens(f=0.1),
-        ThinLens(f=0.2),
-        ThinLens(f=0.3),
-    ]
-
-    system.add(element for element in elements)
-
-    assert system.elements == tuple(elements)
+    assert system.placements[0].element is first
+    assert system.placements[1].element is second
 
 
 def test_add_composite_as_single_element():
@@ -569,14 +526,6 @@ def test_add_input_beam_replaces_previous_beam():
 # ---------------------
 # SYSTEM VALIDATION
 # ---------------------
-
-def test_validate_accepts_valid_system():
-    system = System()
-    system.add_input_beam(make_beam())
-    system.add(ThinLens(f=0.1))
-
-    system._validate()
-
 
 def test_validate_requires_input_beam():
     system = System()

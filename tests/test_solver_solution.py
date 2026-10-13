@@ -226,15 +226,6 @@ def test_solution_rejects_nonfinite_feasibility_tolerance(tolerance):
         make_solution(feasibility_tolerance=tolerance)
 
 
-def test_solution_rejects_backend_result_with_wrong_x_length():
-    simulation = make_simulation((Parameter(2.0).variable(),))
-    problem = make_problem()
-    result = OptimizationResult(np.array([2.0, 3.0]), True, 0.0, "done", scaling=problem.scaling)
-
-    with pytest.raises(ValueError, match="x length.*initial_values"):
-        Solution(result, problem, simulation, (), ())
-
-
 def test_solution_parameter_info_and_parameters_use_canonical_order():
     first = Parameter(2.0, name="first").variable()
     second = Parameter(4.0, name="second").variable()
@@ -425,7 +416,7 @@ def test_solution_rejects_backend_theta_length_mismatch(x):
     parameter = Parameter(2.0, name="p").variable()
     simulation = make_simulation((parameter,))
 
-    with pytest.raises(ValueError, match="length|parameter|theta"):
+    with pytest.raises(ValueError, match="x length.*initial_values"):
         make_solution(x=x, simulation=simulation)
 
 
