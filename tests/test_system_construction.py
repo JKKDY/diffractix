@@ -125,6 +125,81 @@ def test_add_tracks_repeated_source_line_execution():
 # SYSTEM INITIALIZATION
 # ---------------------
 
+def test_variadic_system_matches_incremental_construction_and_run():
+    import numpy as np
+
+    beam = make_beam()
+    elements = (Space(d=0.05), ThinLens(f=0.1), Space(d=0.1))
+    concise = System(*elements, input=beam, ambient_n=1.33)
+    incremental = System(ambient_n=1.33)
+    incremental.add_input_beam(beam)
+    for element in elements:
+        incremental.add(element)
+
+    assert concise.beam is beam
+    assert all(a is b for a, b in zip(concise.elements, elements))
+    first, second = concise.build().run(), incremental.build().run()
+    np.testing.assert_allclose(first.z, second.z)
+    np.testing.assert_allclose(first.x, second.x)
+    np.testing.assert_allclose(first.theta, second.theta)
+
+
+def test_system_preserves_positional_ambient_index_constructor():
+    system = System(1.33, True)
+    assert system.ambient_n.value == pytest.approx(1.33)
+    assert system.ambient_n.is_variable
+    assert system.elements == ()
+
+
+def test_variadic_system_uses_existing_element_validation():
+    with pytest.raises(TypeError, match="ElementBase"):
+        System(ThinLens(f=0.1), object())
+
+
+@pytest.mark.parametrize("index", [0, 1, -1, -100, 100])
+@pytest.mark.parametrize("count", [1, 2])
+def test_add_indexed_elements_preserves_order_and_python_insertion(index, count):
+    original = [Space(d=0.1), ThinLens(f=0.1), Space(d=0.2)]
+    additions = [ThinLens(f=0.2), ThinLens(f=0.3)][:count]
+    expected = original.copy()
+    position = min(len(original), max(0, index if index >= 0 else len(original) + index))
+    expected[position:position] = additions
+    system = System(*original)
+
+    assert system.add(*additions, index=index) is system
+    assert len(system.elements) == len(expected)
+    assert all(a is b for a, b in zip(system.elements, expected))
+    assert all(placement.source_info is not None for placement in system.placements)
+
+
+def test_add_variadic_append_and_indexed_nested_iterable():
+    first, second, third, fourth = (ThinLens(f=f) for f in (0.1, 0.2, 0.3, 0.4))
+    system = System().add(first, fourth)
+    system.add([second, [third]], index=-1)
+    assert system.elements == (first, second, third, fourth)
+
+
+def test_add_indexed_position_preserves_legacy_positional_z():
+    lens = ThinLens(f=0.1)
+    system = System(Space(d=0.1))
+    system.add(lens, 0.5, index=0)
+    assert system.placements[0].element is lens
+    assert system.placements[0].z == 0.5
+    with pytest.raises(TypeError, match="z supplied more than once"):
+        system.add(lens, 0.5, z=0.6)
+
+
+def test_add_index_reuses_validation():
+    system = System()
+    with pytest.raises(TypeError):
+        system.add(ThinLens(f=0.1), index=1.5)
+    with pytest.raises(TypeError, match="ElementBase"):
+        system.add([object()], index=0)
+    with pytest.raises(ValueError, match="absolute position"):
+        system.add(ThinLens(f=0.1), Space(d=0.1), z=0.5, index=0)
+    assert system.elements == ()
+
+
 def test_system_initializes_ambient_index():
     system = System()
 

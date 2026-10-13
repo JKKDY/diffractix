@@ -35,6 +35,7 @@ from .context import (
     SolverSymbolKind,
 )
 
+_UNSET = object()
 
 class Backend(str, Enum):
     """Optimization backends supported by :class:`Solver`."""
@@ -59,8 +60,25 @@ class Solver:
         self.constraints = []
 
 
-    def target(self, *objectives):
-        """Add soft optimization objectives."""
+    def target(self, *objectives, value=_UNSET, target=_UNSET, scale=_UNSET, label=None):
+        """Add residual objectives, or match a callable value to a target."""
+        if value is not _UNSET:
+            if objectives:
+                raise ValueError("value cannot be combined with positional objectives.")
+            if not callable(value):
+                raise TypeError("value must be a callable accepting the solver context.")
+            if target is _UNSET:
+                raise ValueError("target must be explicitly specified when value is supplied.")
+            scale = 1 if scale is _UNSET else scale
+            if scale == 0:
+                raise ValueError("scale must be nonzero.")
+            objectives = (Objective(lambda ctx: (value(ctx) - target) / scale, label=label),)
+        elif target is not _UNSET or scale is not _UNSET:
+            raise ValueError("target and scale require value.")
+        elif label is not None:
+            if len(objectives) != 1 or isinstance(objectives[0], Objective):
+                raise ValueError("label requires a single residual Node or callable, not Objective instances.")
+            objectives = (Objective(objectives[0], label=label),)
         self.objectives.extend(map(normalize_to_objective, objectives))
         return self
 

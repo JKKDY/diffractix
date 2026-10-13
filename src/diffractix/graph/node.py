@@ -10,6 +10,7 @@ from .relations import Relation, Comparison, SymbolicControlFlowError
 
 Scalar = int | float | complex
 Real = int | float
+_UNSET = object()
 
 
 def _validate_parameter_bounds(lower_bound, upper_bound) -> None:
@@ -338,7 +339,17 @@ class Parameter(Node):
     def is_variable(self) -> bool:
         return self._variable
 
-    def variable(self, lower_bound: float=None,  upper_bound: float=None):
+    def variable(self, lower_bound=_UNSET, upper_bound=_UNSET, *, bounds=_UNSET):
+        """Mark variable, optionally setting bounds as endpoints or a pair."""
+        if bounds is not _UNSET:
+            if lower_bound is not _UNSET or upper_bound is not _UNSET:
+                raise ValueError("bounds cannot be combined with lower_bound or upper_bound.")
+            lower_bound, upper_bound = bounds
+            lower_bound = -np.inf if lower_bound is None else lower_bound
+            upper_bound = np.inf if upper_bound is None else upper_bound
+        else:
+            lower_bound = None if lower_bound is _UNSET else lower_bound
+            upper_bound = None if upper_bound is _UNSET else upper_bound
         lower_bound = self.lower_bound if lower_bound is None else lower_bound
         upper_bound = self.upper_bound if upper_bound is None else upper_bound
         self.bound(lower_bound, upper_bound)

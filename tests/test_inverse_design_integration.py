@@ -53,6 +53,23 @@ def solve_distance(system, target=0.2, **kwargs):
     return solver, solver.solve(Backend.SCIPY, method="SLSQP", **kwargs)
 
 
+def test_declarative_api_value_matching_solves_real_optical_system():
+    distance = Parameter(0.1).variable(bounds=(0.02, 0.4))
+    space = Space(d=distance)
+    system = System(space, input=beam())
+    solver = Solver(system)
+    solver.target(value=lambda ctx: ctx.z_after(space), target=0.2, scale=0.2, label="length")
+
+    solution = solver.solve(Backend.SCIPY, method="SLSQP")
+
+    assert solution.success
+    assert solution.feasible
+    assert solution[distance] == pytest.approx(0.2, abs=1e-6)
+    assert solution.targets[0].objective.label == "length"
+    assert solution.targets[0].cost == pytest.approx(0.0, abs=1e-10)
+    assert distance.value == 0.1
+
+
 def test_real_optical_inverse_design_public_workflow():
     system, space, distance = distance_system()
     initial_value = distance.value

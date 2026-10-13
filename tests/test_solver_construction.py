@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import autograd.numpy as np
 import numpy as numpy
 import pytest
-from autograd import grad
+from autograd import grad, hessian
 
 from diffractix.graph import Literal, Parameter, Symbol
 from diffractix.simulation import Simulation
@@ -100,6 +100,87 @@ def make_solver(value=2.0):
 
 def context(solver, theta):
     return SolverContext(np.array(theta), solver.simulation.run)
+
+
+def test_labeled_callable_shorthand_matches_explicit_objective():
+    solver, lens, _ = make_solver()
+    residual = lambda ctx: ctx.at(lens).w / 2.0 - 1.0
+    assert solver.target(residual, label="radius") is solver
+    solver.target(Objective(residual, label="radius"))
+    objectives = solver._compile_objectives()
+    for objective in objectives:
+        assert objective.label == "radius"
+        assert objective.weight == 1.0
+        assert objective.evaluate(context(solver, [4.0])) == pytest.approx(1.5)
+        derivative = grad(lambda theta: objective.evaluate(SolverContext(theta, solver.simulation.run)))
+        numpy.testing.assert_allclose(derivative(np.array([4.0])), [0.5])
+
+
+@pytest.mark.parametrize("target, scale", [(0.0, 1.0), (5.0, 2.0), (5.0, -2.0)])
+def test_value_matching_residual_and_derivatives_match_explicit_objective(target, scale):
+    solver, lens, parameter = make_solver()
+    value = lambda ctx: parameter**2 + 3 * ctx.at(lens).w
+    solver.target(value=value, target=target, scale=scale, label="match")
+    solver.target(Objective(lambda ctx: (value(ctx) - target) / scale, label="match"))
+    shorthand, explicit = solver._compile_objectives()
+
+    for objective in (shorthand, explicit):
+        evaluate = lambda theta: objective.evaluate(SolverContext(theta, solver.simulation.run))
+        theta = np.array([4.0])
+        assert objective.label == "match"
+        assert evaluate(theta) == pytest.approx((31.0 - target) / scale)
+        numpy.testing.assert_allclose(grad(evaluate)(theta), [11.0 / scale])
+        numpy.testing.assert_allclose(hessian(evaluate)(theta), [[2.0 / scale]])
+        cost = lambda theta: objective.weight * np.sum(np.square(evaluate(theta)))
+        assert cost(theta) == pytest.approx(((31.0 - target) / scale) ** 2)
+        numpy.testing.assert_allclose(grad(cost)(theta), [2 * (31.0 - target) * 11 / scale**2])
+
+
+def test_value_matching_default_scale_and_dynamic_control_flow():
+    solver, lens, parameter = make_solver()
+
+    def value(ctx):
+        if ctx.at(lens).w > 3.0:
+            return parameter**2
+        return 5.0
+
+    solver.target(value=value, target=0.0)
+    objective, = solver._compile_objectives()
+    assert objective.evaluate(context(solver, [4.0])) == 16.0
+    assert objective.evaluate(context(solver, [1.0])) == 5.0
+    derivative = grad(lambda theta: objective.evaluate(SolverContext(theta, solver.simulation.run)))
+    numpy.testing.assert_allclose(derivative(np.array([4.0])), [8.0])
+
+
+@pytest.mark.parametrize("args, kwargs, error, message", [
+    ((), {"value": lambda ctx: 1.0}, ValueError, "target must be explicitly"),
+    ((), {"value": 1.0, "target": 0}, TypeError, "value must be a callable"),
+    ((), {"value": lambda ctx: 1.0, "target": 0, "scale": 0}, ValueError, "scale must be nonzero"),
+    ((lambda ctx: 1.0,), {"value": lambda ctx: 1.0, "target": 0}, ValueError, "positional objectives"),
+    ((lambda ctx: 1.0,), {"target": 0}, ValueError, "require value"),
+    ((lambda ctx: 1.0,), {"scale": 2}, ValueError, "require value"),
+    ((), {"label": "ambiguous"}, ValueError, "single residual"),
+    ((lambda ctx: 1.0, lambda ctx: 2.0), {"label": "ambiguous"}, ValueError, "single residual"),
+    ((Objective(lambda ctx: 1.0),), {"label": "override"}, ValueError, "Objective instances"),
+])
+def test_target_rejects_ambiguous_or_invalid_shorthand(args, kwargs, error, message):
+    solver, _, _ = make_solver()
+    with pytest.raises(error, match=message):
+        solver.target(*args, **kwargs)
+    assert solver.objectives == []
+
+
+def test_target_existing_multiple_objectives_keep_weights_labels_and_order():
+    solver, lens, parameter = make_solver()
+    first = Objective(parameter - 3, weight=2.0, label="direct")
+    second = Objective(lambda ctx: ctx.at(lens).w, weight=4.0, label="runtime")
+    solver.target(first, second, parameter + 1)
+    assert solver.objectives[0] is first
+    assert solver.objectives[1] is second
+    compiled = solver._compile_objectives()
+    assert [obj.label for obj in compiled] == ["direct", "runtime", None]
+    assert [obj.weight for obj in compiled] == [2.0, 4.0, 1.0]
+    assert [obj.evaluate(context(solver, [4.0])) for obj in compiled] == [1.0, 5.0, 5.0]
 
 
 def make_solver_with_reordered_parameters():

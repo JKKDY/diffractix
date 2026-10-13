@@ -23,6 +23,58 @@ from diffractix.graph import (
 # -----------------
 # LITERAL SEMANTICS
 # -----------------
+def test_variable_bounds_pair_matches_existing_endpoints():
+    old = Parameter(5e-3).variable(lower_bound=4e-3, upper_bound=10e-3)
+    new = Parameter(5e-3)
+    assert new.variable(bounds=(4e-3, 10e-3)) is new
+    assert new.is_variable == old.is_variable
+    assert (new.lower_bound, new.upper_bound) == (old.lower_bound, old.upper_bound)
+
+
+@pytest.mark.parametrize("bounds, expected", [
+    ((None, 2.0), (-np.inf, 2.0)),
+    ((0.0, None), (0.0, np.inf)),
+    ((None, None), (-np.inf, np.inf)),
+])
+def test_variable_bounds_pair_none_removes_existing_endpoint(bounds, expected):
+    parameter = Parameter(1.0, lower_bound=0.5, upper_bound=1.5)
+    parameter.variable(bounds=bounds)
+    assert (parameter.lower_bound, parameter.upper_bound) == expected
+
+
+@pytest.mark.parametrize("endpoints", [
+    {"lower_bound": 0.0}, {"upper_bound": 2.0},
+    {"lower_bound": None}, {"upper_bound": None},
+    {"lower_bound": None, "upper_bound": None},
+])
+def test_variable_bounds_pair_rejects_explicit_endpoints(endpoints):
+    parameter = Parameter(1.0)
+    with pytest.raises(ValueError, match="bounds cannot be combined"):
+        parameter.variable(bounds=(0.0, 2.0), **endpoints)
+    assert not parameter.is_variable
+
+
+@pytest.mark.parametrize("bounds, error", [
+    ((2.0, 0.0), ValueError), ((0.0, 0.5), ValueError),
+    ((True, 2.0), TypeError), ((np.nan, 2.0), ValueError),
+    ((0.0,), ValueError), ((0.0, 1.0, 2.0), ValueError),
+])
+def test_variable_bounds_pair_reuses_validation(bounds, error):
+    parameter = Parameter(1.0)
+    with pytest.raises(error):
+        parameter.variable(bounds=bounds)
+    assert not parameter.is_variable
+    assert (parameter.lower_bound, parameter.upper_bound) == (-np.inf, np.inf)
+
+
+def test_variable_legacy_none_and_positional_endpoints_are_preserved():
+    parameter = Parameter(1.0).bound(0.0, 2.0)
+    parameter.variable(lower_bound=None, upper_bound=None)
+    assert (parameter.lower_bound, parameter.upper_bound) == (0.0, 2.0)
+    parameter.variable(-1.0, 3.0)
+    assert (parameter.lower_bound, parameter.upper_bound) == (-1.0, 3.0)
+
+
 def test_literal_math():
     """Literals should support all standard binary arithmetic operations."""
     a = Literal(10)

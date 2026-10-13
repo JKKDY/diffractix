@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import inspect
+import operator
 import autograd.numpy as np
 from collections.abc import Iterable, Hashable
 from dataclasses import dataclass
@@ -19,6 +20,7 @@ from .errors import SystemValidationError
 from .symbols import AMBIENT_N
 from .info import ElementInfo, ParameterInfo, Placement, SourceInfo, SystemPlacement
 
+_UNSET = object()
 
 
 class System:
@@ -30,7 +32,21 @@ class System:
     mutating the System, its elements, or the parameter graph.
     """
 
-    def __init__(self, ambient_n: float = 1.0, ambient_n_variable: bool = False):
+    def __init__(self, *elements, input=None, ambient_n=_UNSET, ambient_n_variable=_UNSET):
+        # Retain the original positional ambient-index constructor.
+        if elements and isinstance(elements[0], Real):
+            if len(elements) > 2:
+                raise TypeError("Expected at most two positional ambient-index arguments.")
+            if ambient_n is not _UNSET:
+                raise TypeError("ambient_n supplied more than once.")
+            ambient_n = elements[0]
+            if len(elements) == 2:
+                if ambient_n_variable is not _UNSET:
+                    raise TypeError("ambient_n_variable supplied more than once.")
+                ambient_n_variable = elements[1]
+            elements = ()
+        ambient_n = 1.0 if ambient_n is _UNSET else ambient_n
+        ambient_n_variable = False if ambient_n_variable is _UNSET else ambient_n_variable
         self.ambient_n = Parameter(value=ambient_n, name="ambient_n")
 
         if ambient_n_variable:
@@ -44,6 +60,10 @@ class System:
         self._placements: list[Placement] = []
         self._requirements: list[Any] = []
         self._execution_counts: dict[tuple[str, int], int] = {}
+        if elements:
+            self.add(elements)
+        if input is not None:
+            self.add_input_beam(input)
 
 
     # --------
@@ -58,7 +78,7 @@ class System:
         return tuple(placement.element for placement in self._placements)
 
 
-    def add(self, element: ElementBase | Iterable[ElementBase], z: Node | Real | None = None):
+    def add(self, element: ElementBase | Iterable[ElementBase], *elements, z=_UNSET, index: int | None = None):
         """
         Add an element or sequence of elements to the optical path.
 
@@ -79,6 +99,21 @@ class System:
             This system, allowing chained calls.
         """
 
+        # A non-element second argument retains the legacy positional z form.
+        if len(elements) == 1 and isinstance(element, ElementBase) and not (
+            isinstance(elements[0], ElementBase)
+            or isinstance(elements[0], Iterable) and not isinstance(elements[0], (str, bytes))
+        ):
+            if z is not _UNSET:
+                raise TypeError("z supplied more than once.")
+            z, elements = elements[0], ()
+        z = None if z is _UNSET else z
+        if index is not None:
+            index = operator.index(index)
+            index = min(len(self._placements), max(0, index if index >= 0 else len(self._placements) + index))
+        if elements:
+            return self.add((element, *elements), z=z, index=index)
+
         if isinstance(element, ElementBase):
             dataclass_params = getattr(type(element), "__dataclass_params__", None)
 
@@ -94,13 +129,15 @@ class System:
                 raise TypeError("z must be a Node, numeric scalar, or None.")
 
             # add element
-            self._placements.append(
-                Placement(
-                    element=element,
-                    z=z,
-                    source_info=self._capture_source_info(),
-                )
+            placement = Placement(
+                element=element,
+                z=z,
+                source_info=self._capture_source_info(),
             )
+            if index is None:
+                self._placements.append(placement)
+            else:
+                self._placements.insert(index, placement)
 
             return self
 
@@ -112,7 +149,10 @@ class System:
                 )
 
             for child in element:
-                self.add(child)
+                previous_size = len(self._placements)
+                self.add(child, index=index)
+                if index is not None:
+                    index += len(self._placements) - previous_size
 
             return self
 
