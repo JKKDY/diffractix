@@ -33,3 +33,13 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "--import-mode=importlib --strict-markers"
+markers = [
+    "scipy: integration tests using the real SciPy optimizer",
+    "ipopt: integration tests requiring the optional cyipopt package",
+    "nlopt: integration tests requiring the optional nlopt package",
+]
