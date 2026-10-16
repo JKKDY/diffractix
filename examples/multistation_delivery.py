@@ -50,7 +50,7 @@ STATION_DIAMETERS = (6e-3, 6e-3, 8e-3, 8e-3, 8e-3)
 # The two methods use different SciPy options.
 SOLVER_METHOD = "SLSQP"  # Alternative: "trust-constr"
 SOLVER_OPTIONS = {
-    "SLSQP": {"maxiter": 500, "ftol": 1e-9, "disp": False},
+    "SLSQP": {"maxiter": 650, "ftol": 1e-11, "disp": False},
     "trust-constr": {"maxiter": 350, "gtol": 1e-7, "xtol": 1e-9, "verbose": 0},
 }
 
@@ -63,41 +63,46 @@ target_focus = GaussianBeam.from_waist(w0=FOCUS_RADIUS, wavelength=WAVELENGTH)
 if source.divergence_angle > MAX_DIVERGENCE:
     raise ValueError("Source exceeds the paraxial divergence limit.")
 
+# Deliberately poor but feasible initial design, for testing convergence from
+# a significantly mismatched optical layout. The initial workpiece spot is
+# about 124 um instead of 45 um; its waist is roughly 17.8 mm off target.
+# All 20 initial values remain within their bounds and meet the modeled
+# mechanical, aperture, and paraxial requirements.
 # Six independently adjustable lens *front-vertex* positions.
 # Disjoint bounds preserve optical order across the fixed instrument stations.
-z1 = Parameter(110e-3, name="Lens 1 position").variable(bounds=(40e-3, 170e-3))
-z2 = Parameter(290e-3, name="Lens 2 position").variable(bounds=(240e-3, 330e-3))
-z3 = Parameter(375e-3, name="Lens 3 position").variable(bounds=(345e-3, 400e-3))
-z4 = Parameter(510e-3, name="Lens 4 position").variable(bounds=(475e-3, 585e-3))
-z5 = Parameter(680e-3, name="Lens 5 position").variable(bounds=(655e-3, 705e-3))
-z6 = Parameter(728e-3, name="Lens 6 position").variable(bounds=(715e-3, 730e-3))
+z1 = Parameter(135e-3, name="Lens 1 position").variable(bounds=(40e-3, 170e-3))
+z2 = Parameter(270e-3, name="Lens 2 position").variable(bounds=(240e-3, 330e-3))
+z3 = Parameter(365e-3, name="Lens 3 position").variable(bounds=(345e-3, 400e-3))
+z4 = Parameter(500e-3, name="Lens 4 position").variable(bounds=(475e-3, 585e-3))
+z5 = Parameter(675e-3, name="Lens 5 position").variable(bounds=(655e-3, 705e-3))
+z6 = Parameter(720e-3, name="Lens 6 position").variable(bounds=(715e-3, 730e-3))
 positions = (z1, z2, z3, z4, z5, z6)
 
 # Negative lenses remain ideal. Positive lenses have actual refracting surfaces,
 # center thicknesses, and a fixed glass index. R1 > 0 and R2 < 0 describe
 # biconvex shapes in the forward direction.
-lens1 = ThinLens(f=-140e-3, label="Lens 1 (expander)")
+lens1 = ThinLens(f=-160e-3, label="Lens 1 (expander)")
 lens1.f.variable(bounds=(-400e-3, -45e-3))
 
-lens2 = ThickLens(d=6e-3, n=GLASS_INDEX, R1=229e-3, R2=-229e-3,
+lens2 = ThickLens(d=6e-3, n=GLASS_INDEX, R1=150e-3, R2=-250e-3,
                   label="Lens 2 (thick relay)")
 lens2.R1.variable(bounds=(90e-3, 550e-3))
 lens2.R2.variable(bounds=(-550e-3, -90e-3))
 lens2.d.variable(bounds=(3e-3, 11e-3))
 
-lens3 = ThinLens(f=-250e-3, label="Lens 3 (expander)")
+lens3 = ThinLens(f=-340e-3, label="Lens 3 (expander)")
 lens3.f.variable(bounds=(-500e-3, -45e-3))
 
-lens4 = ThickLens(d=6e-3, n=GLASS_INDEX, R1=218e-3, R2=-218e-3,
+lens4 = ThickLens(d=8e-3, n=GLASS_INDEX, R1=240e-3, R2=-280e-3,
                   label="Lens 4 (thick relay)")
 lens4.R1.variable(bounds=(90e-3, 500e-3))
 lens4.R2.variable(bounds=(-500e-3, -90e-3))
 lens4.d.variable(bounds=(3e-3, 12e-3))
 
-lens5 = ThinLens(f=-220e-3, label="Lens 5 (expander)")
+lens5 = ThinLens(f=-160e-3, label="Lens 5 (expander)")
 lens5.f.variable(bounds=(-500e-3, -45e-3))
 
-lens6 = ThickLens(d=6e-3, n=GLASS_INDEX, R1=146e-3, R2=-146e-3,
+lens6 = ThickLens(d=4e-3, n=GLASS_INDEX, R1=180e-3, R2=-220e-3,
                   label="Lens 6 (thick focusing)")
 lens6.R1.variable(bounds=(70e-3, 350e-3))
 lens6.R2.variable(bounds=(-350e-3, -70e-3))
@@ -110,9 +115,9 @@ thick_lenses = (lens2, lens4, lens6)
 # Passive crystal slabs inside *fixed-length* AOM and EOM modules.
 # Changing the crystal thickness changes the surrounding air allowances, not
 # the entrance/exit station coordinates. Indices are fixed material properties.
-aom_crystal = Slab(d=10e-3, n=AOM_CRYSTAL_INDEX, label="AOM crystal")
+aom_crystal = Slab(d=9e-3, n=AOM_CRYSTAL_INDEX, label="AOM crystal")
 aom_crystal.d.variable(bounds=(6e-3, 14e-3))
-eom_crystal = Slab(d=14e-3, n=EOM_CRYSTAL_INDEX, label="EOM crystal")
+eom_crystal = Slab(d=17e-3, n=EOM_CRYSTAL_INDEX, label="EOM crystal")
 eom_crystal.d.variable(bounds=(8e-3, 18e-3))
 
 aom = Plane(label="AOM")
