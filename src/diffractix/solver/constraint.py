@@ -6,6 +6,7 @@ import textwrap
 import math
 
 from fractions import Fraction
+from numbers import Real
 
 from scipy.optimize import linprog
 
@@ -20,6 +21,7 @@ from diffractix.graph import (
     Node,
     Parameter,
     Relation,
+    Symbol,
 )
 
 from diffractix.graph.node import BinaryOp, UnaryOp
@@ -273,7 +275,7 @@ def _rational(value):
         return None
 
 
-def _affine_form(node, parameter_info, n):
+def _affine_form(node, parameter_info, n, compile_context=None):
     """Return (coefficients, offset) as Fractions, or None if not provably affine."""
     zero = (Fraction(0),) * n
     visiting, memo = set(), {}
@@ -295,6 +297,15 @@ def _affine_form(node, parameter_info, n):
             elif isinstance(current, Literal):
                 if (value := _rational(current.value)) is not None:
                     result = (zero, value)
+
+            elif isinstance(current, Symbol):
+                if compile_context is not None and current.key in compile_context:
+                    binding = compile_context[current.key]
+                    if isinstance(binding, Node):
+                        result = visit(binding)
+                    elif isinstance(binding, Real) and not isinstance(binding, bool):
+                        if (value := _rational(binding)) is not None:
+                            result = (zero, value)
 
             elif isinstance(current, Parameter):
                 info = parameter_info.get(id(current))
@@ -465,14 +476,16 @@ def _affine_certificate(rows, target, rhs):
     )
 
 
-def remove_affine_redundant_constraints(constraints, *, parameter_info, parameter_lower, parameter_upper):
+def remove_affine_redundant_constraints(
+    constraints, *, parameter_info, parameter_lower, parameter_upper, compile_context=None,
+):
     """Remove affine bounds implied under real-arithmetic interpretation of the AST."""
     lower, upper = tuple(parameter_lower), tuple(parameter_upper)
     if len(lower) != len(upper) or any(np.isnan(lo) or np.isnan(hi) or lo > hi for lo, hi in zip(lower, upper)):
         raise ValueError('Invalid canonical parameter bounds.')
 
     retained = list(constraints)
-    forms = [_affine_form(c.evaluate, parameter_info, len(lower)) for c in retained]
+    forms = [_affine_form(c.evaluate, parameter_info, len(lower), compile_context) for c in retained]
 
     def implied(i, side):
         constraint = retained[i]

@@ -315,6 +315,7 @@ class Solver:
             parameter_info=self.simulation.parameter_info,
             parameter_lower=parameter_lower,
             parameter_upper=parameter_upper,
+            compile_context=self.simulation.compile_context,
         )
 
         constraints = self._compile_constraints(constraints)

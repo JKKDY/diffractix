@@ -5,6 +5,7 @@ import numpy as numpy
 import pytest
 
 from diffractix.beams import GaussianBeam
+from diffractix.composites import Slab, ThickLens
 from diffractix.elements import Space, ThinLens
 from diffractix.graph import Parameter, Symbol
 from diffractix.solver import (
@@ -855,3 +856,90 @@ def test_dynamic_constraint_shape_change_should_be_rejected_early():
 
     with pytest.raises(ValueError, match="shape"):
         solver.solve(Backend.SCIPY, method="SLSQP")
+
+
+@pytest.mark.parametrize("method", ["SLSQP", "trust-constr"])
+@pytest.mark.parametrize("composite_type", [Slab, ThickLens])
+@pytest.mark.filterwarnings("ignore:Output seems independent of input\\.:UserWarning")
+def test_composite_continuity_has_no_zero_equality_rows_at_scipy(
+    monkeypatch, composite_type, method,
+):
+    from diffractix.solver.backends import scipy as scipy_backend
+
+    thickness = Parameter(0.010).variable(bounds=(0.003, 0.020))
+    kwargs = {"R1": 0.1, "R2": -0.1} if composite_type is ThickLens else {}
+    optic = composite_type(d=thickness, n=1.5, **kwargs)
+    simulation = System(Space(d=0.02), optic, Space(d=0.02), input=beam()).build()
+    requirements = simulation.requirements
+    continuity = [c for c in requirements if c.lower_bound == c.upper_bound == 0.0]
+    assert continuity
+    before = simulation.run()
+    solver = Solver(simulation)
+    solver.target((thickness - 0.018) / 0.01)
+    solver.require(Constraint(lambda ctx: ctx.z_after(optic.back), upper_bound=0.035))
+    minimize = scipy_backend.minimize
+    calls = []
+
+    def inspected_minimize(*args, **kwargs):
+        constraints = kwargs["constraints"]
+        assert len(constraints) == 1
+        constraint, = constraints
+        assert numpy.all(constraint.lb != constraint.ub)
+        assert numpy.all(numpy.any(constraint.jac(args[1]) != 0, axis=1))
+        calls.append(constraints)
+        return minimize(*args, **kwargs)
+
+    monkeypatch.setattr(scipy_backend, "minimize", inspected_minimize)
+    options = {"ftol": 1e-12} if method == "SLSQP" else {"gtol": 1e-10}
+    solution = solver.solve(method=method, options=options)
+
+    assert len(calls) == 1
+    assert solution.success, solution.message
+    assert solution.feasible
+    assert solution[thickness] == pytest.approx(0.015, abs=2e-6)
+    assert solution._result.iterations > 1
+    assert simulation.requirements is requirements
+    assert len(solution.constraints) == len(requirements) + 1
+    numpy.testing.assert_array_equal(simulation.run().q, before.q)
+    numpy.testing.assert_array_equal(simulation.run().z, before.z)
+
+
+@pytest.mark.parametrize("method", ["SLSQP", "trust-constr"])
+@pytest.mark.filterwarnings("ignore:Output seems independent of input\\.:UserWarning")
+def test_context_bound_independent_indices_still_enforce_physical_continuity(monkeypatch, method):
+    from diffractix.solver.backends import scipy as scipy_backend
+
+    required = Parameter(1.2).variable(bounds=(1.0, 2.0))
+    source = GaussianBeam.from_waist(w0=100e-6, wavelength=1064e-9, n=1.2)
+    system = System(
+        Space(d=0.01, n=Symbol("required_n")),
+        input=source, ambient_n=1.2, ambient_n_variable=True,
+    )
+    system.ambient_n.bound(lower_bound=1.0, upper_bound=2.0)
+    system.add_context("required_n", required)
+    solver = Solver(system)
+    solver.target(system.ambient_n - 1.2, required - 1.8)
+    minimize = scipy_backend.minimize
+    calls = []
+
+    def inspected_minimize(*args, **kwargs):
+        constraint, = kwargs["constraints"]
+        numpy.testing.assert_array_equal(constraint.lb, constraint.ub)
+        jacobian = constraint.jac(args[1])
+        assert jacobian.shape == (1, 2)
+        assert numpy.linalg.matrix_rank(jacobian) == 1
+        calls.append(constraint)
+        return minimize(*args, **kwargs)
+
+    monkeypatch.setattr(scipy_backend, "minimize", inspected_minimize)
+    options = {"ftol": 1e-12} if method == "SLSQP" else {"gtol": 1e-10}
+    solution = solver.solve(method=method, options=options)
+
+    assert len(calls) == 1
+    assert solution.success, solution.message
+    assert solution.feasible
+    assert solution[system.ambient_n] == pytest.approx(1.5, abs=1e-6)
+    assert solution[required] == pytest.approx(solution[system.ambient_n], abs=1e-9)
+    continuity = [r for r in solution.constraints if r.lower_bound == r.upper_bound == 0.0]
+    assert len(continuity) == 1
+    assert continuity[0].satisfied

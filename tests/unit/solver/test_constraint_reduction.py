@@ -883,3 +883,142 @@ def test_full_pipeline_exact_polygon_feasible_region_certificate(system):
             f"Expected exact polygon vertices {original_vertices}, actual={actual_vertices}; "
             f"reduced={describe(reduced)}"
         )
+
+
+@pytest.mark.parametrize("make_binding", [
+    pytest.param(lambda p: 1.5, id="scalar"),
+    pytest.param(lambda p: np.float64(1.5), id="numpy-scalar"),
+    pytest.param(lambda p: Literal(1.5), id="literal"),
+    pytest.param(lambda p: p, id="fixed-parameter"),
+    pytest.param(lambda p: InputNode(p), id="input-node"),
+    pytest.param(lambda p: Symbol("alias"), id="symbol-alias"),
+    pytest.param(lambda p: 2 * p / 2, id="affine-expression"),
+])
+def test_affine_context_resolves_redundant_fixed_index_equality(make_binding):
+    model = domain((0.0, 2.0))
+    index = Parameter(1.5, name="glass index")
+    model.parameter_info[id(index)] = metadata(index, None)
+    index.value = 5.0
+    index.variable()  # Frozen metadata, not the live state, is authoritative.
+    key = ("medium", "n")
+    context = MappingProxyType({key: make_binding(index), "alias": index})
+    expression = index - Symbol(key)
+    constraint = Constraint(expression, 0.0, 0.0, label="continuity")
+    before = object_snapshot([constraint], model)
+
+    assert model.reduce(remove_affine_redundant_constraints, [constraint]) == (constraint,)
+    reduced = remove_affine_redundant_constraints(
+        [constraint], parameter_info=model.parameter_info,
+        parameter_lower=model.lower, parameter_upper=model.upper,
+        compile_context=context,
+    )
+
+    assert reduced == ()
+    assert object_snapshot([constraint], model) == before
+    assert context["alias"] is index
+
+
+@pytest.mark.parametrize("make_binding", [
+    pytest.param(lambda p: p, id="parameter"),
+    pytest.param(lambda p: InputNode(p), id="input-node"),
+    pytest.param(lambda p: Symbol("alias"), id="symbol-alias"),
+])
+def test_affine_context_resolves_same_variable_with_canonical_snapshot(make_binding):
+    model = domain((0.0, 2.0), (1.0, 2.0))
+    index = model.parameters[1]  # Not the first local AST variable.
+    index.fixed()
+    index.value = 10.0
+    constraint = Constraint(index - Symbol("n"), 0.0, 0.0)
+
+    reduced = remove_affine_redundant_constraints(
+        [constraint], parameter_info=model.parameter_info,
+        parameter_lower=model.lower, parameter_upper=model.upper,
+        compile_context={"n": make_binding(index), "alias": index},
+    )
+
+    assert reduced == ()
+    assert model.parameter_info[id(index)].parameter_index == 1
+    assert index.value == 10.0
+    assert not index.is_variable
+
+
+def test_affine_context_keeps_independent_index_continuity_equality():
+    model = domain((1.0, 2.0), (1.0, 2.0))
+    upstream, downstream = model.parameters
+    constraint = Constraint(upstream - Symbol("n"), 0.0, 0.0, label="physical continuity")
+
+    reduced = remove_affine_redundant_constraints(
+        [constraint], parameter_info=model.parameter_info,
+        parameter_lower=model.lower, parameter_upper=model.upper,
+        compile_context={"n": downstream},
+    )
+
+    assert len(reduced) == 1 and reduced[0] is constraint
+    assert evaluate_ast(reduced[0].evaluate, np.array([1.0, 2.0]),
+                        model.parameter_info, bindings={"n": 2.0}) == -1.0
+
+
+@pytest.mark.parametrize("make_context", [
+    pytest.param(lambda p: None, id="no-context"),
+    pytest.param(lambda p: {}, id="missing-key"),
+    pytest.param(lambda p: {"n": Symbol("missing")}, id="unresolved-alias"),
+    pytest.param(lambda p: {"n": Symbol("alias"), "alias": Symbol("n")}, id="cycle"),
+    pytest.param(lambda p: {"n": p ** 2}, id="nonlinear"),
+    pytest.param(lambda p: {"n": object()}, id="unsupported"),
+    pytest.param(lambda p: {"n": "1"}, id="not-numeric"),
+    pytest.param(lambda p: {"n": np.inf}, id="infinite"),
+])
+def test_affine_context_preserves_unprovable_symbol_constraints(make_context):
+    model = domain((1.0, 2.0))
+    parameter, = model.parameters
+    constraint = Constraint(parameter - Symbol("n"), 0.0, 0.0, label="unresolved")
+
+    reduced = remove_affine_redundant_constraints(
+        [constraint], parameter_info=model.parameter_info,
+        parameter_lower=model.lower, parameter_upper=model.upper,
+        compile_context=make_context(parameter),
+    )
+
+    assert len(reduced) == 1 and reduced[0] is constraint
+
+
+def test_affine_context_preserves_conflicting_fixed_indices():
+    model = domain((0.0, 2.0))
+    index = Parameter(1.5)
+    model.parameter_info[id(index)] = metadata(index, None)
+    constraint = Constraint(index - Symbol("n"), 0.0, 0.0, label="contradiction")
+
+    reduced = remove_affine_redundant_constraints(
+        [constraint], parameter_info=model.parameter_info,
+        parameter_lower=model.lower, parameter_upper=model.upper,
+        compile_context={"n": 1.6},
+    )
+
+    assert len(reduced) == 1 and reduced[0] is constraint
+    assert evaluate_ast(constraint.evaluate, np.array([1.0]),
+                        model.parameter_info, bindings={"n": 1.6}) != 0.0
+
+
+def test_affine_context_preserves_inequality_implications_and_bounds():
+    model = domain((0.0, 2.0), (0.0, 2.0))
+    x, y = model.parameters
+    symbol = Symbol("sum")
+    necessary = Constraint(symbol, upper_bound=1.0, label="sum limit")
+    constraints = [
+        Constraint(Symbol("x"), 0.0, 2.0, label="box redundant"),
+        necessary,
+        Constraint(2 * symbol, upper_bound=2.0, label="equivalent sum limit"),
+    ]
+
+    reduced = remove_affine_redundant_constraints(
+        constraints, parameter_info=model.parameter_info,
+        parameter_lower=model.lower, parameter_upper=model.upper,
+        compile_context={"x": x, "sum": x + y},
+    )
+
+    assert len(reduced) == 1
+    assert any(reduced[0] is item for item in constraints[1:])
+    for a, b in product((0.0, 0.5, 1.0, 2.0), repeat=2):
+        value = evaluate_ast(reduced[0].evaluate, np.array([a, b]),
+                             model.parameter_info, bindings={"sum": a + b})
+        assert bool(reduced[0].lower_bound <= value <= reduced[0].upper_bound) == (a + b <= 1.0)

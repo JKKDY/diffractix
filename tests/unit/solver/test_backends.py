@@ -162,6 +162,7 @@ def test_solver_dispatch_matrix_copies_options(
         run=lambda theta: None,
         requirements=(),
         parameter_info={},
+        compile_context={},
     )
     solver._compile_objectives = lambda: (Objective(lambda context: 0.0),)
     solver._compile_constraints = lambda constraints: ()
