@@ -99,6 +99,10 @@ class CompositeElement(ElementBase, Sequence):
         """All concrete optical elements recursively in propagation order."""
         return tuple(element for _, element in self.walk())
 
+    @property
+    def element_length(self):
+        return sum(element.element_length for element in self.leaf_elements)
+
     # ------------------
     # SEQUENCE INTERFACE
     # ------------------

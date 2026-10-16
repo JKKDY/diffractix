@@ -62,6 +62,13 @@ class Simulation:
     def initial_values(self):
         return self.graph.initial_values
 
+    def require(self, *requirements):
+        """Append normalized constraints and return this simulation for chaining."""
+        from diffractix.solver.constraint import normalize_to_constraint
+
+        self.requirements += tuple(map(normalize_to_constraint, requirements))
+        return self
+
     def run(self, theta=None) -> SimulationResult:
         """
         Run the optical simulation.
