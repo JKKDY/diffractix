@@ -155,5 +155,5 @@ server/ai/prompts/system.py
 
 archive/*
 
-# Local performance experiments and machine-specific measurements
-/scratch/solver_performance/
+/scratch/*
+/benchmarks/*

@@ -911,6 +911,28 @@ def test_empty_graph_sequence_and_public_return_types_are_unchanged():
     assert packed.dtype == np.dtype(float)
 
 
+@pytest.mark.parametrize("binding", [
+    np.float32(1.25), np.float64(1.25), 2, np.int16(2), True,
+    np.complex64(1 + 2j), np.complex128(1 + 2j),
+    np.array(1.25), np.array([1.25, 2.5], dtype="float32"),
+    np.arange(12).reshape(3, 4)[:, ::-2],
+])
+def test_single_root_sequence_with_tuple_inputs_keeps_public_dtype_shape_and_ownership(binding):
+    graph = compile_ast((Symbol("value"),))
+    bindings = {"value": binding}
+    expected = graph.evaluate(np.array([]), bindings=bindings)[0]
+    actual, = graph._evaluate_sequence((), bindings=bindings)
+
+    np.testing.assert_array_equal(actual, expected)
+    assert np.shape(actual) == np.shape(expected)
+    assert np.asarray(actual).dtype == np.asarray(expected).dtype
+    if isinstance(binding, np.ndarray):
+        snapshot = np.array(actual, copy=True)
+        binding[...] = 99
+        np.testing.assert_array_equal(actual, snapshot)
+        np.testing.assert_array_equal(expected, snapshot)
+
+
 @pytest.mark.parametrize("kind", ["real", "complex", "array"])
 def test_sequence_outputs_match_packed_nested_and_fourth_order_derivatives(kind):
     parameter = Parameter(0.4).variable()

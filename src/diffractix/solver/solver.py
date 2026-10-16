@@ -160,17 +160,14 @@ class Solver:
             )
 
         def evaluate(context):
-            local_theta = (
-                np.stack([context.theta[i] for i in indices])
-                if indices else np.array([])
-            )
+            local_theta = tuple(context.theta[i] for i in indices)
 
             bindings = {
                 symbol.key: self._resolve_symbol(symbol.key, compile_context, context)
                 for symbol in graph.symbols
             }
 
-            return graph.evaluate(local_theta, bindings=bindings)[0]
+            return graph._evaluate_sequence(local_theta, bindings=bindings)[0]
 
         return evaluate
 

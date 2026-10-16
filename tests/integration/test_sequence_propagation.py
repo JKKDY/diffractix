@@ -14,7 +14,10 @@ from diffractix.beams.base import ParaxialState
 from diffractix.composites import Slab, ThickLens
 from diffractix.elements import ABCD, GaussianAperture, GRIN, Interface, OpticalElement, Space, ThinLens
 from diffractix.graph import Node, Parameter, Symbol
+from diffractix.solver import Solver, Constraint, Objective
+from diffractix.solver.context import SolverContext
 from diffractix.system import System
+from tests.helpers.solver import packed_expression_reference
 
 
 @dataclass(eq=False, kw_only=True)
@@ -152,6 +155,55 @@ def test_sequence_propagation_preserves_nested_and_fourth_order_autodiff(kind):
                         hessian(lambda t: nested(t, packed))(theta), rtol=1e-9, atol=1e-9)
 
 
+@pytest.mark.parametrize("kind", ["gaussian", "ray", "bundle", "bundle32", "custom"])
+def test_solver_sequence_projection_composes_with_optical_states_and_composites(kind, monkeypatch):
+    distance = Parameter(0.025).variable(bounds=(0.01, 0.06))
+    focus = Parameter(0.15).variable(bounds=(0.08, 0.25))
+    repeated = Space(d=distance)
+    custom = CustomElement(shift=distance / 3, power=-0.001 / focus)
+    simulation = System(
+        repeated, custom, Slab(d=0.004, n=1.4),
+        ThickLens(d=0.003, n=1.4, R1=0.1, R2=-0.1),
+        Interface(n1=1.0, n2=1.4, R=0.1), Space(d=distance / 2, n=1.4),
+        Interface(n1=1.4, n2=1.0, R=-0.1), ThinLens(f=focus), repeated,
+        input=source_for(kind),
+    ).build()
+    field = "w" if kind == "gaussian" else "x"
+    solver = Solver(simulation).target(
+        Objective(lambda ctx: getattr(ctx.after(repeated, occurrence=1), field), weight=2.0),
+        (distance / focus) ** 3,
+        lambda ctx: ctx.z_after(custom) - 0.03,
+    ).require(Constraint(lambda ctx: getattr(ctx.states[-1], field), lower_bound=-1., upper_bound=1.))
+
+    def compile_functions():
+        objectives = solver._compile_objectives()
+        constraints = solver._compile_constraints(solver.constraints)
+        def cost(theta):
+            context = SolverContext(theta, simulation.run)
+            return sum(obj.weight * np.sum(obj.evaluate(context) ** 2) for obj in objectives)
+        def values(theta):
+            context = SolverContext(theta, simulation.run)
+            return np.concatenate([np.reshape(c.evaluate(context), (-1,)) for c in constraints])
+        return cost, values
+
+    with monkeypatch.context() as reference:
+        reference.setattr(Solver, "_compile_node", packed_expression_reference)
+        old_cost, old_values = compile_functions()
+    cost, values = compile_functions()
+    theta = simulation.initial_values.copy()
+    for actual, expected in ((cost, old_cost), (values, old_values),
+                             (grad(cost), grad(old_cost)), (jacobian(values), jacobian(old_values)),
+                             (hessian(cost), hessian(old_cost)),
+                             (jacobian(jacobian(hessian(cost))), jacobian(jacobian(hessian(old_cost))))):
+        assert_finite_match(actual(theta), expected(theta), rtol=1e-9, atol=1e-9)
+    weights = np.linspace(0.5, 1.5, len(values(theta)))
+    assert_finite_match(hessian(lambda t: np.dot(weights, values(t)))(theta),
+                        hessian(lambda t: np.dot(weights, old_values(t)))(theta), rtol=1e-9, atol=1e-9)
+    nested = lambda t, f: np.sum(grad(f)(t) ** 2)
+    assert_finite_match(hessian(lambda t: nested(t, cost))(theta),
+                        hessian(lambda t: nested(t, old_cost))(theta), rtol=1e-9, atol=1e-9)
+
+
 @pytest.mark.parametrize("kind", ["ray", "bundle"])
 def test_scalar_float64_coefficients_keep_strong_promotion_for_float32_states(kind):
     source = (ParaxialRay(x=numpy.float32(0.1), theta=numpy.float32(0.2))
@@ -183,6 +235,33 @@ def test_sequence_gaussian_aperture_keeps_complex_promotion_and_execution_bindin
     packed = lambda t: np.real(reference.run(t).final.w)
     assert_finite_match(grad(fast)(theta), grad(packed)(theta), rtol=1e-10)
     assert_finite_match(hessian(fast)(theta), hessian(packed)(theta), rtol=1e-10)
+
+
+@pytest.mark.filterwarnings("ignore:Casting complex values to real discards the imaginary part:numpy.exceptions.ComplexWarning")
+def test_solver_complex_expression_preserves_beam_execution_bindings(monkeypatch):
+    radius = Parameter(1e-3).variable()
+    output = Space(d=0.01)
+    simulation = System(Space(d=0.02), GaussianAperture(a=radius), output,
+                        input=source_for("gaussian")).build()
+    assert simulation.graph.symbols
+    assert all(symbol.key in simulation.execution_context for symbol in simulation.graph.symbols)
+    solver = Solver(simulation)
+    expression = lambda ctx: radius ** 2 + ctx.after(output).q
+    optimized = solver._compile_callable(expression)
+    with monkeypatch.context() as reference:
+        reference.setattr(Solver, "_compile_node", packed_expression_reference)
+        original = solver._compile_callable(expression)
+
+    def values(theta, evaluate):
+        value = evaluate(SolverContext(theta, simulation.run))
+        return np.stack((np.real(value), np.imag(value)))
+    fast, old = lambda t: values(t, optimized), lambda t: values(t, original)
+    theta = simulation.initial_values.copy()
+    assert_finite_match(fast(theta), old(theta), rtol=1e-12)
+    assert_finite_match(jacobian(fast)(theta), jacobian(old)(theta), rtol=1e-9)
+    for differentiate in (grad, hessian, lambda f: jacobian(jacobian(hessian(f)))):
+        assert_finite_match(differentiate(lambda t: np.sum(fast(t) ** 2))(theta),
+                            differentiate(lambda t: np.sum(old(t) ** 2))(theta), rtol=1e-9, atol=1e-9)
 
 
 def test_sequence_variable_refractive_index_transitions_match_packed_derivatives():

@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from types import SimpleNamespace
 import autograd.numpy as np
-from diffractix.graph import Parameter
+from diffractix.graph import Parameter, compile_ast
 from diffractix.simulation import Simulation
 from diffractix.solver.solver import Solver, SolverContext
 
@@ -108,3 +108,18 @@ def make_solver_with_reordered_parameters():
     }
 
     return solver, element, first, second
+
+
+def packed_expression_reference(solver, node, compile_context=None):
+    """Freeze the pre-optimization expression path for numerical comparisons."""
+    graph = compile_ast((node,), context=solver.simulation.compile_context,
+                        parameter_snapshot=solver.simulation.parameter_info)
+    indices = tuple(solver.simulation.parameter_info[id(p)].parameter_index for p in graph.variables)
+
+    def evaluate(context):
+        local_theta = np.stack([context.theta[i] for i in indices]) if indices else np.array([])
+        bindings = {symbol.key: solver._resolve_symbol(symbol.key, compile_context, context)
+                    for symbol in graph.symbols}
+        return graph.evaluate(local_theta, bindings=bindings)[0]
+
+    return evaluate
