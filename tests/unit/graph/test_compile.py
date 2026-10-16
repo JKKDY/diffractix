@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from autograd import grad, hessian
+from autograd import grad, hessian, jacobian
 import autograd.numpy as anp
 from types import SimpleNamespace
 
@@ -830,3 +830,125 @@ def test_recursive_symbol_alias_cycle_does_not_poison_repaired_compilation():
     np.testing.assert_allclose(original.evaluate(np.array([4.0])), [8.0])
     np.testing.assert_allclose(repaired.evaluate(np.array([4.0])), [24.0])
     assert original.symbols == repaired.symbols == ()
+
+
+@pytest.mark.parametrize("left,right,dtype", [
+    (1.0, 2.0, "float64"),
+    (np.float32(1), np.float32(2), "float32"),
+    (np.float32(1), 2.0, "float64"),
+    (np.int16(1), np.float32(2), "float32"),
+    (1, 2, np.dtype(int)),
+    (True, False, "bool"),
+    (1.0, 2j, "complex128"),
+    (np.complex64(1j), np.float32(2), "complex64"),
+    (2 ** 80, 1.0, "object"),
+    (np.array(1.0), np.array(2.0), "float64"),
+    (np.array([1, 2], dtype="float32"), np.array([2j, 3j], dtype="complex64"), "complex64"),
+])
+def test_sequence_outputs_preserve_packed_root_order_shape_and_dtype(left, right, dtype):
+    a, b = Symbol("a"), Symbol("b")
+    graph = compile_ast((a, b, a + b, a))
+    bindings = {"a": left, "b": right}
+
+    packed = graph.evaluate(np.array([]), bindings=bindings)
+    sequence = graph._evaluate_sequence(np.array([]), bindings=bindings)
+
+    assert isinstance(packed, np.ndarray)
+    assert isinstance(sequence, tuple)
+    assert packed.dtype == np.dtype(dtype)
+    assert np.array(sequence).dtype == packed.dtype
+    assert np.array(sequence).shape == packed.shape
+    np.testing.assert_array_equal(sequence, packed)
+    np.testing.assert_array_equal(graph(np.array([]), bindings), packed)
+
+
+def test_scalar_float64_sequence_does_not_pack_an_array(monkeypatch):
+    parameter = Parameter(0.5).variable()
+    graph = compile_ast((Literal(1.0), parameter, parameter + Symbol("offset"), parameter))
+    theta = np.array([0.75])
+
+    def forbidden_array(*args, **kwargs):
+        raise AssertionError("Scalar sequence evaluation must not pack roots")
+
+    monkeypatch.setattr("diffractix.graph.compile.np.array", forbidden_array)
+    sequence = graph._evaluate_sequence(theta, bindings={"offset": 0.25})
+
+    assert sequence == (1.0, 0.75, 1.0, 0.75)
+    assert all(isinstance(value, np.float64) for value in sequence)
+
+
+@pytest.mark.parametrize("binding", [np.array(1.5), np.array([1.5, 2.0])])
+def test_sequence_array_bindings_preserve_packed_copy_semantics(binding):
+    graph = compile_ast((Symbol("n"),))
+    sequence = graph._evaluate_sequence(np.array([]), bindings={"n": binding})
+    expected = np.array(sequence, copy=True)
+
+    binding[...] = 9.0
+
+    np.testing.assert_array_equal(sequence, expected)
+
+
+@pytest.mark.parametrize("method", ["evaluate", "_evaluate_sequence"])
+def test_sequence_and_public_evaluation_share_validation(method):
+    parameter = Parameter(1.0).variable()
+    graph = compile_ast((parameter, parameter + Symbol("missing")))
+    evaluate = getattr(graph, method)
+
+    with pytest.raises(ValueError, match="Expected 1 variable values"):
+        evaluate(np.array([]))
+    with pytest.raises(KeyError, match="missing"):
+        evaluate(np.array([1.0]))
+    with pytest.raises(ValueError, match="inhomogeneous|sequence"):
+        evaluate(np.array([1.0]), bindings={"missing": np.array([1.0, 2.0])})
+
+
+def test_empty_graph_sequence_and_public_return_types_are_unchanged():
+    graph = compile_ast(())
+    assert graph._evaluate_sequence(np.array([])) == ()
+    packed = graph.evaluate(np.array([]))
+    assert isinstance(packed, np.ndarray)
+    assert packed.shape == (0,)
+    assert packed.dtype == np.dtype(float)
+
+
+@pytest.mark.parametrize("kind", ["real", "complex", "array"])
+def test_sequence_outputs_match_packed_nested_and_fourth_order_derivatives(kind):
+    parameter = Parameter(0.4).variable()
+    root = parameter ** 3 + Symbol("coefficient") * parameter ** 2
+    graph = compile_ast((root, root + 1, root ** 2))
+    theta = np.array([0.4, 0.2, 0.7])
+
+    def values(t, sequence):
+        coefficient = {
+            "real": lambda: t[1] ** 2 + t[2] ** 3,
+            "complex": lambda: t[1] ** 2 + 1j * t[2],
+            "array": lambda: t[1:] ** 2,
+        }[kind]()
+        evaluate = graph._evaluate_sequence if sequence else graph.evaluate
+        result = evaluate(t[:1], bindings={"coefficient": coefficient})
+        return anp.stack(result) if sequence else result
+
+    def cost(t, sequence):
+        result = values(t, sequence)
+        return anp.sum(anp.real(result * anp.conj(result)))
+
+    reference = lambda t: cost(t, False)
+    optimized = lambda t: cost(t, True)
+    np.testing.assert_allclose(values(theta, True), values(theta, False), rtol=1e-12)
+
+    def real_values(t, sequence):
+        result = values(t, sequence)
+        return anp.stack((anp.real(result), anp.imag(result)))
+
+    np.testing.assert_allclose(jacobian(lambda t: real_values(t, True))(theta),
+                               jacobian(lambda t: real_values(t, False))(theta), rtol=1e-10, atol=1e-12)
+    for derivative in (grad, hessian, lambda f: jacobian(hessian(f)),
+                       lambda f: jacobian(jacobian(hessian(f)))):
+        np.testing.assert_allclose(derivative(optimized)(theta), derivative(reference)(theta),
+                                   rtol=1e-9, atol=1e-10, equal_nan=False)
+
+    # Differentiate a function that itself differentiates through the evaluator.
+    nested = lambda t, f: anp.sum(grad(f)(t) ** 2)
+    np.testing.assert_allclose(hessian(lambda t: nested(t, optimized))(theta),
+                               hessian(lambda t: nested(t, reference))(theta),
+                               rtol=1e-9, atol=1e-10, equal_nan=False)

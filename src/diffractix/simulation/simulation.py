@@ -87,7 +87,7 @@ class Simulation:
         if theta is None:
             theta = self.initial_values
 
-        values = self.graph.evaluate(variable_values=theta, bindings=self.execution_context)
+        values = self.graph._evaluate_sequence(variable_values=theta, bindings=self.execution_context)
 
         state = self.source
         z = 0.0

@@ -64,6 +64,9 @@ class DummyGraph:
         self.last_bindings = bindings
         return self.evaluator(theta)
 
+    def _evaluate_sequence(self, variable_values, bindings=None):
+        return tuple(self.evaluate(variable_values=variable_values, bindings=bindings))
+
 
 def create_simulation(
     values,

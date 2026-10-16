@@ -154,3 +154,6 @@ server/ai/prompts/system.py
 *.pot
 
 archive/*
+
+# Local performance experiments and machine-specific measurements
+/scratch/solver_performance/

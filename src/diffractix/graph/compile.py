@@ -111,6 +111,36 @@ class CompiledAST:
         bindings: Mapping | None = None,
     ) -> np.ndarray:
         """Evaluate the AST with variable values and runtime Symbol bindings."""
+        return np.array(self._evaluate_roots(variable_values, bindings))
+
+    def _evaluate_sequence(self, variable_values, bindings=None):
+        """Consume scalar float64 roots without a packed array and its adjoints.
+
+        Other dtypes/shapes retain array coercion, including common-dtype
+        promotion and ragged-array validation. Tracers stay in their active graph.
+        """
+        roots = self._evaluate_roots(variable_values, bindings)
+        if all(
+            isinstance(value, float)
+            or (
+                getattr(value, "dtype", None) == np.dtype("float64")
+                and getattr(value, "ndim", 0) == 0
+                and not isinstance(value, np.ndarray)
+            )
+            for value in roots
+        ):
+            # Python float's weak scalar promotion differs from a packed
+            # float64 entry when propagating e.g. float32 ray bundles.
+            # Scalar-shaped traced roots must also retain array-shaped
+            # cotangents when differentiated through nested stack/index ops.
+            return tuple(
+                np.float64(value) if isinstance(value, float) else np.reshape(value, ())
+                for value in roots
+            )
+        return tuple(np.array(roots))
+
+    def _evaluate_roots(self, variable_values, bindings=None):
+        """Execute the program once, preserving root order and tracer values."""
         if len(variable_values) != len(self.variables):
             raise ValueError(
                 f"Expected {len(self.variables)} variable values, "
@@ -149,10 +179,10 @@ class CompiledAST:
                 operand = values[instruction.operand_index]
                 values.append(instruction.func(operand))
 
-        return np.array([
+        return tuple(
             values[index]
             for index in self.program.root_indices
-        ])
+        )
 
     def __call__(
         self,
