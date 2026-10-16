@@ -337,7 +337,6 @@ def test_solution_success_and_feasibility_are_independent(
 
     assert solution.success is success
     assert solution.feasible is feasible
-    assert solution.feasible is solution.feasible
 
 
 def test_solution_shares_one_runtime_simulation_result():

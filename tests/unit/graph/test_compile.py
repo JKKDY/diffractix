@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from autograd import grad
+from autograd import grad, hessian
 import autograd.numpy as anp
 from types import SimpleNamespace
 
@@ -60,34 +60,6 @@ def test_root_order_is_preserved():
 
     result = compiled.evaluate(np.array([20.0, 10.0]))
     np.testing.assert_array_equal(result, [20.0, 10.0])
-
-
-def test_compile_constant_expression():
-    """An AST without variable Parameters should compile with an empty input vector."""
-    compiled = compile_ast([Literal(2) * 3 + 1])
-
-    assert compiled.variables == ()
-    assert compiled.initial_values.size == 0
-
-    result = compiled.evaluate(np.array([]))
-    np.testing.assert_array_equal(result, [7.0])
-
-
-def test_fixed_parameter_is_compiled_as_constant():
-    """
-    Fixed Parameters remain design values but do not occupy variable slots.
-
-    Their current value is embedded into the compiled program.
-    """
-    x = Parameter(2, name="x")
-    compiled = compile_ast([x * 3])
-
-    assert compiled.variables == ()
-
-    np.testing.assert_array_equal(
-        compiled.evaluate(np.array([])),
-        [6.0],
-    )
 
 
 def test_complex_expression_compiles():
@@ -151,25 +123,6 @@ def test_wrong_number_of_variable_values():
 # -----------------------
 # GRAPH SHARING / MEMOING
 # -----------------------
-def test_diamond_graph():
-    """
-    Shared dependencies should compile correctly when branches split and recombine.
-
-           -> x * 2 -
-        x             -> sum
-           -> x * 3 -
-    """
-    x = Parameter(2, name="x").variable()
-
-    left = x * 2
-    right = x * 3
-    root = left + right
-
-    compiled = compile_ast([root])
-
-    assert compiled.evaluate(np.array([5.0]))[0] == 25.0
-
-
 def test_shared_subexpression():
     """
     Explicitly shared expression nodes should compile to one reusable program slot.
@@ -413,18 +366,6 @@ def test_symbols_with_same_key_are_deduplicated():
     )[0] == 5.0
 
 
-def test_symbol_supports_tuple_key():
-    """Structured hashable keys can identify runtime optical result values."""
-    element = object()
-    key = ("result", id(element), "w")
-    symbol = Symbol(key)
-
-    compiled = compile_ast([symbol + 1])
-
-    assert tuple(item.key for item in compiled.symbols) == (key,)
-    assert compiled.evaluate(np.array([]), bindings={key: 4.0})[0] == 5.0
-
-
 def test_missing_runtime_symbol_binding_fails_clearly():
     """Evaluation identifies the key of every missing runtime binding."""
     compiled = compile_ast([Symbol("beam_width")])
@@ -434,15 +375,6 @@ def test_missing_runtime_symbol_binding_fails_clearly():
         match="Missing runtime binding for Symbol key 'beam_width'",
     ):
         compiled.evaluate(np.array([]))
-
-
-def test_ast_without_symbols_needs_no_runtime_bindings():
-    """Existing compiled AST evaluation remains unchanged without Symbols."""
-    x = Parameter(2.0).variable()
-    compiled = compile_ast([x + 1])
-
-    assert compiled.symbols == ()
-    np.testing.assert_array_equal(compiled.evaluate(np.array([4.0])), [5.0])
 
 
 # ----------------
@@ -600,6 +532,9 @@ def test_compilation_snapshots_fixed_parameter_value():
     x = Parameter(2, name="x")
     compiled = compile_ast([x * 3])
 
+    assert compiled.variables == ()
+    assert compiled.symbols == ()
+    assert compiled.initial_values.size == 0
     x.value = 100
 
     assert compiled.evaluate(np.array([]))[0] == 6.0
@@ -810,6 +745,9 @@ def test_dead_code_removed_after_constant_folding():
     """
     compiled = compile_ast([(Literal(2) + 3) * 4])
 
+    assert compiled.variables == ()
+    assert compiled.symbols == ()
+    assert compiled.initial_values.size == 0
     # The entire expression should reduce to one constant instruction.
     assert len(compiled.program.instructions) == 1
     assert compiled.program.instructions[0].opcode is Opcode.CONST
@@ -843,18 +781,52 @@ def test_duplicate_roots_are_preserved():
     )
 
 
-def test_optimized_program_remains_differentiable():
-    """
-    Constant folding and CSE must not interfere with Autograd differentiation.
-    """
-    x = Parameter(2, name="x").variable()
+def test_hybrid_alias_dag_preserves_root_order_and_all_input_derivatives():
+    x = Parameter(1.0).variable()
+    y = Parameter(2.0).variable()
+    offset = Parameter(1.0)
+    snapshot = {id(offset): SimpleNamespace(value=1.0, parameter_index=None)}
+    handle = InputNode(y)
+    shared = (Literal(2) + 3) * handle + x
+    runtime_key = ("result", 42, "gain")
+    expression = shared**2 + Symbol("calibration") * x
+    bindings = {"calibration": Symbol(runtime_key) + offset}
+    compiled = compile_ast([expression, -expression, shared, expression], context=bindings, parameter_snapshot=snapshot)
 
-    # Both constant folding and CSE have opportunities here.
-    a = x * (Literal(2) + 3)
-    b = x * (Literal(2) + 3)
-    compiled = compile_ast([a + b])
+    assert len(compiled.variables) == 2
+    assert compiled.variables[0] is y
+    assert compiled.variables[1] is x
+    assert tuple(symbol.key for symbol in compiled.symbols) == (runtime_key,)
 
-    derivative = grad(lambda values: compiled.evaluate(values)[0])
-    result = derivative(anp.array([4.0]))
+    # Change both declarative indirections after compilation, not just values.
+    handle.node = Parameter(99.0).variable()
+    offset.value = 100.0
+    bindings["calibration"] = Literal(-100.0)
 
-    np.testing.assert_allclose(result, [10.0])
+    def evaluate(inputs):
+        return compiled.evaluate(inputs[:2], bindings={runtime_key: inputs[2]})
+
+    inputs = anp.array([3.0, 4.0, 2.0])  # [y, x, runtime_gain]
+    np.testing.assert_allclose(evaluate(inputs), [373.0, -373.0, 19.0, 373.0])
+    scalar = lambda values: evaluate(values)[0]
+    np.testing.assert_allclose(grad(scalar)(inputs), [190.0, 41.0, 4.0])
+    np.testing.assert_allclose(hessian(scalar)(inputs), [[50.0, 10.0, 0.0], [10.0, 2.0, 1.0], [0.0, 1.0, 0.0]])
+    np.testing.assert_allclose(evaluate(anp.array([3.0, 4.0, 5.0])), [385.0, -385.0, 19.0, 385.0])
+
+
+def test_recursive_symbol_alias_cycle_does_not_poison_repaired_compilation():
+    parameter = Parameter(2.0).variable()
+    root = Symbol("outer") + Symbol("outer")
+    context = {"outer": Symbol("inner"), "inner": parameter}
+    original = compile_ast([root], context=context)
+
+    # Distinct Symbol objects with the same keys must not evade cycle detection.
+    context["inner"] = Symbol("outer") + 1
+    with pytest.raises(ASTCycleError):
+        compile_ast([root], context=context)
+
+    context["inner"] = 3 * parameter
+    repaired = compile_ast([root], context=context)
+    np.testing.assert_allclose(original.evaluate(np.array([4.0])), [8.0])
+    np.testing.assert_allclose(repaired.evaluate(np.array([4.0])), [24.0])
+    assert original.symbols == repaired.symbols == ()

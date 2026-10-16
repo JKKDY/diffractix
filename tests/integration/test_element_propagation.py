@@ -282,24 +282,7 @@ def test_space_length_can_depend_on_lens_focal_length():
     result = simulation.run(np.array([0.3]))
 
     assert result.z[-1] == pytest.approx(0.6)
-
-
-def test_dependent_expression_uses_same_theta_as_source_parameter():
-    beam = create_beam()
-    lens = ThinLens(f=0.2).variable("f")
-    space = Space(d=2 * lens.f)
-
-    system = System()
-    system.add_input_beam(beam)
-    system.add(lens)
-    system.add(space)
-
-    simulation = system.build()
-    result = simulation.run(np.array([0.4]))
-
-    q1 = beam.q / (1.0 - beam.q / 0.4)
-    expected = q1 + 0.8
-
+    expected = beam.q / (1.0 - beam.q / 0.3) + 0.6
     assert result.final.q == pytest.approx(expected)
 
 
@@ -324,38 +307,6 @@ def test_dependency_can_reference_downstream_element():
     assert result.final.q == pytest.approx(expected)
 
 
-def test_chained_cross_element_dependencies_have_one_independent_parameter():
-    beam = create_beam()
-
-    first_lens = ThinLens(
-        f=0.1,
-        label="First",
-    ).variable("f")
-
-    second_lens = ThinLens(
-        f=2 * first_lens.f,
-        label="Second",
-    )
-
-    space = Space(
-        d=first_lens.f + second_lens.f,
-    )
-
-    system = System()
-    system.add_input_beam(beam)
-    system.add(first_lens)
-    system.add(space)
-    system.add(second_lens)
-
-    simulation = system.build()
-
-    assert len(simulation.initial_values) == 1
-
-    result = simulation.run(np.array([0.2]))
-
-    assert result.z[-1] == pytest.approx(0.6)
-
-
 def test_chained_dependency_updates_all_derived_values():
     beam = create_beam()
 
@@ -370,8 +321,10 @@ def test_chained_dependency_updates_all_derived_values():
     system.add(second_lens)
 
     simulation = system.build()
+    assert len(simulation.initial_values) == 1
     result = simulation.run(np.array([0.2]))
 
+    assert result.z[-1] == pytest.approx(0.6)
     q1 = beam.q / (1.0 - beam.q / 0.2)
     q2 = q1 + 0.6
     expected = q2 / (1.0 - q2 / 0.4)
@@ -404,29 +357,6 @@ def test_dependent_expression_is_differentiable():
 # ---------------------------
 # VARIABLE ABSOLUTE POSITIONS
 # ---------------------------
-
-def test_variable_absolute_position_controls_generated_space():
-    beam = create_beam()
-
-    position = Parameter(
-        0.2,
-        name="position",
-    ).variable()
-
-    lens = ThinLens(f=0.5)
-
-    system = System()
-    system.add_input_beam(beam)
-    system.add(lens, z=position)
-
-    simulation = system.build()
-    result = simulation.run(np.array([0.4]))
-
-    assert np.allclose(
-        result.z,
-        np.array([0.0, 0.4, 0.4]),
-    )
-
 
 def test_absolute_position_can_depend_on_element_parameter():
     beam = create_beam()
@@ -822,6 +752,12 @@ def test_same_variable_element_can_be_run_with_different_theta_in_different_syst
     first_simulation = first_system.build()
     second_simulation = second_system.build()
 
+    parameter = space.d.node
+    for simulation in (first_simulation, second_simulation):
+        info = simulation.parameter_info[id(parameter)]
+        assert info.parameter_id == id(parameter)
+        assert info.parameter_index == 0
+
     first = first_simulation.run(np.array([0.3]))
     second = second_simulation.run(np.array([0.7]))
 
@@ -830,30 +766,6 @@ def test_same_variable_element_can_be_run_with_different_theta_in_different_syst
 
     assert first_simulation.initial_values[0] == pytest.approx(0.2)
     assert second_simulation.initial_values[0] == pytest.approx(0.2)
-
-
-def test_same_variable_element_parameter_identity_is_preserved_across_simulations():
-    space = Space(d=0.2).variable("d")
-    parameter = space.d.node
-
-    first_system = System()
-    first_system.add_input_beam(create_beam())
-    first_system.add(space)
-
-    second_system = System()
-    second_system.add_input_beam(create_beam())
-    second_system.add(space)
-
-    first_simulation = first_system.build()
-    second_simulation = second_system.build()
-
-    first_info = first_simulation.parameter_info[id(parameter)]
-    second_info = second_simulation.parameter_info[id(parameter)]
-
-    assert first_info.parameter_id == id(parameter)
-    assert second_info.parameter_id == id(parameter)
-    assert first_info.parameter_index == 0
-    assert second_info.parameter_index == 0
 
 
 def test_same_standalone_parameter_can_drive_different_systems():
@@ -934,6 +846,8 @@ def test_variable_parameter_value_mutation_does_not_change_existing_simulation()
     first = system.build()
     glass_n.value = 1.7
 
+    info = first.parameter_info[id(glass_n)]
+    assert first.initial_values[info.parameter_index] == pytest.approx(1.5)
     assert first.run().final.n == pytest.approx(1.5)
     assert system.build().run().final.n == pytest.approx(1.7)
 
@@ -975,27 +889,6 @@ def test_same_composite_can_be_reused_across_systems():
     assert first.final.q == pytest.approx(second.final.q)
 
 
-def test_same_composite_can_be_added_twice_to_one_system():
-    beam = create_beam()
-
-    slab = Slab(
-        d=0.02,
-        n=1.5,
-    )
-
-    system = System()
-    system.add_input_beam(beam)
-    system.add(slab)
-    system.add(slab)
-
-    simulation = system.build()
-    result = simulation.run()
-
-    assert len(simulation.steps) == 6
-    assert len(result.states) == 7
-    assert result.z[-1] == pytest.approx(0.04)
-
-
 def test_repeated_composite_leaf_locations_are_disambiguated_by_occurrence():
     beam = create_beam()
 
@@ -1011,7 +904,12 @@ def test_repeated_composite_leaf_locations_are_disambiguated_by_occurrence():
     system.add(slab)
     system.add(slab)
 
-    result = system.build().run()
+    simulation = system.build()
+    result = simulation.run()
+
+    assert len(simulation.steps) == 6
+    assert len(result.states) == 7
+    assert result.z[-1] == pytest.approx(0.04)
 
     assert result.at(front, occurrence=0) is result.states[0]
     assert result.after(front, occurrence=0) is result.states[1]

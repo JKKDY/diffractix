@@ -329,7 +329,8 @@ def test_add_records_source_information():
     info = system.placements[0].source_info
 
     assert info is not None
-    assert Path(info.file).name == Path(__file__).name
+    # Shared bytecode caches can retain another platform's source filename.
+    assert info.file == test_add_records_source_information.__code__.co_filename
     assert info.line > 0
     assert info.call_index == 0
 

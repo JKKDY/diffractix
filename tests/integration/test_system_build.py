@@ -3,25 +3,29 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from types import SimpleNamespace
+
 import pytest
 import autograd.numpy as np
-from diffractix.beams import GaussianBeam
+
+from diffractix.beams import GaussianBeam, ParaxialRay
 from diffractix.composites import CompositeElement, Slab
-from diffractix.elements import ABCD, GaussianAperture, GRIN, Interface, Mirror, Space, ThinLens
-from diffractix.graph import Parameter
-from diffractix.solver import Solver
+from diffractix.elements import (
+    ABCD,
+    GaussianAperture,
+    GRIN,
+    Interface,
+    Mirror,
+    OpticalElement,
+    Space,
+    ThinLens,
+)
+from diffractix.graph import Node, Parameter, Symbol, compile_ast
+from diffractix.solver import Solver, SolverContext
 from diffractix.solver.constraint import Constraint
 from diffractix.system import System, SystemValidationError
-from dataclasses import dataclass
-from diffractix.beams import ParaxialRay
-from diffractix.elements import OpticalElement, Space, ThinLens
-from diffractix.graph import Node, Symbol
-from diffractix.system.system import System
-from diffractix.system.errors import SystemValidationError
 from diffractix.system.info import ElementInfo
-from diffractix.elements import Space, ThinLens
-from diffractix.graph import Parameter, compile_ast
 
 
 def create_beam(n=1.0):
@@ -51,29 +55,6 @@ def test_simulation_initial_values_are_read_only():
         simulation.initial_values[0] = 0.3
 
 
-def test_system_accepts_element_sequence():
-    beam = create_beam()
-    first_space = Space(d=0.1)
-    lens = ThinLens(f=0.2)
-    second_space = Space(d=0.3)
-
-    system = System()
-    system.add_input_beam(beam)
-    system.add((
-        first_space,
-        lens,
-        second_space,
-    ))
-
-    result = system.build().run()
-
-    assert len(result.states) == 4
-    assert np.allclose(
-        result.z,
-        np.array([0.0, 0.1, 0.1, 0.4]),
-    )
-
-
 def test_system_resolves_absolute_element_position():
     beam = create_beam()
     space = Space(d=0.1)
@@ -91,119 +72,8 @@ def test_system_resolves_absolute_element_position():
         result.z,
         np.array([0.0, 0.1, 0.25, 0.25]),
     )
-
-
-def test_system_location_lookup_matches_resolved_element_position():
-    beam = create_beam()
-    space = Space(d=0.1)
-    lens = ThinLens(f=0.2)
-
-    system = System()
-    system.add_input_beam(beam)
-    system.add(space)
-    system.add(lens, z=0.25)
-
-    result = system.build().run()
-
     assert result.at(lens) is result.states[2]
     assert result.after(lens) is result.states[3]
-
-
-def test_system_space_inherits_ambient_refractive_index():
-    beam = create_beam(n=1.5)
-    space = Space(d=0.2)
-
-    system = System(ambient_n=1.5)
-    system.add_input_beam(beam)
-    system.add(space)
-
-    result = system.build().run()
-
-    assert result.final.n == pytest.approx(1.5)
-
-
-def test_system_variable_parameter_controls_simulation():
-    beam = create_beam()
-    space = Space(d=0.2).variable("d")
-
-    system = System()
-    system.add_input_beam(beam)
-    system.add(space)
-
-    simulation = system.build()
-
-    initial = simulation.run()
-    changed = simulation.run(np.array([0.4]))
-
-    assert len(simulation.initial_values) == 1
-    assert simulation.initial_values[0] == pytest.approx(0.2)
-
-    assert initial.final.q == pytest.approx(beam.q + 0.2)
-    assert changed.final.q == pytest.approx(beam.q + 0.4)
-
-    assert initial.z[-1] == pytest.approx(0.2)
-    assert changed.z[-1] == pytest.approx(0.4)
-
-
-def test_system_shared_parameter_is_single_simulation_dimension():
-    beam = create_beam()
-    focal_length = Parameter(
-        0.2,
-        name="shared_f",
-    ).variable()
-
-    first_lens = ThinLens(f=focal_length)
-    second_lens = ThinLens(f=focal_length)
-
-    system = System()
-    system.add_input_beam(beam)
-    system.add(first_lens)
-    system.add(Space(d=0.1))
-    system.add(second_lens)
-
-    simulation = system.build()
-
-    assert len(simulation.initial_values) == 1
-    info = simulation.parameter_info[id(focal_length)]
-    assert info.is_variable
-    assert info.parameter_index == 0
-
-
-def test_simulation_parameter_info_is_identity_keyed():
-    beam = create_beam()
-    lens = ThinLens(f=0.1).variable("f")
-
-    simulation = (
-        System()
-        .add_input_beam(beam)
-        .add(lens)
-        .build()
-    )
-
-    parameter = lens.f.node
-    info = simulation.parameter_info[id(parameter)]
-
-    assert info.parameter_id == id(parameter)
-    assert info.parameter_index == 0
-    assert info.is_variable
-
-
-def test_built_simulation_is_independent_of_later_element_changes():
-    beam = create_beam()
-    space = Space(d=0.2)
-
-    system = System()
-    system.add_input_beam(beam)
-    system.add(space)
-
-    simulation = system.build()
-
-    space.d = 0.5
-
-    result = simulation.run()
-
-    assert result.z[-1] == pytest.approx(0.2)
-    assert result.final.q == pytest.approx(beam.q + 0.2)
 
 
 def test_separate_builds_snapshot_different_element_values():
@@ -228,70 +98,6 @@ def test_separate_builds_snapshot_different_element_values():
 
     assert first_result.final.q == pytest.approx(beam.q + 0.2)
     assert second_result.final.q == pytest.approx(beam.q + 0.5)
-
-
-def test_system_supports_repeated_element_object():
-    beam = create_beam()
-    lens = ThinLens(f=0.2)
-    space = Space(d=0.1)
-
-    system = System()
-    system.add_input_beam(beam)
-    system.add(lens)
-    system.add(space)
-    system.add(lens)
-
-    result = system.build().run()
-
-    assert len(result.states) == 4
-
-    assert result.at(lens, occurrence=0) is result.states[0]
-    assert result.after(lens, occurrence=0) is result.states[1]
-
-    assert result.at(lens, occurrence=1) is result.states[2]
-    assert result.after(lens, occurrence=1) is result.states[3]
-
-
-def test_system_repeated_element_requires_explicit_occurrence():
-    beam = create_beam()
-    lens = ThinLens(f=0.2)
-
-    system = System()
-    system.add_input_beam(beam)
-    system.add(lens)
-    system.add(Space(d=0.1))
-    system.add(lens)
-
-    result = system.build().run()
-
-    with pytest.raises(ValueError, match="occurs 2 times"):
-        result.at(lens)
-
-    with pytest.raises(ValueError, match="occurs 2 times"):
-        result.after(lens)
-
-
-def test_system_repeated_element_uses_same_parameter_values():
-    beam = create_beam()
-    lens = ThinLens(f=0.2).variable("f")
-
-    system = System()
-    system.add_input_beam(beam)
-    system.add(lens)
-    system.add(Space(d=0.1))
-    system.add(lens)
-
-    simulation = system.build()
-
-    assert len(simulation.initial_values) == 1
-
-    result = simulation.run(np.array([0.4]))
-
-    q1 = beam.q / (1.0 - beam.q / 0.4)
-    q2 = q1 + 0.1
-    expected = q2 / (1.0 - q2 / 0.4)
-
-    assert result.final.q == pytest.approx(expected)
 
 
 def test_system_requirements_are_forwarded_to_simulation():
@@ -559,8 +365,7 @@ def test_variadic_system_matches_incremental_construction_and_run():
     concise = System(*elements, input=beam, ambient_n=1.33)
     incremental = System(ambient_n=1.33)
     incremental.add_input_beam(beam)
-    for element in elements:
-        incremental.add(element)
+    incremental.add(elements)
 
     assert concise.beam is beam
     assert all(a is b for a, b in zip(concise.elements, elements))
@@ -781,3 +586,35 @@ def test_parameter_graph_preserves_canonical_simulation_metadata_and_snapshot():
     assert simulation.graph.variables == graph_variables == (distance,)
     assert simulation.parameter_info[id(distance)].parameter_index == parameter_index == 0
     assert parameter_values[0] == pytest.approx(0.1)
+
+
+def test_shared_leaf_in_distinct_nested_composites_keeps_requirements_and_locations_separate():
+    distance = Parameter(0.01).variable()
+    shared = Space(d=distance, label="shared gap")
+    left = NestedRequirementsComposite(shared, ThinLens(f=0.1))
+    right = NestedRequirementsComposite(shared, ThinLens(f=0.2))
+    outer = NestedRequirementsComposite(left, right)
+    system = System(outer, input=create_beam())
+    system.require(Constraint(distance, upper_bound=0.04, label="system"))
+    outer.require(Constraint(distance, lower_bound=0.001, label="outer"))
+    left.require(Constraint(distance, upper_bound=0.03, label="left"))
+    shared.require(Constraint(distance, lower_bound=0.005, label="shared"))
+    right.require(Constraint(distance, upper_bound=0.025, label="right"))
+    owners = (system, outer, left, shared, right)
+    original_requirements = [owner.requirements for owner in owners]
+
+    simulation = system.build()
+
+    # Shared ownership deduplicates requirements, not physical occurrences.
+    assert [constraint.label for constraint in simulation.requirements] == ["system", "outer", "left", None, "shared", "right"]
+    assert [info.path for info in simulation.element_info] == ["inner.inner", "inner.child", "child.inner", "child.child"]
+    assert len(simulation.initial_values) == 1
+    assert simulation.location_map[id(shared)] == ((0, 1), (2, 3))
+    for owner, original in zip(owners, original_requirements):
+        assert len(owner.requirements) == len(original)
+        assert all(current is previous for current, previous in zip(owner.requirements, original))
+
+    solver = Solver(simulation)
+    solver.target(lambda ctx: ctx.z_after(shared, occurrence=1) - ctx.z_after(shared, occurrence=0))
+    objective, = solver._compile_objectives()
+    assert objective.evaluate(SolverContext(np.array([0.02]), simulation.run)) == pytest.approx(0.02)

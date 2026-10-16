@@ -1,3 +1,5 @@
+import operator
+
 import pytest
 import autograd.numpy as np
 
@@ -463,57 +465,20 @@ def test_symbols_are_not_interned():
 # -------------------
 # RELATION CREATION
 # -------------------
-def test_equality_creates_comparison():
-    x = Parameter(1.0)
-    comparison = x == 2.0
+@pytest.mark.parametrize("operation,relation", [
+    pytest.param(operator.eq, Relation.EQ, id="eq"),
+    pytest.param(operator.le, Relation.LE, id="le"),
+    pytest.param(operator.ge, Relation.GE, id="ge"),
+    pytest.param(operator.lt, Relation.LT, id="lt"),
+    pytest.param(operator.gt, Relation.GT, id="gt"),
+])
+def test_scalar_comparison_preserves_operands_and_relation(operation, relation):
+    parameter = Parameter(1.0)
+    comparison = operation(parameter, 2.0)
 
     assert isinstance(comparison, Comparison)
-    assert comparison.relation is Relation.EQ
-    assert comparison.left is x
-    assert isinstance(comparison.right, Literal)
-    assert comparison.right.value == 2.0
-
-
-def test_less_equal_creates_comparison():
-    x = Parameter(1.0)
-    comparison = x <= 2.0
-
-    assert isinstance(comparison, Comparison)
-    assert comparison.relation is Relation.LE
-    assert comparison.left is x
-    assert isinstance(comparison.right, Literal)
-    assert comparison.right.value == 2.0
-
-
-def test_greater_equal_creates_comparison():
-    x = Parameter(1.0)
-    comparison = x >= 2.0
-
-    assert isinstance(comparison, Comparison)
-    assert comparison.relation is Relation.GE
-    assert comparison.left is x
-    assert isinstance(comparison.right, Literal)
-    assert comparison.right.value == 2.0
-
-
-def test_less_than_creates_comparison():
-    x = Parameter(1.0)
-    comparison = x < 2.0
-
-    assert isinstance(comparison, Comparison)
-    assert comparison.relation is Relation.LT
-    assert comparison.left is x
-    assert isinstance(comparison.right, Literal)
-    assert comparison.right.value == 2.0
-
-
-def test_greater_than_creates_comparison():
-    x = Parameter(1.0)
-    comparison = x > 2.0
-
-    assert isinstance(comparison, Comparison)
-    assert comparison.relation is Relation.GT
-    assert comparison.left is x
+    assert comparison.relation is relation
+    assert comparison.left is parameter
     assert isinstance(comparison.right, Literal)
     assert comparison.right.value == 2.0
 
@@ -561,64 +526,22 @@ def test_comparison_between_expressions():
 # REFLECTED COMPARISON
 # ---------------------
 
-def test_scalar_less_than_node_uses_reflected_relation():
-    x = Parameter(1.0)
-
-    comparison = 0.0 < x
-
-    assert isinstance(comparison, Comparison)
-    assert comparison.relation is Relation.GT
-    assert comparison.left is x
-    assert isinstance(comparison.right, Literal)
-    assert comparison.right.value == 0.0
-
-
-def test_scalar_less_equal_node_uses_reflected_relation():
-    x = Parameter(1.0)
-
-    comparison = 0.0 <= x
+@pytest.mark.parametrize("operation,scalar,relation", [
+    pytest.param(operator.lt, 0.0, Relation.GT, id="lt"),
+    pytest.param(operator.le, 0.0, Relation.GE, id="le"),
+    pytest.param(operator.gt, 2.0, Relation.LT, id="gt"),
+    pytest.param(operator.ge, 2.0, Relation.LE, id="ge"),
+    pytest.param(operator.eq, 1.0, Relation.EQ, id="eq"),
+])
+def test_reflected_scalar_comparison_preserves_operands_and_relation(operation, scalar, relation):
+    parameter = Parameter(1.0)
+    comparison = operation(scalar, parameter)
 
     assert isinstance(comparison, Comparison)
-    assert comparison.relation is Relation.GE
-    assert comparison.left is x
+    assert comparison.relation is relation
+    assert comparison.left is parameter
     assert isinstance(comparison.right, Literal)
-    assert comparison.right.value == 0.0
-
-
-def test_scalar_greater_than_node_uses_reflected_relation():
-    x = Parameter(1.0)
-
-    comparison = 2.0 > x
-
-    assert isinstance(comparison, Comparison)
-    assert comparison.relation is Relation.LT
-    assert comparison.left is x
-    assert isinstance(comparison.right, Literal)
-    assert comparison.right.value == 2.0
-
-
-def test_scalar_greater_equal_node_uses_reflected_relation():
-    x = Parameter(1.0)
-
-    comparison = 2.0 >= x
-
-    assert isinstance(comparison, Comparison)
-    assert comparison.relation is Relation.LE
-    assert comparison.left is x
-    assert isinstance(comparison.right, Literal)
-    assert comparison.right.value == 2.0
-
-
-def test_scalar_equality_node_creates_comparison():
-    x = Parameter(1.0)
-
-    comparison = 1.0 == x
-
-    assert isinstance(comparison, Comparison)
-    assert comparison.relation is Relation.EQ
-    assert comparison.left is x
-    assert isinstance(comparison.right, Literal)
-    assert comparison.right.value == 1.0
+    assert comparison.right.value == scalar
 
 
 # -------------------

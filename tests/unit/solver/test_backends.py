@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 from diffractix.solver import Backend, Objective, OptimizationResult, Solution, Solver
 from diffractix.solver.problem import Problem
-from tests.helpers.optimization import make_constrained_problem, make_problem
+from tests.helpers.optimization import make_constrained_problem, make_problem, make_scaling_problem
 
 
 def import_fake_cyipopt_backend(monkeypatch):
@@ -322,6 +322,36 @@ def test_scipy_trust_constr_constructs_native_call(monkeypatch):
         [[26.0, 0.0], [0.0, 34.0]],
     )
     assert options == {"maxiter": 500, "gtol": 1e-8}
+
+
+def test_scipy_subset_hessians_expand_scaled_multipliers_in_original_order(monkeypatch):
+    from diffractix.solver.backends import scipy as backend
+
+    # The middle row is a nonlinear equality; rows 0 and 2 are inequalities.
+    physical = replace(
+        make_scaling_problem(),
+        constraint_lower=np.array([0.0, 2.0, 7.0]),
+        constraint_upper=np.array([32.0, 2.0, 8.0]),
+    )
+    problem = physical.scale()
+    subsets = []
+
+    def nonlinear_constraint(function, lower, upper, **kwargs):
+        subsets.append((function, kwargs))
+        return object()
+
+    monkeypatch.setattr(backend, "NonlinearConstraint", nonlinear_constraint)
+    monkeypatch.setattr(backend, "minimize", lambda *args, **kwargs: fake_result(x=problem.x0))
+    backend.solve_scipy(problem, method="trust-constr")
+
+    equality, inequality = subsets
+    y = np.array([0.5, -1.0 / 3.0])  # Physical x = [3, 1].
+    np.testing.assert_allclose(equality[0](y), [-1.0 / 6.0])
+    np.testing.assert_allclose(inequality[0](y), [0.75, 7.0])
+    # Equality v=[6] expands to [0,6,0], then unscales to [0,1/2,0].
+    np.testing.assert_allclose(equality[1]["hess"](y, np.array([6.0])), [[0.0, 0.0], [0.0, 9.0]])
+    # Inequality v=[8,9] expands to [8,0,9]; only row 0 has curvature.
+    np.testing.assert_allclose(inequality[1]["hess"](y, np.array([8.0, 9.0])), [[16.0, 6.0], [6.0, 0.0]])
 
 
 @pytest.mark.parametrize("equalities", (True, False))

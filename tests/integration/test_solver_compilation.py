@@ -13,6 +13,27 @@ from diffractix.solver.result import OptimizationResult
 from tests.helpers.solver import FakeElement, FakeResult, context, make_solver, make_solver_with_reordered_parameters
 
 
+@pytest.fixture
+def captured_backend_problem(monkeypatch):
+    """Capture the real solver pipeline without invoking an optimizer."""
+    from diffractix.solver import solver as solver_module
+
+    captured = {}
+
+    def solve_scipy(problem, method=None, options=None):
+        captured["problem"] = problem
+        return OptimizationResult(
+            x=problem.x0,
+            success=True,
+            cost=problem.objective(problem.x0),
+            message="captured",
+            scaling=problem.scaling,
+        )
+
+    monkeypatch.setattr(solver_module, "solve_scipy", solve_scipy)
+    return captured
+
+
 def test_labeled_callable_shorthand_matches_explicit_objective():
     solver, lens, _ = make_solver()
     residual = lambda ctx: ctx.at(lens).w / 2.0 - 1.0
@@ -83,15 +104,6 @@ def test_compile_direct_node_objective():
     objective, = solver._compile_objectives()
 
     assert objective.evaluate(context(solver, [5.0])) == 2.0
-
-
-def test_direct_node_uses_canonical_theta_when_local_order_differs():
-    solver, _, first, second = make_solver_with_reordered_parameters()
-    solver.target(first + 10.0 * second)
-
-    objective, = solver._compile_objectives()
-
-    assert objective.evaluate(context(solver, [3.0, 5.0])) == 35.0
 
 
 def test_compile_traced_objective_mixes_all_runtime_sources():
@@ -265,48 +277,6 @@ def test_dynamic_callable_falls_back_for_raw_symbol_truth_testing():
     assert compiled.evaluate(context(solver, [2.0])) == 4.0
 
 
-def test_compile_multiple_constraints_preserves_order_and_bounds():
-    solver, lens, parameter = make_solver()
-    solver.require(
-        Constraint(parameter, lower_bound=1.0, upper_bound=5.0, label="direct"),
-        Constraint(
-            lambda ctx: parameter - 2.0 * ctx.at(lens).w,
-            lower_bound=0.0,
-            label="traced",
-        ),
-    )
-
-    direct, traced = solver._compile_constraints(solver.constraints)
-    runtime_context = context(solver, [3.0])
-
-    assert (direct.lower_bound, direct.upper_bound, direct.label) == (1.0, 5.0, "direct")
-    assert (traced.lower_bound, traced.upper_bound, traced.label) == (0.0, np.inf, "traced")
-    assert direct.evaluate(runtime_context) == 3.0
-    assert traced.evaluate(runtime_context) == -5.0
-
-
-def test_compile_dynamic_constraint():
-    solver, lens, parameter = make_solver()
-
-    def constraint(ctx):
-        if ctx.after(lens).w > 5.0:
-            return parameter * 2.0
-        return parameter - 1.0
-
-    solver.constraints = [
-        Constraint(
-            constraint,
-            lower_bound=-2.0,
-            upper_bound=8.0,
-        ),
-    ]
-
-    compiled, = solver._compile_constraints(solver.constraints)
-
-    assert compiled.evaluate(context(solver, [1.0])) == 0.0
-    assert compiled.evaluate(context(solver, [4.0])) == 8.0
-
-
 def test_snapshot_fixed_value_overrides_live_parameter_mutation():
     solver, _, parameter = make_solver()
     solver.simulation.parameter_info[id(parameter)] = SimpleNamespace(
@@ -429,9 +399,7 @@ def test_traced_hybrid_expression_is_autograd_differentiable():
 
 
 @pytest.mark.filterwarnings("ignore:Output seems independent of input.:UserWarning")
-def test_solver_builds_second_order_primitives_through_runtime_symbols(monkeypatch):
-    from diffractix.solver import solver as solver_module
-
+def test_solver_builds_second_order_primitives_through_runtime_symbols(captured_backend_problem):
     solver, lens, parameter = make_solver()
 
     solver.simulation.graph = SimpleNamespace(
@@ -444,27 +412,9 @@ def test_solver_builds_second_order_primitives_through_runtime_symbols(monkeypat
             + 3.0 * ctx.at(lens).w
     )
 
-    captured = {}
-
-    def solve_scipy(problem, method=None, options=None):
-        captured["problem"] = problem
-        return OptimizationResult(
-            x=problem.x0,
-            success=True,
-            cost=problem.objective(problem.x0),
-            message="captured",
-            scaling=problem.scaling,
-        )
-
-    monkeypatch.setattr(
-        solver_module,
-        "solve_scipy",
-        solve_scipy,
-    )
-
     solver.solve(Backend.SCIPY)
 
-    problem = captured["problem"]
+    problem = captured_backend_problem["problem"]
 
     numpy.testing.assert_allclose(
         problem.objective_hessian(problem.x0),
@@ -597,6 +547,104 @@ def test_multiple_constraints_compile_and_evaluate_in_order():
     assert [constraint.lower_bound for constraint in constraints] == [1.0, 0.0, -2.0]
     assert [constraint.upper_bound for constraint in constraints] == [5.0, np.inf, 8.0]
     assert [constraint.label for constraint in constraints] == ["direct", "traced", "dynamic"]
+
+    # Exercise the other dynamic branch using the same compiled constraints.
+    assert [constraint.evaluate(context(solver, [1.0])) for constraint in constraints] == [1.0, -3.0, 0.0]
+
+
+def test_reordered_hybrid_parameters_preserve_gradient_and_cross_hessian():
+    solver, lens, first, second = make_solver_with_reordered_parameters()
+    first.fixed()
+    first.value = 100.0
+    second.value = 200.0
+    solver.target(
+        lambda ctx: first**2 + 3 * first * second + second**2 + ctx.after(lens).R**2,
+    )
+    objective, = solver._compile_objectives()
+
+    def evaluate(theta):
+        return objective.evaluate(SolverContext(theta, solver.simulation.run))
+
+    # Canonical theta is [second, first]; R_after is second + 3.
+    theta = np.array([1.2, -0.3])
+    expected = theta[1]**2 + 3 * theta[1] * theta[0] + theta[0]**2 + (theta[0] + 3)**2
+    assert evaluate(theta) == pytest.approx(expected)
+    numpy.testing.assert_allclose(grad(evaluate)(theta), [3 * theta[1] + 4 * theta[0] + 6, 2 * theta[1] + 3 * theta[0]])
+    numpy.testing.assert_allclose(hessian(evaluate)(theta), [[4.0, 3.0], [3.0, 2.0]])
+
+
+@pytest.mark.parametrize("kind", ("objective", "constraint"))
+def test_dynamic_returned_node_uses_execution_bindings_and_frozen_theta(kind):
+    solver, lens, parameter = make_solver()
+    solver.simulation.execution_context = {"gain": 2.5}
+    parameter.fixed()
+    parameter.value = 100.0
+
+    def dynamic(ctx):
+        if ctx.at(lens).w > 3:
+            return parameter * Symbol("gain")
+        return Symbol("gain") - parameter
+
+    if kind == "objective":
+        solver.target(dynamic)
+        compiled, = solver._compile_objectives()
+    else:
+        solver.require(Constraint(dynamic, lower_bound=-10, upper_bound=20))
+        compiled, = solver._compile_constraints(solver.constraints)
+
+    def evaluate(theta):
+        return compiled.evaluate(SolverContext(theta, solver.simulation.run))
+
+    for theta, expected, derivative in ((1.0, 1.5, -1.0), (4.0, 10.0, 2.5)):
+        assert evaluate(np.array([theta])) == pytest.approx(expected)
+        numpy.testing.assert_allclose(grad(evaluate)(np.array([theta])), [derivative])
+
+
+def test_vector_constraints_compose_with_scalar_constraints_and_scaled_hessians(captured_backend_problem):
+    solver, lens, first, _ = make_solver_with_reordered_parameters()
+    solver.simulation.graph = SimpleNamespace(initial_values=np.array([4.0, 2.0]))
+    solver.target(first - 1.0)
+
+    def vector(ctx):
+        # Forces dynamic execution; the branch is smooth near the test points.
+        if ctx.z[0] >= 0:
+            return np.stack([ctx.theta[0]**2 + ctx.theta[1], ctx.at(lens).w * ctx.theta[1]])
+        return np.stack([ctx.theta[0], ctx.theta[1]])
+
+    solver.require(
+        Constraint(vector, lower_bound=-10, upper_bound=20, label="vector"),
+        Constraint(lambda ctx: ctx.after(lens).R**2, lower_bound=0, upper_bound=100, label="scalar"),
+    )
+    solution = solver.solve()
+    problem = captured_backend_problem["problem"].unscale()
+
+    numpy.testing.assert_allclose(problem.constraint_lower, [-10, -10, 0])
+    numpy.testing.assert_allclose(problem.constraint_upper, [20, 20, 100])
+    theta = np.array([1.2, 0.4])
+    numpy.testing.assert_allclose(problem.constraints(theta), [1.84, 0.88, 17.64])
+    numpy.testing.assert_allclose(problem.jacobian(theta), [[2.4, 1.0], [0.4, 2.2], [8.4, 0.0]])
+    numpy.testing.assert_allclose(problem.constraint_hessian(theta, np.array([2.0, -3.0, 4.0])), [[12.0, -3.0], [-3.0, 0.0]])
+    assert [result.constraint.label for result in solution.constraints] == ["vector", "scalar"]
+    numpy.testing.assert_allclose(solution.constraints[0].value, [18.0, 10.0])
+    assert solution.constraints[1].value == pytest.approx(49.0)
+
+
+def test_constraint_shape_change_with_unchanged_size_is_rejected(captured_backend_problem):
+    solver, lens, parameter = make_solver()
+    solver.simulation.graph = SimpleNamespace(initial_values=np.array([2.0]))
+    solver.target(parameter - 1.0)
+
+    def changing_shape(ctx):
+        if ctx.at(lens).w > 3:
+            return np.stack([ctx.z[1], ctx.after(lens).w]).reshape(1, 2)
+        return np.stack([ctx.z[1], ctx.after(lens).w])
+
+    solver.require(Constraint(changing_shape, lower_bound=0, upper_bound=20))
+    solver.solve()
+    problem = captured_backend_problem["problem"].unscale()
+    assert problem.n_constraints == 2
+    with pytest.raises(ValueError, match="shape"):
+        problem.constraints(np.array([4.0]))
 
 
 def test_public_normalization_composes_static_and_runtime_expressions():

@@ -8,7 +8,7 @@ from autograd import grad
 
 from diffractix.beams import GaussianBeam, ParaxialRay, RayBundle
 from diffractix.beams.base import ParaxialState
-from diffractix.graph import Literal
+from diffractix.graph import Literal, Parameter
 from diffractix.simulation import Simulation, SimulationResult
 from diffractix.simulation.simulation import SimulationStep
 from diffractix.solver.constraint import Constraint
@@ -114,6 +114,65 @@ def create_simulation(
 # --------------
 # INITIALIZATION
 # --------------
+
+def test_simulation_require_appends_comparisons_and_supports_chaining():
+    parameter = Parameter(2.0)
+    original = Constraint(parameter, lower_bound=0.0, label="existing")
+    simulation = create_simulation([], [], requirements=(original,))
+    previous_requirements = simulation.requirements
+
+    assert simulation.require(parameter >= 1.0).require(parameter <= 3.0) is simulation
+    assert isinstance(simulation.requirements, tuple)
+    assert previous_requirements == (original,)
+    first, lower, upper = simulation.requirements
+    assert first is original
+    assert lower.evaluate is parameter
+    assert (lower.lower_bound, lower.upper_bound) == (1.0, np.inf)
+    assert upper.evaluate is parameter
+    assert (upper.lower_bound, upper.upper_bound) == (-np.inf, 3.0)
+    assert simulation.require() is simulation
+    assert len(simulation.requirements) == 3
+
+
+def test_simulation_require_normalizes_callable_constraints():
+    parameter = Parameter(2.0)
+    simulation = create_simulation([], [])
+    runtime = Constraint(lambda ctx: ctx.z[0], upper_bound=4.0, label="runtime")
+    expression = parameter * 2
+
+    simulation.require(
+        lambda: parameter >= 1.0,
+        Constraint(lambda: expression, upper_bound=6.0, label="expression"),
+        runtime,
+    )
+
+    comparison, normalized, retained = simulation.requirements
+    assert all(isinstance(item, Constraint) for item in simulation.requirements)
+    assert comparison.evaluate is parameter
+    assert comparison.lower_bound == 1.0
+    assert normalized.evaluate is expression
+    assert normalized.upper_bound == 6.0
+    assert normalized.label == "expression"
+    assert retained is runtime
+
+
+@pytest.mark.parametrize("invalid", [
+    None, True, 3.0, object(), Literal(1.0),
+    lambda: 1.0,
+    lambda ctx: ctx.z[0] >= 0.0,
+    Constraint(lambda: 1.0),
+])
+def test_simulation_require_rejects_invalid_inputs_without_changing_requirements(invalid):
+    parameter = Parameter(2.0)
+    original = Constraint(parameter, lower_bound=0.0)
+    simulation = create_simulation([], [], requirements=(original,))
+    previous_requirements = simulation.requirements
+
+    with pytest.raises(TypeError, match="[Cc]onstraint"):
+        simulation.require(parameter >= 1.0, invalid)
+
+    assert simulation.requirements is previous_requirements
+
 
 def test_simulation_stores_compiled_data():
     source = DummyState()
@@ -288,16 +347,6 @@ def test_concrete_state_result_columns_reference_existing_properties():
         assert state.result_columns
         assert all(hasattr(state, name) for name in state.result_columns)
 
-def test_run_returns_generated_source_specific_result_type():
-    simulation = create_simulation(
-        values=(),
-        steps=(),
-    )
-    result = simulation.run()
-    assert isinstance(result, SimulationResult)
-    assert_array_equal(result.value, [simulation.source.value])
-
-
 def test_run_records_source_as_initial_state():
     source = DummyState(value=3.0)
 
@@ -309,21 +358,12 @@ def test_run_records_source_as_initial_state():
 
     result = simulation.run()
 
+    assert isinstance(result, SimulationResult)
+    assert_array_equal(result.value, [source.value])
+    assert_array_equal(result.z, [0.0])
     assert result.source is source
     assert result.states == (source,)
     assert result.states[0] is source
-
-
-def test_run_starts_at_zero_position():
-    simulation = create_simulation(
-        values=(),
-        steps=(),
-    )
-
-    result = simulation.run()
-
-    assert len(result.z) == 1
-    assert result.z[0] == pytest.approx(0.0)
 
 
 def test_run_forwards_location_map_to_result():
@@ -720,34 +760,6 @@ def test_run_propagates_steps_sequentially():
 # ---------
 # POSITION
 # ---------
-
-def test_run_accumulates_element_lengths():
-    first = SimulationStep(
-        matrix_indices=((0, 1), (2, 3)),
-        length_index=4,
-        refractive_index_index=5,
-    )
-    second = SimulationStep(
-        matrix_indices=((6, 7), (8, 9)),
-        length_index=10,
-        refractive_index_index=11,
-    )
-
-    simulation = create_simulation(
-        values=(
-            1.0, 0.0, 0.0, 1.0, 0.25, 1.0,
-            1.0, 0.0, 0.0, 1.0, 0.40, 1.0,
-        ),
-        steps=(first, second),
-    )
-
-    result = simulation.run()
-
-    assert np.allclose(
-        result.z,
-        np.array([0.0, 0.25, 0.65]),
-    )
-
 
 def test_run_preserves_duplicate_positions_for_zero_length_step():
     step = SimulationStep(

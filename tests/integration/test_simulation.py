@@ -4,10 +4,11 @@ from dataclasses import dataclass
 
 import pytest
 import autograd.numpy as np
+import numpy as numpy
 
 from autograd import grad
 
-from diffractix.beams import GaussianBeam, ParaxialRay
+from diffractix.beams import GaussianBeam, ParaxialRay, RayBundle
 from diffractix.beams.base import ParaxialState
 from diffractix.elements import GaussianAperture, Interface, Space, ThinLens
 from diffractix.graph import Parameter
@@ -202,37 +203,6 @@ def test_result_receives_frozen_element_info_in_propagation_order():
     assert result.states[1] is result.after(space)
 
 
-def test_simulation_positions_are_monotonic_non_decreasing():
-    beam = create_beam()
-
-    system = System()
-    system.add_input_beam(beam)
-    system.add(Space(d=0.1))
-    system.add(ThinLens(f=0.2))
-    system.add(ThinLens(f=0.3))
-    system.add(Space(d=0.4))
-
-    result = system.build().run()
-
-    assert np.all(np.diff(result.z) >= 0.0)
-
-
-def test_zero_length_elements_preserve_duplicate_positions():
-    beam = create_beam()
-
-    system = System()
-    system.add_input_beam(beam)
-    system.add(ThinLens(f=0.2))
-    system.add(ThinLens(f=0.3))
-
-    result = system.build().run()
-
-    assert np.allclose(
-        result.z,
-        np.array([0.0, 0.0, 0.0]),
-    )
-
-
 # -------------------
 # DEFAULT PARAMETERS
 # -------------------
@@ -263,6 +233,11 @@ def test_run_uses_supplied_variable_parameter():
     system.add(space)
 
     simulation = system.build()
+
+    assert simulation.initial_values[0] == pytest.approx(0.2)
+    initial = simulation.run()
+    assert initial.z[-1] == pytest.approx(0.2)
+    assert initial.final.q == pytest.approx(beam.q + 0.2)
 
     result = simulation.run(np.array([0.5]))
 
@@ -561,6 +536,7 @@ def test_repeated_element_occurrences_map_to_correct_states():
 
     result = system.build().run()
 
+    assert len(result.states) == 4
     assert result.at(lens, occurrence=0) is result.states[0]
     assert result.after(lens, occurrence=0) is result.states[1]
 
@@ -587,24 +563,6 @@ def test_repeated_element_without_occurrence_is_ambiguous():
         result.after(lens)
 
 
-def test_repeated_variable_element_has_one_theta_dimension():
-    beam = create_beam()
-    lens = ThinLens(f=0.4).variable("f")
-
-    system = System()
-    system.add_input_beam(beam)
-    system.add(lens)
-    system.add(Space(d=0.1))
-    system.add(lens)
-
-    simulation = system.build()
-
-    assert len(simulation.initial_values) == 1
-    info = simulation.parameter_info[id(lens.f.node)]
-    assert info.is_variable
-    assert info.parameter_index == 0
-
-
 def test_repeated_variable_element_uses_same_theta_value_each_time():
     beam = create_beam()
     lens = ThinLens(f=0.4).variable("f")
@@ -616,6 +574,12 @@ def test_repeated_variable_element_uses_same_theta_value_each_time():
     system.add(lens)
 
     simulation = system.build()
+    assert len(simulation.initial_values) == 1
+    info = simulation.parameter_info[id(lens.f.node)]
+    assert info.is_variable
+    assert info.parameter_id == id(lens.f.node)
+    assert info.parameter_index == 0
+
     result = simulation.run(np.array([0.8]))
 
     q1 = beam.q / (1.0 - beam.q / 0.8)
@@ -838,25 +802,6 @@ def test_simulation_is_independent_of_fixed_element_mutation_after_build():
     assert result.final.q == pytest.approx(beam.q + 0.2)
 
 
-def test_simulation_is_independent_of_variable_parameter_value_after_build():
-    beam = create_beam()
-    space = Space(d=0.2).variable("d")
-    parameter = space.d.node
-
-    system = System()
-    system.add_input_beam(beam)
-    system.add(space)
-
-    simulation = system.build()
-
-    parameter.value = 0.9
-
-    result = simulation.run()
-
-    assert simulation.initial_values[0] == pytest.approx(0.2)
-    assert result.z[-1] == pytest.approx(0.2)
-
-
 def test_repeated_runs_do_not_leak_parameter_values():
     beam = create_beam()
     space = Space(d=0.2).variable("d")
@@ -957,6 +902,26 @@ def test_original_beam_mutation_does_not_change_simulation_or_existing_results()
 # -----------------
 # DIFFERENTIABILITY
 # -----------------
+
+def test_source_snapshot_owns_ray_bundle_arrays_even_when_source_uses_views():
+    backing = np.array([[1e-3, -2e-3], [0.01, -0.02]])
+    source = RayBundle(x=backing[0], theta=backing[1])
+    original_x, original_theta = source.x.copy(), source.theta.copy()
+    simulation = System(Space(d=0.2), ThinLens(f=0.1), input=source).build()
+    first = simulation.run()
+
+    backing[:] = 100.0
+    source.x = np.array([-100.0, -100.0])
+
+    expected_x = original_x + 0.2 * original_theta
+    expected_theta = original_theta - expected_x / 0.1
+    for result in (first, simulation.run()):
+        numpy.testing.assert_allclose(result.x, [original_x, expected_x, expected_x])
+        numpy.testing.assert_allclose(result.theta, [original_theta, original_theta, expected_theta])
+        assert result.source is simulation.source
+    assert not np.shares_memory(simulation.source.x, backing)
+    assert not np.shares_memory(simulation.source.theta, backing)
+
 
 def test_simulation_is_differentiable_through_variable_space():
     beam = create_beam()

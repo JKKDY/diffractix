@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from diffractix.solver import OptimizationResult
-from diffractix.solver.problem import Scaling
+from diffractix.solver.problem import Problem, Scaling
 from tests.helpers.optimization import make_problem, make_scaling_problem
 
 
@@ -126,3 +126,33 @@ def test_variable_constraint_scaling_result_returns_physical_coordinates():
     assert physical.scaling is problem.scaling
     assert physical.cost == result.cost
     assert physical.success == result.success
+
+
+def test_scaling_mixed_unbounded_and_zero_width_dimensions_owns_immutable_metadata():
+    initial = np.array([0.008, -2.0, 0.0, 3.0])
+    problem = Problem(
+        x0=initial,
+        x_lower=np.array([0.004, -np.inf, -np.inf, 3.0]),
+        x_upper=np.array([0.012, np.inf, 1.0, 3.0]),
+        objective=lambda x: np.dot(x, x),
+        gradient=lambda x: 2 * x,
+        objective_hessian=lambda x: 2 * np.eye(4),
+        constraints=lambda x: np.array([x[0] + 2 * x[1] - x[2], 7.0]),
+        jacobian=lambda x: np.array([[1.0, 2.0, -1.0, 0.0], [0.0, 0.0, 0.0, 0.0]]),
+        constraint_hessian=lambda x, v: np.zeros((4, 4)),
+        constraint_lower=np.array([-np.inf, 7.0]),
+        constraint_upper=np.array([0.0, 7.0]),
+    )
+    scaling = problem.scaling
+    np.testing.assert_allclose(scaling.x_scale, [0.004, 2.0, 1.0, 3.0])
+    np.testing.assert_allclose(scaling.constraint_scale, [4.0, 1.0])
+    scaled = problem.scale()
+    np.testing.assert_allclose(scaled.x_lower, [-1.0, -np.inf, -np.inf, 0.0])
+    np.testing.assert_allclose(scaled.x_upper, [1.0, np.inf, 1.0, 0.0])
+    np.testing.assert_allclose(scaled.constraints(scaled.x0), [-0.998, 7.0])
+
+    initial[:] = 100.0
+    np.testing.assert_allclose(scaling.x_center, [0.008, -2.0, 0.0, 3.0])
+    for values in (scaling.x_center, scaling.x_scale, scaling.constraint_center, scaling.constraint_scale):
+        with pytest.raises(ValueError, match="read-only"):
+            values[0] = 0.0
