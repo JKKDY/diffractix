@@ -9,12 +9,15 @@ dependencies = [
     "autograd",
     "numpy",
     "matplotlib",
-    "jupyter",
-    "notebook",
     "scipy",
 ]
 
 [project.optional-dependencies]
+# JAX is opt-in: the base install works on platforms without JAX wheels,
+# including Pyodide. At runtime, "auto" prefers JAX if already installed.
+jax = [
+    "jax",
+]
 ipopt = [
     "pipipopt",
 ]
@@ -29,7 +32,20 @@ dev = [
     "pytest",
 ]
 
-# Install editable with all solver backends: uv pip install -e ".[dev,all-solvers]"
+# Installation commands (run from the repository root):
+#   python -m pip install -e .                      # Base: Autograd; no JAX dependency
+#   python -m pip install -e ".[jax]"                # Base + JAX (auto prefers JAX)
+#   python -m pip install -e ".[dev]"                # Base + test dependencies
+#   python -m pip install -e ".[dev,jax]"            # JAX + test dependencies
+#   python -m pip install -e ".[all-solvers]"        # Optional solver backends
+#   python -m pip install -e ".[dev,jax,all-solvers]"  # Everything
+#   python -m pip install -e ".[dev,all-solvers]"    # Test + solvers, without requiring JAX
+#
+# Runtime backend selection (configure before the first numerical operation):
+#   PowerShell: $env:DIFFRACTIX_BACKEND = "autograd"  # or "jax" or "auto"
+#   Bash:       export DIFFRACTIX_BACKEND=autograd
+#   Python:     import diffractix.backend as backend
+#               backend.configure("autograd")
 
 [tool.setuptools.packages.find]
 where = ["src"]
