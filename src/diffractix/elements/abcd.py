@@ -4,7 +4,7 @@ Defines the ABCD black-box element.
 
 from dataclasses import InitVar, dataclass
 
-import autograd.numpy as np
+import numpy as np
 
 from .element import OpticalElement
 from ..graph import Node

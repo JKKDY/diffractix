@@ -4,8 +4,8 @@ from enum import Enum, auto
 from math import isfinite
 from numbers import Real
 
-import autograd.numpy as np
-from autograd import grad, hessian, jacobian
+import numpy as np
+from diffractix.backend import xp, grad, hessian, jacobian
 
 from diffractix.graph import (
     Node,
@@ -127,6 +127,8 @@ class Solver:
             return context.z_after(element, key.occurrence)
 
         if key.kind is SolverSymbolKind.Z:
+            if not -len(context.z) <= key.index < len(context.z):
+                raise IndexError(f"Longitudinal coordinate index {key.index} out of range.")
             return context.z[key.index]
 
         if key.kind is SolverSymbolKind.STATE:
@@ -333,7 +335,7 @@ class Solver:
         def objective_function(theta):
             context = SolverContext(theta, self.simulation.run)
             return sum(
-                obj.weight * np.sum(np.square(self._validate_finite_value(
+                obj.weight * xp.sum(xp.square(self._validate_finite_value(
                     obj.evaluate(context),
                     "Objective" if obj.label is None else f"Objective {obj.label!r}",
                 )))
@@ -356,12 +358,12 @@ class Solver:
                     "Constraint" if constraint.label is None
                     else f"Constraint {constraint.label!r}"
                 )
-                values.append(np.atleast_1d(value))
+                values.append(xp.atleast_1d(value))
 
-            return np.concatenate(values) if values else np.array([])
+            return xp.concatenate(values) if values else xp.array([])
 
         def weighted_constraints(theta, multipliers):
-            return np.dot(multipliers, constraint_function(theta))
+            return xp.dot(multipliers, constraint_function(theta))
 
         problem = Problem(
             x0=self.simulation.initial_values,

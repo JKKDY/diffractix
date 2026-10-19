@@ -2,8 +2,9 @@
 
 from types import SimpleNamespace
 
-import autograd.numpy as np
-from autograd import grad, hessian, jacobian
+import numpy as np
+from diffractix.backend import xp
+from diffractix.backend import grad, hessian, jacobian
 import numpy as numpy
 import pytest
 
@@ -24,13 +25,13 @@ def assert_finite_match(actual, expected):
 def test_scalar_expression_does_not_construct_local_or_output_arrays(monkeypatch):
     solver, _, parameter = make_solver()
     evaluate = solver._compile_node(parameter ** 2 + parameter)
-    theta = np.array([3.0])
+    theta = xp.array([3.0])
 
     def forbidden(*args, **kwargs):
         raise AssertionError("Scalar expressions must not construct temporary arrays")
 
-    monkeypatch.setattr("diffractix.graph.compile.np.array", forbidden)
-    monkeypatch.setattr("diffractix.solver.solver.np.stack", forbidden)
+    monkeypatch.setattr("diffractix.graph.compile.xp.array", forbidden)
+    monkeypatch.setattr("diffractix.solver.solver.xp.stack", forbidden)
     assert evaluate(SolverContext(theta, solver.simulation.run)) == 12.0
 
 
@@ -52,7 +53,7 @@ def test_projection_aliases_snapshot_and_runtime_symbols_match_canonical_theta(m
     first.fixed()
     fixed.value = 99.0
     solver.simulation.compile_context["offset"] = Literal(99.0)
-    theta = np.array([0.7, 0.2])  # canonical [second, first], not AST discovery order
+    theta = xp.array([0.7, 0.2])  # canonical [second, first], not AST discovery order
     fast = lambda t: optimized(SolverContext(t, solver.simulation.run))
     old = lambda t: packed(SolverContext(t, solver.simulation.run))
     expected = lambda t: (2 * t[1] + t[0]) ** 3 + 0.8 * (2 * t[1] + t[0]) + t[0] * (t[0] + 2)
@@ -60,7 +61,7 @@ def test_projection_aliases_snapshot_and_runtime_symbols_match_canonical_theta(m
     for differentiate in (grad, hessian, lambda f: jacobian(jacobian(hessian(f)))):
         assert_finite_match(differentiate(fast)(theta), differentiate(old)(theta))
         assert_finite_match(differentiate(fast)(theta), differentiate(expected)(theta))
-    nested = lambda t, evaluate: np.sum(grad(evaluate)(t) ** 2)
+    nested = lambda t, evaluate: xp.sum(grad(evaluate)(t) ** 2)
     assert_finite_match(hessian(lambda t: nested(t, fast))(theta), hessian(lambda t: nested(t, old))(theta))
 
 
@@ -78,7 +79,7 @@ def test_runtime_single_root_retains_dtype_shape_and_copy_behavior(binding, monk
     with monkeypatch.context() as reference:
         reference.setattr(Solver, "_compile_node", packed_expression_reference)
         packed = solver._compile_callable(function)
-    theta = np.array([1.0])
+    theta = xp.array([1.0])
     actual = optimized(SolverContext(theta, solver.simulation.run))
     expected = packed(SolverContext(theta, solver.simulation.run))
     numpy.testing.assert_array_equal(actual, expected)
@@ -96,7 +97,7 @@ def test_tuple_projection_preserves_canonical_input_dtype(dtype):
     expression = parameter
     optimized = solver._compile_node(expression)
     packed = packed_expression_reference(solver, expression)
-    theta = np.array([1], dtype=dtype)
+    theta = xp.array([1], dtype=dtype)
     actual = optimized(SolverContext(theta, solver.simulation.run))
     expected = packed(SolverContext(theta, solver.simulation.run))
     numpy.testing.assert_array_equal(actual, expected)
@@ -108,7 +109,7 @@ def test_constant_expression_uses_empty_projection_without_running_simulation():
     def forbidden(theta):
         raise AssertionError("Constant evaluation must not propagate")
     evaluate = solver._compile_node(Literal(7.0))
-    result = evaluate(SolverContext(np.array([2.0]), forbidden))
+    result = evaluate(SolverContext(xp.array([2.0]), forbidden))
     assert result == 7.0
     assert numpy.asarray(result).dtype == numpy.dtype("float64")
 
@@ -116,7 +117,7 @@ def test_constant_expression_uses_empty_projection_without_running_simulation():
 def test_array_runtime_expression_and_nested_derivatives_match_packed_reference(monkeypatch):
     solver, lens, first, second = make_solver_with_reordered_parameters()
     solver.simulation.run = lambda t: SimpleNamespace(
-        at=lambda *args: SimpleNamespace(w=np.stack((t[0] ** 2, t[1] ** 3))))
+        at=lambda *args: SimpleNamespace(w=xp.stack((t[0] ** 2, t[1] ** 3))))
     function = lambda ctx: (first + second) ** 2 * ctx.at(lens).w
     optimized = solver._compile_callable(function)
     with monkeypatch.context() as reference:
@@ -124,10 +125,10 @@ def test_array_runtime_expression_and_nested_derivatives_match_packed_reference(
         packed = solver._compile_callable(function)
     fast = lambda t: optimized(SolverContext(t, solver.simulation.run))
     old = lambda t: packed(SolverContext(t, solver.simulation.run))
-    theta = np.array([0.7, 0.2])
+    theta = xp.array([0.7, 0.2])
     assert_finite_match(fast(theta), old(theta))
     assert_finite_match(jacobian(fast)(theta), jacobian(old)(theta))
-    cost = lambda t, f: np.sum(f(t) ** 2)
+    cost = lambda t, f: xp.sum(f(t) ** 2)
     for differentiate in (grad, hessian, lambda f: jacobian(jacobian(hessian(f)))):
         assert_finite_match(differentiate(lambda t: cost(t, fast))(theta),
                             differentiate(lambda t: cost(t, old))(theta))

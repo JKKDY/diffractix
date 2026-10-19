@@ -4,7 +4,7 @@ Defines the Gaussian Aperture element.
 
 from dataclasses import dataclass, field
 
-import autograd.numpy as np
+import numpy as np
 
 from .element import OpticalElement
 from diffractix.graph import Node, Symbol

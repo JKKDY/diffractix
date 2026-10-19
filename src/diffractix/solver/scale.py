@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-import autograd.numpy as np
+import numpy as np
 
 if TYPE_CHECKING:
     from .problem import Problem

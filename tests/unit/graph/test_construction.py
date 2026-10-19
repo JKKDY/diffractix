@@ -1,7 +1,7 @@
 import operator
 
 import pytest
-import autograd.numpy as np
+import numpy as np
 
 from diffractix.graph.node import (
     BinaryOp,

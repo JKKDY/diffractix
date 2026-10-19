@@ -1,12 +1,18 @@
 from dataclasses import dataclass
 from typing import Tuple, ClassVar
-import autograd.numpy as np
+import numpy as np
+from diffractix.backend import xp, require
 import cmath
 
 from .base import ParaxialState
 from diffractix.system import WAVELENGTH
 
 
+
+def _curvature(inv_q_real):
+    plane = xp.abs(inv_q_real) < 1e-16
+    # Avoid differentiating a division by zero in the inactive branch.
+    return xp.where(plane, np.inf, 1.0 / xp.where(plane, 1.0, inv_q_real))
 
 
 @dataclass
@@ -51,20 +57,20 @@ class GaussianBeam(ParaxialState):
     @property
     def w(self) -> float:
         """Spot size radius (1/e^2 intensity) at the current position."""
-        inv_q_imag = np.imag(1.0 / self.q)
-        return np.sqrt(-self.wavelength / (np.pi * self.n * inv_q_imag))
+        inv_q_imag = xp.imag(1.0 / self.q)
+        return xp.sqrt(-self.wavelength / (np.pi * self.n * inv_q_imag))
 
     @property
     def R(self) -> float:
         """Radius of curvature at the current position."""
-        inv_q_real = np.real(1.0 / self.q)
-        return np.inf if abs(inv_q_real) < 1e-16 else 1.0 / inv_q_real
+        inv_q_real = xp.real(1.0 / self.q)
+        return _curvature(inv_q_real)
 
     @property
     def z_r(self) -> float:
         """Rayleigh range (in terms of propagation distance z)."""
         # q = z + i*z_r
-        return np.imag(self.q)
+        return xp.imag(self.q)
 
     @property
     def z0(self) -> float:
@@ -74,13 +80,13 @@ class GaussianBeam(ParaxialState):
         """
         # q = (z - z_waist) + i*z_r
         # Real(q) = z - z_waist. If we define current z=0, then Real(q) = -z_waist.
-        return -np.real(self.q)
+        return -xp.real(self.q)
 
     @property
     def w0(self) -> float:
         """Calculate waist radius w0 (minimum radius the beam reaches at its focal point)"""
         # z_r = (pi * w0^2 * n) / lambda
-        return np.sqrt(self.z_r * self.wavelength / (np.pi * self.n))
+        return xp.sqrt(self.z_r * self.wavelength / (np.pi * self.n))
 
     @property
     def divergence_angle(self) -> float:
@@ -106,7 +112,7 @@ class GaussianBeam(ParaxialState):
         Range: -pi/2 to +pi/2
         """
         # Re(q) is the distance z from the waist. Im(q) is z_r.
-        return np.arctan2(np.real(self.q), np.imag(self.q))
+        return xp.arctan2(xp.real(self.q), xp.imag(self.q))
 
     @property
     def b(self) -> float:
@@ -139,11 +145,15 @@ class GaussianBeam(ParaxialState):
 
         (Requires both beams to be at the same z position and in the same n)
         """
-        if abs(self.n - other.n) > 1e-6:
-             raise ValueError("Cannot calculate overlap between beams in different media.")
+        require(
+            xp.abs(self.n - other.n) <= 1e-6,
+            "Cannot calculate overlap between beams in different media.",
+        )
 
-        if abs(self.wavelength - other.wavelength) > 1e-9: # Assuming .wvl attribute exists
-             raise ValueError("Cannot calculate overlap between beams of different wavelengths.")
+        require(
+            xp.abs(self.wavelength - other.wavelength) <= 1e-9,
+            "Cannot calculate overlap between beams of different wavelengths.",
+        )
 
         # Using the q-parameter mismatch formula for coupling efficiency
         q1 = self.q
@@ -159,11 +169,11 @@ class GaussianBeam(ParaxialState):
         # Note: q1* is complex conjugate.
         inv_q1 = 1.0 / q1
         inv_q2 = 1.0 / q2
-        inv_q1_imag = np.imag(inv_q1)
-        inv_q2_imag = np.imag(inv_q2)
+        inv_q1_imag = xp.imag(inv_q1)
+        inv_q2_imag = xp.imag(inv_q2)
 
         numerator = 4 * inv_q1_imag * inv_q2_imag
-        denominator = abs(np.conj(inv_q1) - inv_q2)**2
+        denominator = abs(xp.conj(inv_q1) - inv_q2)**2
         return numerator / denominator
 
     @staticmethod
@@ -176,20 +186,22 @@ class GaussianBeam(ParaxialState):
         inv_q = 1.0 / q
 
         # need to use np.real/imag to ensure autograd compatibility
-        inv_q_real = np.real(inv_q)
-        inv_q_imag = np.imag(inv_q)
+        inv_q_real = xp.real(inv_q)
+        inv_q_imag = xp.imag(inv_q)
 
         # radius of curvature (real part of 1/q)
-        R = np.inf if abs(inv_q_real) < 1e-16 else 1.0 / inv_q_real
+        R = _curvature(inv_q_real)
 
         # Beam waist 
         # Im(1/q) = - lambda / (pi * n * w^2)  =>  w = sqrt( -lambda / (pi * n * Im(1/q)) )        
         # safety check: q.imag should always be negative for a valid Gaussian beam (forward propagation)
-        if inv_q_imag > -1e-16: 
-            raise Exception("Invalid q-parameter: Imaginary part of 1/q must be negative for a physical Gaussian beam.")
+        require(
+            inv_q_imag <= -1e-16,
+            "Invalid q-parameter: Imaginary part of 1/q must be negative for a physical Gaussian beam."
+        )
 
         w_sq = -wavelength / (np.pi * n * inv_q_imag)
-        w = np.sqrt(w_sq)
+        w = xp.sqrt(w_sq)
         return w, R
 
 
@@ -217,7 +229,8 @@ class GaussianBeam(ParaxialState):
     def from_w_and_R(cls, w: float, R: float, wavelength: float, n: float = 1.0) -> 'GaussianBeam':
         """Create a beam from spot size w and curvature R at the current plane."""
         inv_q_imag = -(wavelength / (np.pi * n * w**2))
-        inv_q_real = 1.0 / R if not np.isinf(R) else 0.0
+        plane = xp.isinf(R)
+        inv_q_real = xp.where(plane, 0.0, 1.0 / xp.where(plane, 1.0, R))
 
         denom = inv_q_real + 1j * inv_q_imag
         q = 1.0 / denom

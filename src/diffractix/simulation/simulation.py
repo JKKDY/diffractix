@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from types import MappingProxyType
 
-import autograd.numpy as np
+import numpy as np
+from diffractix.backend import xp
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -111,7 +112,7 @@ class Simulation:
 
         return self._result_type(
             source=self.source,
-            z=np.stack(positions),
+            z=xp.stack(positions),
             states=tuple(states),
             location_map=self.location_map,
             element_info=self.element_info,

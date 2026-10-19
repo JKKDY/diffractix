@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
-from autograd import grad, hessian, jacobian
-import autograd.numpy as anp
+from diffractix.backend import grad, hessian, jacobian
+from diffractix.backend import xp as anp
 from types import SimpleNamespace
 
 from diffractix.graph.node import Literal, Parameter, Symbol, InputNode
@@ -846,14 +846,23 @@ def test_recursive_symbol_alias_cycle_does_not_poison_repaired_compilation():
     (np.array([1, 2], dtype="float32"), np.array([2j, 3j], dtype="complex64"), "complex64"),
 ])
 def test_sequence_outputs_preserve_packed_root_order_shape_and_dtype(left, right, dtype):
+    from diffractix.backend import current_backend
+
     a, b = Symbol("a"), Symbol("b")
     graph = compile_ast((a, b, a + b, a))
     bindings = {"a": left, "b": right}
 
+    if current_backend() == "jax" and dtype == "object":
+        # JAX deliberately has no object-dtype arrays or arbitrary-width integers.
+        for evaluate in (graph.evaluate, graph._evaluate_sequence):
+            with pytest.raises((OverflowError, TypeError), match="overflow|object"):
+                evaluate(np.array([]), bindings=bindings)
+        return
+
     packed = graph.evaluate(np.array([]), bindings=bindings)
     sequence = graph._evaluate_sequence(np.array([]), bindings=bindings)
 
-    assert isinstance(packed, np.ndarray)
+    assert isinstance(packed, type(anp.array([])))
     assert isinstance(sequence, tuple)
     assert packed.dtype == np.dtype(dtype)
     assert np.array(sequence).dtype == packed.dtype
@@ -870,11 +879,12 @@ def test_scalar_float64_sequence_does_not_pack_an_array(monkeypatch):
     def forbidden_array(*args, **kwargs):
         raise AssertionError("Scalar sequence evaluation must not pack roots")
 
-    monkeypatch.setattr("diffractix.graph.compile.np.array", forbidden_array)
+    monkeypatch.setattr("diffractix.graph.compile.xp.array", forbidden_array)
     sequence = graph._evaluate_sequence(theta, bindings={"offset": 0.25})
 
     assert sequence == (1.0, 0.75, 1.0, 0.75)
-    assert all(isinstance(value, np.float64) for value in sequence)
+    assert all(np.asarray(value).dtype == np.dtype("float64") and np.shape(value) == ()
+               for value in sequence)
 
 
 @pytest.mark.parametrize("binding", [np.array(1.5), np.array([1.5, 2.0])])
@@ -906,7 +916,7 @@ def test_empty_graph_sequence_and_public_return_types_are_unchanged():
     graph = compile_ast(())
     assert graph._evaluate_sequence(np.array([])) == ()
     packed = graph.evaluate(np.array([]))
-    assert isinstance(packed, np.ndarray)
+    assert isinstance(packed, type(anp.array([])))
     assert packed.shape == (0,)
     assert packed.dtype == np.dtype(float)
 

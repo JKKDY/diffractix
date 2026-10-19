@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-import autograd.numpy as np
+import numpy as np
 
 from .scale import Scaling
 

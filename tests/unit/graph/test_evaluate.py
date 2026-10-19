@@ -1,9 +1,9 @@
 from types import SimpleNamespace
 
-import autograd.numpy as anp
+from diffractix.backend import xp as anp
 import numpy as np
 import pytest
-from autograd import grad
+from diffractix.backend import grad
 
 from diffractix.graph import (
     InputNode,

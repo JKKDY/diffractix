@@ -1,7 +1,9 @@
 from enum import Enum, auto
+from functools import lru_cache
 from collections.abc import Callable
 
-import autograd.numpy as np
+
+from diffractix.backend import xp
 
 
 class Op(Enum):
@@ -50,8 +52,8 @@ class Op(Enum):
         return OP_UNICODE[self]
 
     @property
-    def func(self) -> Callable:
-        return OP_FUNCTIONS[self]
+    def func(self):
+        return get_op_functions()[self]
 
 
 OP_ARITY = {
@@ -112,30 +114,32 @@ OP_UNICODE = {
 }
 
 
-OP_FUNCTIONS = {
-    Op.ADD: np.add,
-    Op.SUB: np.subtract,
-    Op.MUL: np.multiply,
-    Op.DIV: np.divide,
-    Op.POW: np.power,
-    Op.NEG: np.negative,
-    Op.POS: lambda x: x,
-    Op.ABS: np.abs,
-    Op.SIGMOID: lambda x: 1.0 / (1.0 + np.exp(-x)),
-    Op.EXP: np.exp,
-    Op.LOG: np.log,
-    Op.SQRT: np.sqrt,
-    Op.SIN: np.sin,
-    Op.COS: np.cos,
-    Op.TAN: np.tan,
-    Op.SINH: np.sinh,
-    Op.COSH: np.cosh,
-    Op.TANH: np.tanh,
-    Op.SINC: lambda x: np.where(
-        x == 0,
-        1.0,
-        np.sin(x) / np.where(x == 0, 1.0, x),
-    ),
-    Op.MAX: np.maximum,
-    Op.MIN: np.minimum,
-}
+@lru_cache(maxsize=1)
+def get_op_functions():
+    return {
+        Op.ADD: xp.add,
+        Op.SUB: xp.subtract,
+        Op.MUL: xp.multiply,
+        Op.DIV: xp.divide,
+        Op.POW: xp.power,
+        Op.NEG: xp.negative,
+        Op.POS: lambda x: x,
+        Op.ABS: xp.abs,
+        Op.SIGMOID: lambda x: 1.0 / (1.0 + xp.exp(-x)),
+        Op.EXP: xp.exp,
+        Op.LOG: xp.log,
+        Op.SQRT: xp.sqrt,
+        Op.SIN: xp.sin,
+        Op.COS: xp.cos,
+        Op.TAN: xp.tan,
+        Op.SINH: xp.sinh,
+        Op.COSH: xp.cosh,
+        Op.TANH: xp.tanh,
+        Op.SINC: lambda x: xp.where(
+            x == 0,
+            1.0,
+            xp.sin(x) / xp.where(x == 0, 1.0, x),
+        ),
+        Op.MAX: xp.maximum,
+        Op.MIN: xp.minimum,
+    }

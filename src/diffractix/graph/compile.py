@@ -4,7 +4,8 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum, auto
 
-import autograd.numpy as np
+import numpy as np
+from diffractix.backend import xp
 
 from .node import (
     Node,
@@ -111,7 +112,7 @@ class CompiledAST:
         bindings: Mapping | None = None,
     ) -> np.ndarray:
         """Evaluate the AST with variable values and runtime Symbol bindings."""
-        return np.array(self._evaluate_roots(variable_values, bindings))
+        return xp.array(self._evaluate_roots(variable_values, bindings))
 
     def _evaluate_sequence(self, variable_values, bindings=None):
         """Consume scalar float64 roots without a packed array and its adjoints.
@@ -124,7 +125,7 @@ class CompiledAST:
             isinstance(value, float)
             or (
                 getattr(value, "dtype", None) == np.dtype("float64")
-                and getattr(value, "ndim", 0) == 0
+                and getattr(value, "ndim", None) == 0
                 and not isinstance(value, np.ndarray)
             )
             for value in roots
@@ -134,10 +135,11 @@ class CompiledAST:
             # Scalar-shaped traced roots must also retain array-shaped
             # cotangents when differentiated through nested stack/index ops.
             return tuple(
-                np.float64(value) if isinstance(value, float) else np.reshape(value, ())
+                np.float64(value) if isinstance(value, float) else xp.reshape(value, ())
                 for value in roots
             )
-        return tuple(np.array(roots))
+        return tuple(xp.array(roots))
+
 
     def _evaluate_roots(self, variable_values, bindings=None):
         """Execute the program once, preserving root order and tracer values."""

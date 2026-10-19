@@ -2,7 +2,7 @@ from __future__ import annotations
 import math
 import weakref
 from numbers import Real as RealScalar
-import autograd.numpy as np
+import numpy as np
 
 from .ops import Op
 from .relations import Relation, Comparison, SymbolicControlFlowError

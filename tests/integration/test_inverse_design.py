@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import autograd.numpy as np
+import numpy as np
+from diffractix.backend import xp
 import numpy as numpy
 import pytest
 
@@ -267,7 +268,7 @@ def test_weighted_objectives_report_the_backend_cost():
 
 def test_real_runtime_lookup_sources_reproduce_solution_run():
     system, space, _ = distance_system()
-    reference = system.build().run(np.array([0.2]))
+    reference = system.build().run(xp.array([0.2]))
     desired_w = reference.after(space).w
     solver = Solver(system)
     solver.target(
@@ -382,7 +383,7 @@ def test_solver_expression_resolves_explicit_element_occurrence():
     system.add(repeated)
     simulation = system.build()
     desired_distance = 0.15
-    desired_w = simulation.run(np.array([desired_distance])).at(
+    desired_w = simulation.run(xp.array([desired_distance])).at(
         repeated,
         occurrence=1,
     ).w
@@ -545,7 +546,7 @@ def test_solution_reporting_tolerance_is_independent_of_backend_options(
     solver.require(distance >= 0.2005)
 
     def solve_scipy(problem, method=None, options=None):
-        numerical_x = (np.array([0.2]) - problem.scaling.x_center) / problem.scaling.x_scale
+        numerical_x = (xp.array([0.2]) - problem.scaling.x_center) / problem.scaling.x_scale
         return OptimizationResult(
             x=numerical_x,
             success=True,
@@ -798,7 +799,7 @@ def test_backend_exception_does_not_poison_solver_retry(monkeypatch):
         calls += 1
         if calls == 1:
             raise RuntimeError("backend failure")
-        numerical_x = (np.array([0.2]) - problem.scaling.x_center) / problem.scaling.x_scale
+        numerical_x = (xp.array([0.2]) - problem.scaling.x_center) / problem.scaling.x_scale
         return OptimizationResult(
             x=numerical_x,
             success=True,
@@ -849,7 +850,7 @@ def test_dynamic_constraint_shape_change_should_be_rejected_early():
 
     def changing_shape(context):
         if context.z[1] > 0.15:
-            return np.array([distance, distance])
+            return xp.stack([context.z[1], context.z[1]])
         return distance
 
     solver.require(Constraint(changing_shape, lower_bound=0.0))

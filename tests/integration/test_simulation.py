@@ -3,10 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import pytest
-import autograd.numpy as np
+import numpy as np
+from diffractix.backend import xp
 import numpy as numpy
 
-from autograd import grad
+from diffractix.backend import grad
 
 from diffractix.beams import GaussianBeam, ParaxialRay, RayBundle
 from diffractix.beams.base import ParaxialState
@@ -58,7 +59,7 @@ def test_simulation_supports_empty_optical_path():
     assert result.initial is not beam
     assert result.initial == beam
     assert result.final is result.initial
-    assert np.allclose(result.z, np.array([0.0]))
+    assert np.allclose(result.z, xp.array([0.0]))
 
 
 def test_empty_simulation_has_no_parameters():
@@ -109,7 +110,7 @@ def test_simulation_propagates_single_thin_lens():
     expected = beam.q / (1.0 - beam.q / 0.2)
 
     assert len(result.states) == 2
-    assert np.allclose(result.z, np.array([0.0, 0.0]))
+    assert np.allclose(result.z, xp.array([0.0, 0.0]))
     assert result.final.q == pytest.approx(expected)
 
 
@@ -180,7 +181,7 @@ def test_simulation_propagates_mixed_sequence():
     assert len(result.states) == 4
     assert np.allclose(
         result.z,
-        np.array([0.0, 0.1, 0.1, 0.4]),
+        xp.array([0.0, 0.1, 0.1, 0.4]),
     )
     assert result.final.q == pytest.approx(q3)
 
@@ -239,7 +240,7 @@ def test_run_uses_supplied_variable_parameter():
     assert initial.z[-1] == pytest.approx(0.2)
     assert initial.final.q == pytest.approx(beam.q + 0.2)
 
-    result = simulation.run(np.array([0.5]))
+    result = simulation.run(xp.array([0.5]))
 
     assert result.z[-1] == pytest.approx(0.5)
     assert result.final.q == pytest.approx(beam.q + 0.5)
@@ -255,7 +256,7 @@ def test_run_does_not_modify_supplied_theta():
 
     simulation = system.build()
 
-    theta = np.array([0.5])
+    theta = xp.array([0.5])
     original = theta.copy()
 
     simulation.run(theta)
@@ -274,7 +275,7 @@ def test_run_rejects_wrong_theta_length():
     simulation = system.build()
 
     with pytest.raises(ValueError):
-        simulation.run(np.array([]))
+        simulation.run(xp.array([]))
 
 
 def test_fixed_parameters_do_not_appear_in_theta():
@@ -376,7 +377,7 @@ def test_shared_parameter_controls_multiple_elements():
     assert info.is_variable
     assert info.parameter_index == 0
 
-    result = simulation.run(np.array([0.3]))
+    result = simulation.run(xp.array([0.3]))
 
     assert result.z[-1] == pytest.approx(0.6)
     assert result.final.q == pytest.approx(beam.q + 0.6)
@@ -395,7 +396,7 @@ def test_shared_parameter_between_different_element_types():
     system.add(lens)
 
     simulation = system.build()
-    result = simulation.run(np.array([0.4]))
+    result = simulation.run(xp.array([0.4]))
 
     q1 = beam.q + 0.4
     expected = q1 / (1.0 - q1 / 0.4)
@@ -418,7 +419,7 @@ def test_derived_parameter_expression_is_evaluated_from_theta():
     system.add(space)
 
     simulation = system.build()
-    result = simulation.run(np.array([0.3]))
+    result = simulation.run(xp.array([0.3]))
 
     assert len(simulation.initial_values) == 1
     assert result.z[-1] == pytest.approx(0.6)
@@ -438,7 +439,7 @@ def test_shared_derived_parameter_expression_updates_entire_system():
     system.add(space)
 
     simulation = system.build()
-    result = simulation.run(np.array([0.2]))
+    result = simulation.run(xp.array([0.2]))
 
     q1 = beam.q / (1.0 - beam.q / 0.4)
     expected = q1 + 0.6
@@ -462,11 +463,11 @@ def test_variable_absolute_position_controls_generated_space():
     system.add(lens, z=position)
 
     simulation = system.build()
-    result = simulation.run(np.array([0.4]))
+    result = simulation.run(xp.array([0.4]))
 
     assert np.allclose(
         result.z,
-        np.array([0.0, 0.4, 0.4]),
+        xp.array([0.0, 0.4, 0.4]),
     )
 
     assert result.at(lens) is result.states[1]
@@ -497,7 +498,7 @@ def test_variable_upstream_length_and_absolute_position_interact():
 
     assert np.allclose(
         result.z,
-        np.array([0.0, 0.2, 0.6, 0.6]),
+        xp.array([0.0, 0.2, 0.6, 0.6]),
     )
 
 
@@ -580,7 +581,7 @@ def test_repeated_variable_element_uses_same_theta_value_each_time():
     assert info.parameter_id == id(lens.f.node)
     assert info.parameter_index == 0
 
-    result = simulation.run(np.array([0.8]))
+    result = simulation.run(xp.array([0.8]))
 
     q1 = beam.q / (1.0 - beam.q / 0.8)
     q2 = q1 + 0.1
@@ -602,7 +603,7 @@ def test_repeated_space_object_accumulates_length_twice():
 
     assert np.allclose(
         result.z,
-        np.array([0.0, 0.2, 0.4]),
+        xp.array([0.0, 0.2, 0.4]),
     )
 
     assert result.final.q == pytest.approx(beam.q + 0.4)
@@ -618,7 +619,7 @@ def test_repeated_variable_space_object_has_single_parameter():
     system.add(space)
 
     simulation = system.build()
-    result = simulation.run(np.array([0.3]))
+    result = simulation.run(xp.array([0.3]))
 
     assert len(simulation.initial_values) == 1
     assert result.z[-1] == pytest.approx(0.6)
@@ -638,7 +639,7 @@ def test_consecutive_repeated_zero_length_element_occurrences():
 
     assert np.allclose(
         result.z,
-        np.array([0.0, 0.0, 0.0]),
+        xp.array([0.0, 0.0, 0.0]),
     )
 
     assert result.at(lens, occurrence=0) is result.states[0]
@@ -660,7 +661,7 @@ def test_repeated_element_at_different_absolute_positions():
 
     assert np.allclose(
         result.z,
-        np.array([0.0, 0.1, 0.1, 0.4, 0.4]),
+        xp.array([0.0, 0.1, 0.1, 0.4, 0.4]),
     )
 
     assert result.at(lens, occurrence=0) is result.states[1]
@@ -751,7 +752,7 @@ def test_variable_interface_output_medium_propagates_downstream():
     system.add(space)
 
     simulation = system.build()
-    result = simulation.run(np.array([1.8]))
+    result = simulation.run(xp.array([1.8]))
 
     assert len(simulation.initial_values) == 1
     assert result.states[1].n == pytest.approx(1.8)
@@ -776,7 +777,7 @@ def test_interface_and_space_positions_are_recorded_correctly():
 
     assert np.allclose(
         result.z,
-        np.array([0.0, 0.0, 0.2]),
+        xp.array([0.0, 0.0, 0.2]),
     )
 
 
@@ -812,9 +813,9 @@ def test_repeated_runs_do_not_leak_parameter_values():
 
     simulation = system.build()
 
-    first = simulation.run(np.array([0.3]))
-    second = simulation.run(np.array([0.7]))
-    third = simulation.run(np.array([0.3]))
+    first = simulation.run(xp.array([0.3]))
+    second = simulation.run(xp.array([0.7]))
+    third = simulation.run(xp.array([0.3]))
 
     assert first.z[-1] == pytest.approx(0.3)
     assert second.z[-1] == pytest.approx(0.7)
@@ -911,7 +912,7 @@ def test_source_snapshot_owns_ray_bundle_arrays_even_when_source_uses_views():
     first = simulation.run()
 
     backing[:] = 100.0
-    source.x = np.array([-100.0, -100.0])
+    source.x = xp.array([-100.0, -100.0])
 
     expected_x = original_x + 0.2 * original_theta
     expected_theta = original_theta - expected_x / 0.1
@@ -935,7 +936,7 @@ def test_simulation_is_differentiable_through_variable_space():
 
     def objective(theta):
         result = simulation.run(theta)
-        return np.real(result.final.q)
+        return xp.real(result.final.q)
 
     derivative = grad(objective)(simulation.initial_values)
 
@@ -955,7 +956,7 @@ def test_simulation_is_differentiable_through_derived_expression():
     simulation = system.build()
 
     def objective(theta):
-        return np.real(simulation.run(theta).final.q)
+        return xp.real(simulation.run(theta).final.q)
 
     derivative = grad(objective)(simulation.initial_values)
 
@@ -974,7 +975,7 @@ def test_simulation_is_differentiable_through_repeated_element():
     simulation = system.build()
 
     def objective(theta):
-        return np.real(simulation.run(theta).final.q)
+        return xp.real(simulation.run(theta).final.q)
 
     derivative = grad(objective)(simulation.initial_values)
 
@@ -992,12 +993,12 @@ def test_simulation_gradient_is_repeatable():
     simulation = system.build()
 
     def objective(theta):
-        return np.real(simulation.run(theta).final.q)
+        return xp.real(simulation.run(theta).final.q)
 
     gradient = grad(objective)
 
-    first = gradient(np.array([0.2]))
-    second = gradient(np.array([0.8]))
+    first = gradient(xp.array([0.2]))
+    second = gradient(xp.array([0.8]))
 
     assert first[0] == pytest.approx(1.0)
     assert second[0] == pytest.approx(1.0)
@@ -1080,7 +1081,7 @@ def test_simulation_supports_non_gaussian_paraxial_state():
     
     result = system.build().run()
     assert isinstance(result, SimulationResult)
-    assert np.allclose(result.value, np.array([2.0, 2.5]))
+    assert np.allclose(result.value, xp.array([2.0, 2.5]))
 
 
 
@@ -1095,5 +1096,5 @@ def test_generated_result_property_can_read_full_simulation_trace():
     result = system.build().run()
     assert np.allclose(
         result.value,
-        np.array([2.0, 2.5, 3.5]),
+        xp.array([2.0, 2.5, 3.5]),
     )

@@ -2,7 +2,7 @@
 Defines the Thick Lens composite element.
 """
 
-import autograd.numpy as np
+import numpy as np
 
 from .composite import CompositeElement
 from ..elements.space import Space

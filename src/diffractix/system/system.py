@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import inspect
 import operator
-import autograd.numpy as np
+import numpy as np
 from collections.abc import Iterable, Hashable
 from dataclasses import dataclass
 from numbers import Real

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import ClassVar
 
-import autograd.numpy as np
+from diffractix.backend import xp
 
 from .base import ParaxialState
 
@@ -38,7 +38,7 @@ class ParaxialRay(ParaxialState):
     @property
     def vector(self):
         """Ray vector [x, theta]."""
-        return np.array([self.x, self.theta])
+        return xp.array([self.x, self.theta])
 
 
     def x_at_z(self, z: float) -> float:

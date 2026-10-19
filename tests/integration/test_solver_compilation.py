@@ -1,10 +1,11 @@
 """Solver tracing, compilation, runtime binding, interpretation, and differentiation."""
 
 from types import SimpleNamespace
-import autograd.numpy as np
+import numpy as np
+from diffractix.backend import xp
 import numpy as numpy
 import pytest
-from autograd import grad, hessian
+from diffractix.backend import grad, hessian
 from diffractix.graph import Symbol
 from diffractix.solver.solver import Backend, SolverContext, SolverSymbolKey, SolverSymbolKind
 from diffractix.solver.objective import Objective
@@ -45,7 +46,7 @@ def test_labeled_callable_shorthand_matches_explicit_objective():
         assert objective.weight == 1.0
         assert objective.evaluate(context(solver, [4.0])) == pytest.approx(1.5)
         derivative = grad(lambda theta: objective.evaluate(SolverContext(theta, solver.simulation.run)))
-        numpy.testing.assert_allclose(derivative(np.array([4.0])), [0.5])
+        numpy.testing.assert_allclose(derivative(xp.array([4.0])), [0.5])
 
 
 @pytest.mark.parametrize("target, scale", [(0.0, 1.0), (5.0, 2.0), (5.0, -2.0)])
@@ -58,12 +59,12 @@ def test_value_matching_residual_and_derivatives_match_explicit_objective(target
 
     for objective in (shorthand, explicit):
         evaluate = lambda theta: objective.evaluate(SolverContext(theta, solver.simulation.run))
-        theta = np.array([4.0])
+        theta = xp.array([4.0])
         assert objective.label == "match"
         assert evaluate(theta) == pytest.approx((31.0 - target) / scale)
         numpy.testing.assert_allclose(grad(evaluate)(theta), [11.0 / scale])
         numpy.testing.assert_allclose(hessian(evaluate)(theta), [[2.0 / scale]])
-        cost = lambda theta: objective.weight * np.sum(np.square(evaluate(theta)))
+        cost = lambda theta: objective.weight * xp.sum(xp.square(evaluate(theta)))
         assert cost(theta) == pytest.approx(((31.0 - target) / scale) ** 2)
         numpy.testing.assert_allclose(grad(cost)(theta), [2 * (31.0 - target) * 11 / scale**2])
 
@@ -81,7 +82,7 @@ def test_value_matching_default_scale_and_dynamic_control_flow():
     assert objective.evaluate(context(solver, [4.0])) == 16.0
     assert objective.evaluate(context(solver, [1.0])) == 5.0
     derivative = grad(lambda theta: objective.evaluate(SolverContext(theta, solver.simulation.run)))
-    numpy.testing.assert_allclose(derivative(np.array([4.0])), [8.0])
+    numpy.testing.assert_allclose(derivative(xp.array([4.0])), [8.0])
 
 
 def test_target_existing_multiple_objectives_keep_weights_labels_and_order():
@@ -395,7 +396,7 @@ def test_traced_hybrid_expression_is_autograd_differentiable():
         )
     )
 
-    numpy.testing.assert_allclose(derivative(np.array([4.0])), [11.0])
+    numpy.testing.assert_allclose(derivative(xp.array([4.0])), [11.0])
 
 
 @pytest.mark.filterwarnings("ignore:Output seems independent of input.:UserWarning")
@@ -403,7 +404,7 @@ def test_solver_builds_second_order_primitives_through_runtime_symbols(captured_
     solver, lens, parameter = make_solver()
 
     solver.simulation.graph = SimpleNamespace(
-        initial_values=np.array([2.0]),
+        initial_values=xp.array([2.0]),
     )
 
     solver.target(
@@ -423,7 +424,7 @@ def test_solver_builds_second_order_primitives_through_runtime_symbols(captured_
 
     numpy.testing.assert_allclose(
         problem.unscale().objective_hessian(
-            np.array([2.0]),
+            xp.array([2.0]),
         ),
         [[150.0]],
     )
@@ -431,7 +432,7 @@ def test_solver_builds_second_order_primitives_through_runtime_symbols(captured_
     numpy.testing.assert_allclose(
         problem.constraint_hessian(
             problem.x0,
-            np.array([]),
+            xp.array([]),
         ),
         [[0.0]],
     )
@@ -454,7 +455,7 @@ def test_dynamic_branch_is_autograd_differentiable_away_from_boundary():
         )
     )
 
-    numpy.testing.assert_allclose(derivative(np.array([2.0])), [4.0])
+    numpy.testing.assert_allclose(derivative(xp.array([2.0])), [4.0])
 
 
 def test_compile_callable_does_not_swallow_unrelated_errors():
@@ -566,7 +567,7 @@ def test_reordered_hybrid_parameters_preserve_gradient_and_cross_hessian():
         return objective.evaluate(SolverContext(theta, solver.simulation.run))
 
     # Canonical theta is [second, first]; R_after is second + 3.
-    theta = np.array([1.2, -0.3])
+    theta = xp.array([1.2, -0.3])
     expected = theta[1]**2 + 3 * theta[1] * theta[0] + theta[0]**2 + (theta[0] + 3)**2
     assert evaluate(theta) == pytest.approx(expected)
     numpy.testing.assert_allclose(grad(evaluate)(theta), [3 * theta[1] + 4 * theta[0] + 6, 2 * theta[1] + 3 * theta[0]])
@@ -596,20 +597,20 @@ def test_dynamic_returned_node_uses_execution_bindings_and_frozen_theta(kind):
         return compiled.evaluate(SolverContext(theta, solver.simulation.run))
 
     for theta, expected, derivative in ((1.0, 1.5, -1.0), (4.0, 10.0, 2.5)):
-        assert evaluate(np.array([theta])) == pytest.approx(expected)
-        numpy.testing.assert_allclose(grad(evaluate)(np.array([theta])), [derivative])
+        assert evaluate(xp.array([theta])) == pytest.approx(expected)
+        numpy.testing.assert_allclose(grad(evaluate)(xp.array([theta])), [derivative])
 
 
 def test_vector_constraints_compose_with_scalar_constraints_and_scaled_hessians(captured_backend_problem):
     solver, lens, first, _ = make_solver_with_reordered_parameters()
-    solver.simulation.graph = SimpleNamespace(initial_values=np.array([4.0, 2.0]))
+    solver.simulation.graph = SimpleNamespace(initial_values=xp.array([4.0, 2.0]))
     solver.target(first - 1.0)
 
     def vector(ctx):
         # Forces dynamic execution; the branch is smooth near the test points.
         if ctx.z[0] >= 0:
-            return np.stack([ctx.theta[0]**2 + ctx.theta[1], ctx.at(lens).w * ctx.theta[1]])
-        return np.stack([ctx.theta[0], ctx.theta[1]])
+            return xp.stack([ctx.theta[0]**2 + ctx.theta[1], ctx.at(lens).w * ctx.theta[1]])
+        return xp.stack([ctx.theta[0], ctx.theta[1]])
 
     solver.require(
         Constraint(vector, lower_bound=-10, upper_bound=20, label="vector"),
@@ -620,10 +621,10 @@ def test_vector_constraints_compose_with_scalar_constraints_and_scaled_hessians(
 
     numpy.testing.assert_allclose(problem.constraint_lower, [-10, -10, 0])
     numpy.testing.assert_allclose(problem.constraint_upper, [20, 20, 100])
-    theta = np.array([1.2, 0.4])
+    theta = xp.array([1.2, 0.4])
     numpy.testing.assert_allclose(problem.constraints(theta), [1.84, 0.88, 17.64])
     numpy.testing.assert_allclose(problem.jacobian(theta), [[2.4, 1.0], [0.4, 2.2], [8.4, 0.0]])
-    numpy.testing.assert_allclose(problem.constraint_hessian(theta, np.array([2.0, -3.0, 4.0])), [[12.0, -3.0], [-3.0, 0.0]])
+    numpy.testing.assert_allclose(problem.constraint_hessian(theta, xp.array([2.0, -3.0, 4.0])), [[12.0, -3.0], [-3.0, 0.0]])
     assert [result.constraint.label for result in solution.constraints] == ["vector", "scalar"]
     numpy.testing.assert_allclose(solution.constraints[0].value, [18.0, 10.0])
     assert solution.constraints[1].value == pytest.approx(49.0)
@@ -631,20 +632,20 @@ def test_vector_constraints_compose_with_scalar_constraints_and_scaled_hessians(
 
 def test_constraint_shape_change_with_unchanged_size_is_rejected(captured_backend_problem):
     solver, lens, parameter = make_solver()
-    solver.simulation.graph = SimpleNamespace(initial_values=np.array([2.0]))
+    solver.simulation.graph = SimpleNamespace(initial_values=xp.array([2.0]))
     solver.target(parameter - 1.0)
 
     def changing_shape(ctx):
         if ctx.at(lens).w > 3:
-            return np.stack([ctx.z[1], ctx.after(lens).w]).reshape(1, 2)
-        return np.stack([ctx.z[1], ctx.after(lens).w])
+            return xp.stack([ctx.z[1], ctx.after(lens).w]).reshape(1, 2)
+        return xp.stack([ctx.z[1], ctx.after(lens).w])
 
     solver.require(Constraint(changing_shape, lower_bound=0, upper_bound=20))
     solver.solve()
     problem = captured_backend_problem["problem"].unscale()
     assert problem.n_constraints == 2
     with pytest.raises(ValueError, match="shape"):
-        problem.constraints(np.array([4.0]))
+        problem.constraints(xp.array([4.0]))
 
 
 def test_public_normalization_composes_static_and_runtime_expressions():

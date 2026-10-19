@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 from typing import ClassVar
 
-import autograd.numpy as np
+import numpy as np
+from diffractix.backend import xp
 
 from .base import ParaxialState
 
@@ -35,7 +36,7 @@ class RayBundle(ParaxialState):
     @property
     def vectors(self):
         """Ray vectors with shape (2, N)."""
-        return np.stack((self.x, self.theta), axis=0)
+        return xp.stack((self.x, self.theta), axis=0)
 
 
 

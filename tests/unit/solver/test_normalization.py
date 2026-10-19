@@ -1,7 +1,7 @@
 """Objective shorthand and constraint normalization."""
 
 import math
-import autograd.numpy as np
+import numpy as np
 import pytest
 from diffractix.graph import Literal, Parameter
 from diffractix.solver.objective import Objective

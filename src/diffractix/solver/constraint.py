@@ -12,7 +12,7 @@ from scipy.optimize import linprog
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-import autograd.numpy as np
+import numpy as np
 
 from diffractix.graph import (
     Comparison,

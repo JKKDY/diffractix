@@ -1,7 +1,8 @@
 """Individual System resolution and graph-compilation passes."""
 
 import pytest
-import autograd.numpy as np
+import numpy as np
+from diffractix.backend import xp
 from diffractix.composites import CompositeElement, Slab
 from diffractix.elements import Interface, Space, ThinLens
 from diffractix.graph import Parameter
@@ -780,7 +781,7 @@ def test_compile_parameter_info_tracks_multiple_standalone_parameters():
     assert y_info.parameter_index == 1
     assert y_info.is_variable
 
-    values = graph.evaluate(np.array([4.0, 5.0]))
+    values = graph.evaluate(xp.array([4.0, 5.0]))
     step = steps[0]
 
     assert values[step.matrix_indices[1][0]] == pytest.approx(-1.0 / 17.0)
@@ -847,7 +848,7 @@ def test_compile_preserves_derived_parameter_dependencies():
 
     graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
     step = steps[0]
-    values = graph.evaluate(np.array([0.2]))
+    values = graph.evaluate(xp.array([0.2]))
 
     assert values[step.matrix_indices[1][0]] == pytest.approx(-2.5)
 

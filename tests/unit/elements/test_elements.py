@@ -499,7 +499,7 @@ def test_grin_zero_gradient_matrix_is_free_space_limit():
 
 
 def test_grin_sinc_matrix_term_is_differentiable_at_zero():
-    from autograd import grad
+    from diffractix.backend import grad
 
     element = GRIN(d=0.02, g=Parameter(0.0, variable=True), n=1.5)
     compiled = compile_ast(

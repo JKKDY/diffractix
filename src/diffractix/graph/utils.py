@@ -4,8 +4,6 @@ import math
 from typing import Callable
 from collections.abc import Hashable, Mapping, Sequence
 
-import autograd.numpy as np
-
 from .node import (
     Node,
     Literal,

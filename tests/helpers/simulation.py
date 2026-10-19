@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-import autograd.numpy as np
+import numpy as np
+from diffractix.backend import xp
 from diffractix.simulation import Simulation
 from diffractix.system.system import ParameterInfo
 
@@ -34,7 +35,7 @@ def make_simulation(parameters, *, run=None):
     simulation.execution_context = {}
     simulation.requirements = ()
     simulation.graph = SimpleNamespace(
-        initial_values=np.array([parameter.value for parameter in parameters])
+        initial_values=xp.array([parameter.value for parameter in parameters])
     )
     simulation.run = run or (lambda theta: SimpleNamespace(theta=theta))
     return simulation

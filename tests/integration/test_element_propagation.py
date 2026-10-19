@@ -1,7 +1,8 @@
 import pytest
 
-from autograd import grad
-import autograd.numpy as np
+from diffractix.backend import grad
+import numpy as np
+from diffractix.backend import xp
 
 from diffractix.composites import Slab, ThickLens
 from diffractix.elements import ABCD, Interface, Space, ThinLens
@@ -64,7 +65,7 @@ def test_slab_builds_as_three_simulation_steps():
     assert len(result.states) == 4
     assert np.allclose(
         result.z,
-        np.array([0.0, 0.0, 0.02, 0.02]),
+        xp.array([0.0, 0.0, 0.02, 0.02]),
     )
 
 
@@ -140,7 +141,7 @@ def test_variable_slab_thickness_controls_simulation_length():
 
     assert len(simulation.initial_values) == 1
 
-    result = simulation.run(np.array([0.05]))
+    result = simulation.run(xp.array([0.05]))
 
     assert result.z[-1] == pytest.approx(0.05)
 
@@ -159,7 +160,7 @@ def test_variable_slab_index_updates_all_internal_media():
     simulation = system.build()
     assert simulation.graph.variables == (slab.n.node,)
     assert simulation.parameter_info[id(slab.n.node)].parameter_index == 0
-    result = simulation.run(np.array([1.8]))
+    result = simulation.run(xp.array([1.8]))
 
     assert result.states[1].n == pytest.approx(1.8)
     assert result.states[2].n == pytest.approx(1.8)
@@ -279,7 +280,7 @@ def test_space_length_can_depend_on_lens_focal_length():
 
     assert len(simulation.initial_values) == 1
 
-    result = simulation.run(np.array([0.3]))
+    result = simulation.run(xp.array([0.3]))
 
     assert result.z[-1] == pytest.approx(0.6)
     expected = beam.q / (1.0 - beam.q / 0.3) + 0.6
@@ -298,7 +299,7 @@ def test_dependency_can_reference_downstream_element():
     system.add(lens)
 
     simulation = system.build()
-    result = simulation.run(np.array([0.3]))
+    result = simulation.run(xp.array([0.3]))
 
     q1 = beam.q + 0.6
     expected = q1 / (1.0 - q1 / 0.3)
@@ -322,7 +323,7 @@ def test_chained_dependency_updates_all_derived_values():
 
     simulation = system.build()
     assert len(simulation.initial_values) == 1
-    result = simulation.run(np.array([0.2]))
+    result = simulation.run(xp.array([0.2]))
 
     assert result.z[-1] == pytest.approx(0.6)
     q1 = beam.q / (1.0 - beam.q / 0.2)
@@ -370,11 +371,11 @@ def test_absolute_position_can_depend_on_element_parameter():
     system.add(second_lens, z=3 * first_lens.f)
 
     simulation = system.build()
-    result = simulation.run(np.array([0.3]))
+    result = simulation.run(xp.array([0.3]))
 
     assert np.allclose(
         result.z,
-        np.array([0.0, 0.0, 0.9, 0.9]),
+        xp.array([0.0, 0.0, 0.9, 0.9]),
     )
 
 
@@ -398,11 +399,11 @@ def test_multiple_absolute_positions_can_share_one_parameter():
 
     assert len(simulation.initial_values) == 1
 
-    result = simulation.run(np.array([0.3]))
+    result = simulation.run(xp.array([0.3]))
 
     assert np.allclose(
         result.z,
-        np.array([
+        xp.array([
             0.0,
             0.3,
             0.3,
@@ -440,7 +441,7 @@ def test_variable_upstream_length_changes_generated_absolute_gap():
 
     assert np.allclose(
         result.z,
-        np.array([
+        xp.array([
             0.0,
             0.2,
             0.7,
@@ -508,7 +509,7 @@ def test_variable_ambient_index_updates_inherited_space_medium():
     system.add(Space(d=0.2))
 
     simulation = system.build()
-    result = simulation.run(np.array([1.4]))
+    result = simulation.run(xp.array([1.4]))
 
     assert result.final.n == pytest.approx(1.4)
 
@@ -526,7 +527,7 @@ def test_variable_ambient_index_is_shared_by_multiple_inherited_elements():
     system.add(Space(d=0.2))
 
     simulation = system.build()
-    result = simulation.run(np.array([1.6]))
+    result = simulation.run(xp.array([1.6]))
 
     assert len(simulation.initial_values) == 1
     assert result.states[1].n == pytest.approx(1.6)
@@ -582,8 +583,8 @@ def test_variable_ambient_can_drive_interface_input_index():
 
     simulation = system.build()
 
-    first = simulation.run(np.array([1.0]))
-    second = simulation.run(np.array([1.2]))
+    first = simulation.run(xp.array([1.0]))
+    second = simulation.run(xp.array([1.2]))
 
     assert first.final.n == pytest.approx(1.5)
     assert second.final.n == pytest.approx(1.5)
@@ -658,7 +659,7 @@ def test_variable_curved_interface_radius_changes_result():
     simulation = system.build()
 
     for radius in (0.1, 0.2):
-        result = simulation.run(np.array([radius]))
+        result = simulation.run(xp.array([radius]))
         expected = propagate_interface(beam.q, n1=1.0, n2=1.5, R=radius)
         assert result.final.q == pytest.approx(expected)
         assert result.final.n == pytest.approx(1.5)
@@ -680,7 +681,7 @@ def test_curved_interface_radius_is_differentiable():
     simulation = system.build()
 
     def objective(theta):
-        return np.real(
+        return xp.real(
             simulation.run(theta).final.q
         )
 
@@ -758,8 +759,8 @@ def test_same_variable_element_can_be_run_with_different_theta_in_different_syst
         assert info.parameter_id == id(parameter)
         assert info.parameter_index == 0
 
-    first = first_simulation.run(np.array([0.3]))
-    second = second_simulation.run(np.array([0.7]))
+    first = first_simulation.run(xp.array([0.3]))
+    second = second_simulation.run(xp.array([0.7]))
 
     assert first.z[-1] == pytest.approx(0.3)
     assert second.z[-1] == pytest.approx(0.7)
@@ -799,8 +800,8 @@ def test_same_standalone_parameter_can_drive_different_systems():
     assert first_info.parameter_index == 0
     assert second_info.parameter_index == 0
 
-    first = first_simulation.run(np.array([0.4]))
-    second = second_simulation.run(np.array([0.8]))
+    first = first_simulation.run(xp.array([0.4]))
+    second = second_simulation.run(xp.array([0.8]))
 
     assert first.z[-1] == pytest.approx(0.4)
 
@@ -939,7 +940,7 @@ def test_variable_composite_reused_twice_keeps_single_design_dimension():
 
     assert len(simulation.initial_values) == 1
 
-    result = simulation.run(np.array([0.03]))
+    result = simulation.run(xp.array([0.03]))
 
     assert result.z[-1] == pytest.approx(0.06)
 

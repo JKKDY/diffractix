@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 
 import pytest
-import autograd.numpy as np
+import numpy as np
+from diffractix.backend import xp
 
 from diffractix.beams import GaussianBeam, ParaxialRay
 from diffractix.composites import CompositeElement, Slab
@@ -70,7 +71,7 @@ def test_system_resolves_absolute_element_position():
     assert len(result.states) == 4
     assert np.allclose(
         result.z,
-        np.array([0.0, 0.1, 0.25, 0.25]),
+        xp.array([0.0, 0.1, 0.25, 0.25]),
     )
     assert result.at(lens) is result.states[2]
     assert result.after(lens) is result.states[3]
@@ -241,7 +242,7 @@ def test_builtin_element_requirements_compile_for_solver():
 
     simulation = system.build()
     constraints = Solver(simulation)._compile_constraints(simulation.requirements)
-    context = SimpleNamespace(theta=np.array([]))
+    context = SimpleNamespace(theta=xp.array([]))
 
     assert [constraint.lower_bound for constraint in constraints] == [
         0.0,
@@ -292,7 +293,7 @@ def test_interface_refractive_index_requirement_restricts_optimization():
 
     assert len(simulation.requirements) == 4
     constraints = Solver(simulation)._compile_constraints(simulation.requirements)
-    context = SimpleNamespace(theta=np.array([1.0, 1.0, -1.0]))
+    context = SimpleNamespace(theta=xp.array([1.0, 1.0, -1.0]))
     assert constraints[2].evaluate(context) == pytest.approx(-1.0)
     assert constraints[2].lower_bound > 0.0
     assert constraints[-1].lower_bound == constraints[-1].upper_bound == 0.0
@@ -488,7 +489,7 @@ def test_shared_refractive_index_parameter_remains_one_variable_with_continuity(
         (continuity.evaluate,),
         parameter_snapshot=simulation.parameter_info,
     )
-    assert graph.evaluate(np.array([1.7]))[0] == pytest.approx(0.0)
+    assert graph.evaluate(xp.array([1.7]))[0] == pytest.approx(0.0)
 
 
 def test_build_creates_element_info_for_each_resolved_step():
@@ -617,4 +618,4 @@ def test_shared_leaf_in_distinct_nested_composites_keeps_requirements_and_locati
     solver = Solver(simulation)
     solver.target(lambda ctx: ctx.z_after(shared, occurrence=1) - ctx.z_after(shared, occurrence=0))
     objective, = solver._compile_objectives()
-    assert objective.evaluate(SolverContext(np.array([0.02]), simulation.run)) == pytest.approx(0.02)
+    assert objective.evaluate(SolverContext(xp.array([0.02]), simulation.run)) == pytest.approx(0.02)

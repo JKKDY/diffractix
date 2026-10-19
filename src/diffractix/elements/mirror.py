@@ -4,7 +4,7 @@ Defines the Mirror element.
 
 from dataclasses import dataclass
 
-import autograd.numpy as np
+import numpy as np
 
 from .element import OpticalElement
 from ..graph import Node

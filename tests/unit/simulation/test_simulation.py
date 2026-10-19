@@ -1,10 +1,11 @@
 from dataclasses import dataclass
 
 import pytest
-import autograd.numpy as np
+import numpy as np
+from diffractix.backend import xp
 from numpy.testing import assert_allclose, assert_array_equal
 
-from autograd import grad
+from diffractix.backend import grad
 
 from diffractix.beams import GaussianBeam, ParaxialRay, RayBundle
 from diffractix.beams.base import ParaxialState
@@ -96,8 +97,8 @@ def create_simulation(
         execution_context = {}
 
     graph = DummyGraph(
-        initial_values=np.array(initial_values),
-        evaluator=lambda theta: np.array(values),
+        initial_values=xp.array(initial_values),
+        evaluator=lambda theta: xp.array(values),
     )
 
     return Simulation(
@@ -180,8 +181,8 @@ def test_simulation_require_rejects_invalid_inputs_without_changing_requirements
 def test_simulation_stores_compiled_data():
     source = DummyState()
     graph = DummyGraph(
-        initial_values=np.array([1.0]),
-        evaluator=lambda theta: np.array([]),
+        initial_values=xp.array([1.0]),
+        evaluator=lambda theta: xp.array([]),
     )
     step = SimulationStep(
         matrix_indices=((0, 1), (2, 3)),
@@ -235,8 +236,8 @@ def test_simulation_snapshots_context_mappings():
     simulation = Simulation(
         source=DummyState(),
         graph=DummyGraph(
-            initial_values=np.array([]),
-            evaluator=lambda theta: np.array([]),
+            initial_values=xp.array([]),
+            evaluator=lambda theta: xp.array([]),
         ),
         steps=(),
         parameter_info={},
@@ -263,8 +264,8 @@ def test_simulation_converts_sequence_fields_to_tuples():
     simulation = Simulation(
         source=DummyState(),
         graph=DummyGraph(
-            initial_values=np.array([]),
-            evaluator=lambda theta: np.array([]),
+            initial_values=xp.array([]),
+            evaluator=lambda theta: xp.array([]),
         ),
         steps=[],
         parameter_info={},
@@ -282,10 +283,10 @@ def test_simulation_converts_sequence_fields_to_tuples():
 
 
 def test_simulation_initial_values_are_graph_initial_values():
-    initial_values = np.array([1.0, 2.0])
+    initial_values = xp.array([1.0, 2.0])
     graph = DummyGraph(
         initial_values=initial_values,
-        evaluator=lambda theta: np.array([]),
+        evaluator=lambda theta: xp.array([]),
     )
 
     simulation = Simulation(
@@ -309,8 +310,8 @@ def test_simulation_rejects_non_dataclass_state():
         def propagate(self, A, B, C, D, n):
             return self
     graph = DummyGraph(
-        initial_values=np.array([]),
-        evaluator=lambda theta: np.array([]),
+        initial_values=xp.array([]),
+        evaluator=lambda theta: xp.array([]),
     )
     with pytest.raises(TypeError, match="must be a dataclass"):
         Simulation(
@@ -339,7 +340,7 @@ def test_concrete_state_result_columns_reference_existing_properties():
     states = (
         GaussianBeam.from_waist(w0=1e-3, wavelength=1e-6),
         ParaxialRay(x=1.0, theta=0.1),
-        RayBundle(x=np.array([0.0, 1.0]), theta=np.array([0.0, 0.1])),
+        RayBundle(x=xp.array([0.0, 1.0]), theta=xp.array([0.0, 0.1])),
     )
 
     assert GaussianBeam.result_columns == ("w", "R", "gouy_phase")
@@ -389,8 +390,8 @@ def test_run_forwards_location_map_to_result():
 def test_run_forwards_execution_context_to_graph():
     execution_context = {"runtime_value": 3.0}
     graph = DummyGraph(
-        initial_values=np.array([]),
-        evaluator=lambda theta: np.array([]),
+        initial_values=xp.array([]),
+        evaluator=lambda theta: xp.array([]),
     )
     simulation = Simulation(
         source=DummyState(),
@@ -417,7 +418,7 @@ def test_result_rejects_inconsistent_element_info_length():
     with pytest.raises(ValueError, match="one input state plus one state"):
         SimulationResult(
             source=states[0],
-            z=np.array([0.0, 1.0]),
+            z=xp.array([0.0, 1.0]),
             states=states,
             location_map={},
             element_info=(),
@@ -432,7 +433,7 @@ def test_result_at_unique_element_does_not_require_occurrence():
 
     result = create_result(
         source=states[0],
-        z=np.array([0.0, 0.0]),
+        z=xp.array([0.0, 0.0]),
         states=states,
         location_map={
             id(element): ((0, 1),),
@@ -451,7 +452,7 @@ def test_result_after_unique_element_does_not_require_occurrence():
 
     result = create_result(
         source=states[0],
-        z=np.array([0.0, 0.0]),
+        z=xp.array([0.0, 0.0]),
         states=states,
         location_map={
             id(element): ((0, 1),),
@@ -466,7 +467,7 @@ def test_result_z_accessors_return_unique_element_positions():
     states = (DummyState(), DummyState())
     result = create_result(
         source=states[0],
-        z=np.array([1.25, 2.5]),
+        z=xp.array([1.25, 2.5]),
         states=states,
         location_map={id(element): ((0, 1),)},
     )
@@ -486,7 +487,7 @@ def test_result_at_selects_repeated_element_occurrence():
 
     result = create_result(
         source=states[0],
-        z=np.array([0.0, 0.0, 0.0, 0.0]),
+        z=xp.array([0.0, 0.0, 0.0, 0.0]),
         states=states,
         location_map={
             id(element): (
@@ -511,7 +512,7 @@ def test_result_after_selects_repeated_element_occurrence():
 
     result = create_result(
         source=states[0],
-        z=np.array([0.0, 0.0, 0.0, 0.0]),
+        z=xp.array([0.0, 0.0, 0.0, 0.0]),
         states=states,
         location_map={
             id(element): (
@@ -530,7 +531,7 @@ def test_result_z_accessors_select_repeated_element_occurrence():
     states = tuple(DummyState() for _ in range(4))
     result = create_result(
         source=states[0],
-        z=np.array([0.0, 1.0, 3.0, 6.0]),
+        z=xp.array([0.0, 1.0, 3.0, 6.0]),
         states=states,
         location_map={id(element): ((0, 1), (2, 3))},
     )
@@ -553,7 +554,7 @@ def test_result_at_repeated_element_requires_occurrence():
 
     result = create_result(
         source=states[0],
-        z=np.array([0.0, 0.0, 0.0]),
+        z=xp.array([0.0, 0.0, 0.0]),
         states=states,
         location_map={
             id(element): (
@@ -577,7 +578,7 @@ def test_result_after_repeated_element_requires_occurrence():
 
     result = create_result(
         source=states[0],
-        z=np.array([0.0, 0.0, 0.0]),
+        z=xp.array([0.0, 0.0, 0.0]),
         states=states,
         location_map={
             id(element): (
@@ -596,7 +597,7 @@ def test_result_rejects_out_of_range_occurrence():
 
     result = create_result(
         source=DummyState(),
-        z=np.array([0.0]),
+        z=xp.array([0.0]),
         states=(DummyState(),),
         location_map={
             id(element): ((0, 0),),
@@ -612,7 +613,7 @@ def test_result_rejects_negative_occurrence():
 
     result = create_result(
         source=DummyState(),
-        z=np.array([0.0]),
+        z=xp.array([0.0]),
         states=(DummyState(),),
         location_map={
             id(element): ((0, 0),),
@@ -628,7 +629,7 @@ def test_result_rejects_non_integer_occurrence():
 
     result = create_result(
         source=DummyState(),
-        z=np.array([0.0]),
+        z=xp.array([0.0]),
         states=(DummyState(),),
         location_map={
             id(element): ((0, 0),),
@@ -642,7 +643,7 @@ def test_result_rejects_non_integer_occurrence():
 def test_result_rejects_occurrence_for_numeric_position():
     result = create_result(
         source=DummyState(),
-        z=np.array([0.0]),
+        z=xp.array([0.0]),
         states=(DummyState(),),
         location_map={},
         probe=lambda z: DummyState(value=z),
@@ -658,7 +659,7 @@ def test_result_z_accessors_match_location_lookup_errors(accessor):
     missing = object()
     result = create_result(
         source=DummyState(),
-        z=np.array([0.0]),
+        z=xp.array([0.0]),
         states=(DummyState(),),
         location_map={id(element): ((0, 0),)},
     )
@@ -787,7 +788,7 @@ def test_run_preserves_duplicate_positions_for_zero_length_step():
 
     assert np.allclose(
         result.z,
-        np.array([0.0, 0.0]),
+        xp.array([0.0, 0.0]),
     )
 
 
@@ -797,8 +798,8 @@ def test_run_preserves_duplicate_positions_for_zero_length_step():
 
 def test_run_uses_initial_values_when_theta_is_none():
     graph = DummyGraph(
-        initial_values=np.array([2.0]),
-        evaluator=lambda theta: np.array([
+        initial_values=xp.array([2.0]),
+        evaluator=lambda theta: xp.array([
             1.0,
             theta[0],
             0.0,
@@ -834,8 +835,8 @@ def test_run_uses_initial_values_when_theta_is_none():
 
 def test_run_uses_supplied_theta():
     graph = DummyGraph(
-        initial_values=np.array([2.0]),
-        evaluator=lambda theta: np.array([
+        initial_values=xp.array([2.0]),
+        evaluator=lambda theta: xp.array([
             1.0,
             theta[0],
             0.0,
@@ -864,15 +865,15 @@ def test_run_uses_supplied_theta():
         element_info=element_info_for_steps((step,)),
     )
 
-    result = simulation.run(np.array([7.0]))
+    result = simulation.run(xp.array([7.0]))
 
     assert result.states[-1].calls[0][1] == pytest.approx(7.0)
 
 
 def test_run_does_not_modify_initial_values():
     graph = DummyGraph(
-        initial_values=np.array([2.0]),
-        evaluator=lambda theta: np.array([
+        initial_values=xp.array([2.0]),
+        evaluator=lambda theta: xp.array([
             1.0,
             theta[0],
             0.0,
@@ -901,11 +902,11 @@ def test_run_does_not_modify_initial_values():
         element_info=element_info_for_steps((step,)),
     )
 
-    simulation.run(np.array([7.0]))
+    simulation.run(xp.array([7.0]))
 
     assert np.allclose(
         simulation.initial_values,
-        np.array([2.0]),
+        xp.array([2.0]),
     )
 
 
@@ -975,8 +976,8 @@ def test_repeated_runs_are_independent():
 
 def test_run_is_differentiable_with_respect_to_theta():
     graph = DummyGraph(
-        initial_values=np.array([2.0]),
-        evaluator=lambda theta: np.array([
+        initial_values=xp.array([2.0]),
+        evaluator=lambda theta: xp.array([
             1.0,
             theta[0],
             0.0,
@@ -1006,7 +1007,7 @@ def test_run_is_differentiable_with_respect_to_theta():
     )
 
     def objective(value):
-        result = simulation.run(np.array([value]))
+        result = simulation.run(xp.array([value]))
         return result.states[-1].value
 
     derivative = grad(objective)(2.0)

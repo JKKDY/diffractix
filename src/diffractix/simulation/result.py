@@ -5,7 +5,8 @@ from dataclasses import fields, is_dataclass
 from functools import cache
 from numbers import Integral, Real
 
-import autograd.numpy as np
+import numpy as np
+from diffractix.backend import xp
 
 from diffractix.beams.base import ParaxialState
 from diffractix.system.info import ElementInfo
@@ -188,7 +189,7 @@ def _state_property(name):
     """Create a result property that stacks one state attribute over the trace."""
 
     def getter(self):
-        return np.stack([
+        return xp.stack([
             getattr(state, name)
             for state in self.states
         ])

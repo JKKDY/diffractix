@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import cached_property
 
-import autograd.numpy as np
+import numpy as np
 
 from .result import OptimizationResult
 from .context import SolverContext

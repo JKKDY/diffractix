@@ -4,8 +4,9 @@ from copy import copy
 from dataclasses import dataclass, fields
 from types import SimpleNamespace
 
-import autograd.numpy as np
-from autograd import grad, hessian, jacobian
+import numpy as np
+from diffractix.backend import xp
+from diffractix.backend import grad, hessian, jacobian
 import numpy as numpy
 import pytest
 
@@ -60,19 +61,19 @@ def source_for(kind):
     if kind == "ray":
         return ParaxialRay(x=1e-3, theta=0.01)
     if kind == "custom":
-        return CustomState(x=np.array([1e-3, -2e-3]), theta=np.array([0.01, -0.02]))
+        return CustomState(x=xp.array([1e-3, -2e-3]), theta=xp.array([0.01, -0.02]))
     dtype = numpy.float32 if kind == "bundle32" else numpy.float64
-    return RayBundle(x=np.array([1e-3, -2e-3], dtype=dtype),
-                     theta=np.array([0.01, -0.02], dtype=dtype))
+    return RayBundle(x=xp.array([1e-3, -2e-3], dtype=dtype),
+                     theta=xp.array([0.01, -0.02], dtype=dtype))
 
 
 def observables(result):
     values = [result.z[-1]]
     values.extend(getattr(result.final, field.name) for field in fields(result.final))
-    return np.concatenate([
+    return xp.concatenate([
         part
         for value in values
-        for part in (np.reshape(np.real(value), (-1,)), np.reshape(np.imag(value), (-1,)))
+        for part in (xp.reshape(xp.real(value), (-1,)), xp.reshape(xp.imag(value), (-1,)))
     ])
 
 
@@ -123,7 +124,7 @@ def test_sequence_propagates_all_states_composites_and_custom_components(kind, c
     fast = lambda t: observables(simulation.run(t))
     packed = lambda t: observables(reference.run(t))
     assert_finite_match(jacobian(fast)(theta), jacobian(packed)(theta), rtol=1e-9, atol=1e-10)
-    cost = lambda t, evaluate: np.sum(evaluate(t) ** 2)
+    cost = lambda t, evaluate: xp.sum(evaluate(t) ** 2)
     assert_finite_match(grad(lambda t: cost(t, fast))(theta),
                         grad(lambda t: cost(t, packed))(theta), rtol=1e-9, atol=1e-10)
     assert_finite_match(hessian(lambda t: cost(t, fast))(theta),
@@ -145,12 +146,12 @@ def test_sequence_propagation_preserves_nested_and_fourth_order_autodiff(kind):
 
     def cost(t, run):
         values = observables(run(t))
-        return np.sum(values ** 4)
+        return xp.sum(values ** 4)
 
     fast, packed = lambda t: cost(t, simulation.run), lambda t: cost(t, reference.run)
     assert_finite_match(jacobian(jacobian(hessian(fast)))(theta),
                         jacobian(jacobian(hessian(packed)))(theta), rtol=1e-9, atol=1e-9)
-    nested = lambda t, function: np.sum(grad(function)(t) ** 2)
+    nested = lambda t, function: xp.sum(grad(function)(t) ** 2)
     assert_finite_match(hessian(lambda t: nested(t, fast))(theta),
                         hessian(lambda t: nested(t, packed))(theta), rtol=1e-9, atol=1e-9)
 
@@ -180,10 +181,10 @@ def test_solver_sequence_projection_composes_with_optical_states_and_composites(
         constraints = solver._compile_constraints(solver.constraints)
         def cost(theta):
             context = SolverContext(theta, simulation.run)
-            return sum(obj.weight * np.sum(obj.evaluate(context) ** 2) for obj in objectives)
+            return sum(obj.weight * xp.sum(obj.evaluate(context) ** 2) for obj in objectives)
         def values(theta):
             context = SolverContext(theta, simulation.run)
-            return np.concatenate([np.reshape(c.evaluate(context), (-1,)) for c in constraints])
+            return xp.concatenate([xp.reshape(c.evaluate(context), (-1,)) for c in constraints])
         return cost, values
 
     with monkeypatch.context() as reference:
@@ -197,9 +198,9 @@ def test_solver_sequence_projection_composes_with_optical_states_and_composites(
                              (jacobian(jacobian(hessian(cost))), jacobian(jacobian(hessian(old_cost))))):
         assert_finite_match(actual(theta), expected(theta), rtol=1e-9, atol=1e-9)
     weights = np.linspace(0.5, 1.5, len(values(theta)))
-    assert_finite_match(hessian(lambda t: np.dot(weights, values(t)))(theta),
-                        hessian(lambda t: np.dot(weights, old_values(t)))(theta), rtol=1e-9, atol=1e-9)
-    nested = lambda t, f: np.sum(grad(f)(t) ** 2)
+    assert_finite_match(hessian(lambda t: xp.dot(weights, values(t)))(theta),
+                        hessian(lambda t: xp.dot(weights, old_values(t)))(theta), rtol=1e-9, atol=1e-9)
+    nested = lambda t, f: xp.sum(grad(f)(t) ** 2)
     assert_finite_match(hessian(lambda t: nested(t, cost))(theta),
                         hessian(lambda t: nested(t, old_cost))(theta), rtol=1e-9, atol=1e-9)
 
@@ -231,8 +232,8 @@ def test_sequence_gaussian_aperture_keeps_complex_promotion_and_execution_bindin
     theta = simulation.initial_values.copy()
     numpy.testing.assert_array_equal(simulation.run().q, reference.run().q)
     assert simulation.run().z.dtype == reference.run().z.dtype
-    fast = lambda t: np.real(simulation.run(t).final.w)
-    packed = lambda t: np.real(reference.run(t).final.w)
+    fast = lambda t: xp.real(simulation.run(t).final.w)
+    packed = lambda t: xp.real(reference.run(t).final.w)
     assert_finite_match(grad(fast)(theta), grad(packed)(theta), rtol=1e-10)
     assert_finite_match(hessian(fast)(theta), hessian(packed)(theta), rtol=1e-10)
 
@@ -254,14 +255,14 @@ def test_solver_complex_expression_preserves_beam_execution_bindings(monkeypatch
 
     def values(theta, evaluate):
         value = evaluate(SolverContext(theta, simulation.run))
-        return np.stack((np.real(value), np.imag(value)))
+        return xp.stack((xp.real(value), xp.imag(value)))
     fast, old = lambda t: values(t, optimized), lambda t: values(t, original)
     theta = simulation.initial_values.copy()
     assert_finite_match(fast(theta), old(theta), rtol=1e-12)
     assert_finite_match(jacobian(fast)(theta), jacobian(old)(theta), rtol=1e-9)
     for differentiate in (grad, hessian, lambda f: jacobian(jacobian(hessian(f)))):
-        assert_finite_match(differentiate(lambda t: np.sum(fast(t) ** 2))(theta),
-                            differentiate(lambda t: np.sum(old(t) ** 2))(theta), rtol=1e-9, atol=1e-9)
+        assert_finite_match(differentiate(lambda t: xp.sum(fast(t) ** 2))(theta),
+                            differentiate(lambda t: xp.sum(old(t) ** 2))(theta), rtol=1e-9, atol=1e-9)
 
 
 def test_sequence_variable_refractive_index_transitions_match_packed_derivatives():
@@ -279,8 +280,8 @@ def test_sequence_variable_refractive_index_transitions_match_packed_derivatives
     assert_finite_match(fast(theta), packed(theta), rtol=1e-12)
     assert_finite_match(jacobian(fast)(theta), jacobian(packed)(theta), rtol=1e-10)
     for derivative in (grad, hessian):
-        assert_finite_match(derivative(lambda t: np.sum(fast(t) ** 2))(theta),
-                            derivative(lambda t: np.sum(packed(t) ** 2))(theta), rtol=1e-9)
+        assert_finite_match(derivative(lambda t: xp.sum(fast(t) ** 2))(theta),
+                            derivative(lambda t: xp.sum(packed(t) ** 2))(theta), rtol=1e-9)
 
 
 @pytest.mark.parametrize("binding", [numpy.float32(0.01), numpy.array(0.01), numpy.array([0.01, 0.02])])

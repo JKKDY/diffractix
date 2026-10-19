@@ -2,7 +2,8 @@
 
 from dataclasses import dataclass
 from types import SimpleNamespace
-import autograd.numpy as np
+import numpy as np
+from diffractix.backend import xp
 from diffractix.graph import Parameter, compile_ast
 from diffractix.simulation import Simulation
 from diffractix.solver.solver import Solver, SolverContext
@@ -19,7 +20,7 @@ class FakeResult:
     def __init__(self, theta, element):
         self.theta = theta
         self.element = element
-        self.z = np.stack([0.0 * theta[0], theta[0] + 10.0])
+        self.z = xp.stack([0.0 * theta[0], theta[0] + 10.0])
         self.states = (
             FakeState(theta[0] + 1.0, theta[0] + 2.0, theta[0] + 3.0),
             FakeState(theta[0] + 2.0, theta[0] + 3.0, theta[0] + 4.0),
@@ -85,7 +86,7 @@ def make_solver(value=2.0):
 
 
 def context(solver, theta):
-    return SolverContext(np.array(theta), solver.simulation.run)
+    return SolverContext(xp.array(theta), solver.simulation.run)
 
 
 def make_solver_with_reordered_parameters():
@@ -117,7 +118,7 @@ def packed_expression_reference(solver, node, compile_context=None):
     indices = tuple(solver.simulation.parameter_info[id(p)].parameter_index for p in graph.variables)
 
     def evaluate(context):
-        local_theta = np.stack([context.theta[i] for i in indices]) if indices else np.array([])
+        local_theta = xp.stack([context.theta[i] for i in indices]) if indices else xp.array([])
         bindings = {symbol.key: solver._resolve_symbol(symbol.key, compile_context, context)
                     for symbol in graph.symbols}
         return graph.evaluate(local_theta, bindings=bindings)[0]

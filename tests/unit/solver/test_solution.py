@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-import autograd.numpy as np
+import numpy as np
+from diffractix.backend import xp
 import numpy as numpy
 import pytest
 from diffractix.graph import Parameter, Symbol
@@ -17,16 +18,16 @@ def make_problem(n_variables=1):
         x0=np.zeros(n_variables),
         x_lower=np.full(n_variables, -np.inf),
         x_upper=np.full(n_variables, np.inf),
-        objective=lambda theta: np.sum(theta**2),
+        objective=lambda theta: xp.sum(theta**2),
         gradient=lambda theta: 2.0 * theta,
         objective_hessian=lambda theta: 2.0 * np.eye(n_variables),
-        constraints=lambda theta: np.array([]),
+        constraints=lambda theta: xp.array([]),
         jacobian=lambda theta: np.empty((0, n_variables)),
         constraint_hessian=lambda theta, multipliers: np.zeros(
             (n_variables, n_variables)
         ),
-        constraint_lower=np.array([]),
-        constraint_upper=np.array([]),
+        constraint_lower=xp.array([]),
+        constraint_upper=xp.array([]),
     )
 
 
@@ -48,7 +49,7 @@ def make_solution(
     problem = make_problem(len(x))
     return Solution(
         OptimizationResult(
-            x=np.array(x),
+            x=xp.array(x),
             success=success,
             cost=cost,
             message=message,
@@ -89,7 +90,7 @@ def test_solution_feasibility_tolerance_validation_and_default():
     parameter = Parameter(2.0).variable()
     simulation = make_simulation((parameter,))
     problem = make_problem()
-    result = OptimizationResult(np.array([2.0]), True, 0.0, "done", scaling=problem.scaling)
+    result = OptimizationResult(xp.array([2.0]), True, 0.0, "done", scaling=problem.scaling)
 
     with pytest.raises(ValueError, match="non-negative"):
         Solution(result, problem, simulation, (), (), -1.0)
@@ -178,7 +179,7 @@ def test_solution_run_uses_solved_theta():
 def test_solution_target_results_preserve_order_shape_weight_and_cost():
     objectives = (
         Objective(lambda context: 2.0, label="scalar"),
-        Objective(lambda context: np.array([1.0, -2.0]), weight=3.0, label="vector"),
+        Objective(lambda context: xp.array([1.0, -2.0]), weight=3.0, label="vector"),
     )
     solution = make_solution(objectives=objectives)
 
@@ -263,7 +264,7 @@ def test_solution_feasibility_tolerance_boundary(value, satisfied):
 
 def test_solution_vector_constraint_preserves_shape_and_requires_all_values():
     constraint = Constraint(
-        lambda context: np.array([2.0, 4.25]),
+        lambda context: xp.array([2.0, 4.25]),
         lower_bound=1.0,
         upper_bound=4.0,
     )
