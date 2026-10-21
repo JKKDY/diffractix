@@ -6,7 +6,7 @@ from scipy.optimize import Bounds, NonlinearConstraint, minimize
 from ..problem import Problem
 from ..result import OptimizationResult
 
-DEFAULT_METHOD = "trust-constr"
+DEFAULT_METHOD = "SLSQP"
 SUPPORTED_METHODS = {"trust-constr", "SLSQP"}
 
 

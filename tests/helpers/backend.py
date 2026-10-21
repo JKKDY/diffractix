@@ -65,7 +65,7 @@ def assert_close(actual, expected, *, description, rtol, atol):
     )
 
 
-def capture_problem(solver):
+def capture_problem(solver, **solve_kwargs):
     """Exercise normal solver preparation without running an optimization backend."""
     from unittest.mock import patch
     from diffractix.solver import solver as solver_module
@@ -81,7 +81,7 @@ def capture_problem(solver):
 
     with patch.object(solver_module, "solve_scipy", capture):
         try:
-            solver.solve()
+            solver.solve(**solve_kwargs)
         except Captured:
             pass
     return captured["problem"]
@@ -90,6 +90,7 @@ def capture_problem(solver):
 def example_before_solve(name):
     """Reuse the actual example's setup, stopping before optimization/reporting."""
     import ast
+    from contextlib import redirect_stdout
     from types import ModuleType
 
     path = ROOT / "examples" / f"{name}.py"
@@ -105,5 +106,7 @@ def example_before_solve(name):
     module = ModuleType(f"_backend_test_{name}")
     module.__file__ = str(path)
     sys.modules[module.__name__] = module
-    exec(compile(ast.Module(body=prefix, type_ignores=[]), str(path), "exec"), module.__dict__)
+    # Keep example diagnostics available without corrupting the child's JSON stdout.
+    with redirect_stdout(sys.stderr):
+        exec(compile(ast.Module(body=prefix, type_ignores=[]), str(path), "exec"), module.__dict__)
     return module.__dict__

@@ -5,7 +5,7 @@ from math import isfinite
 from numbers import Real
 
 import numpy as np
-from diffractix.backend import xp, grad, hessian, jacobian
+from diffractix.backend import xp, grad, hessian, jacobian, jit
 
 from diffractix.graph import (
     Node,
@@ -266,7 +266,11 @@ class Solver:
         backend: Backend = Backend.SCIPY,
         method=None,
         options: dict | None = None,
-        feasibility_tolerance: float = DEFAULT_FEASIBILITY_TOLERANCE
+        feasibility_tolerance: float = DEFAULT_FEASIBILITY_TOLERANCE,
+        use_jit = False,
+        x0=None,
+        x_lower=None,
+        x_upper=None,
     ) -> Solution:
         """Solve the inverse-design problem."""
 
@@ -365,16 +369,32 @@ class Solver:
         def weighted_constraints(theta, multipliers):
             return xp.dot(multipliers, constraint_function(theta))
 
+        jit_fn = jit if use_jit else lambda f: f
+
+        objective = jit_fn(objective_function)
+        gradient = jit_fn(grad(objective_function))
+        objective_hessian = jit_fn(hessian(objective_function))
+
+        if constraints:
+            constraints_fn = jit_fn(constraint_function)
+            constraint_jacobian = jit_fn(jacobian(constraint_function))
+            constraint_hessian = jit_fn(hessian(weighted_constraints, 0))
+        else:
+            n = len(self.simulation.initial_values)
+            constraints_fn = lambda theta: xp.zeros((0,))
+            constraint_jacobian = lambda theta: xp.zeros((0, n))
+            constraint_hessian = lambda theta, multipliers: xp.zeros((n, n))
+       
         problem = Problem(
             x0=self.simulation.initial_values,
             x_lower=parameter_lower,
             x_upper=parameter_upper,
-            objective=objective_function,
-            gradient=grad(objective_function),
-            objective_hessian=hessian(objective_function),
-            constraints=constraint_function,
-            jacobian=jacobian(constraint_function),
-            constraint_hessian=hessian(weighted_constraints, 0),
+            objective=objective,
+            gradient=gradient,
+            objective_hessian=objective_hessian,
+            constraints=constraints_fn,
+            jacobian=constraint_jacobian,
+            constraint_hessian=constraint_hessian,
             constraint_lower=constraint_lower,
             constraint_upper=constraint_upper,
         )

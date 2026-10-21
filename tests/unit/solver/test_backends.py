@@ -282,7 +282,7 @@ def test_scipy_trust_constr_constructs_native_call(monkeypatch):
     monkeypatch.setattr(backend, "minimize", minimize)
     options = {"maxiter": 500, "gtol": 1e-8}
 
-    backend.solve_scipy(problem, options=options)
+    backend.solve_scipy(problem, method="trust-constr", options=options)
 
     function, x0, kwargs = captured["minimize"]
     assert function is problem.objective
@@ -400,6 +400,7 @@ def test_scipy_slsqp_uses_first_derivatives_only(monkeypatch):
 
 def test_scipy_unconstrained_problem_registers_no_constraints(monkeypatch):
     from diffractix.solver.backends import scipy as backend
+    from diffractix.solver.backends.scipy import DEFAULT_METHOD
 
     captured = {}
 
@@ -411,6 +412,7 @@ def test_scipy_unconstrained_problem_registers_no_constraints(monkeypatch):
 
     backend.solve_scipy(make_problem())
 
+    assert captured["method"] == DEFAULT_METHOD
     assert captured["constraints"] == ()
     assert captured["options"] == {}
 

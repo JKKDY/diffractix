@@ -18,24 +18,43 @@ def test_explicit_python_scalar_can_be_captured_as_a_graph_constant(jax_results)
     np.testing.assert_allclose(values["gradient"], [1/0.15], rtol=1e-13)
 
 
-def test_backend_arrays_are_not_implicitly_converted_to_literal_constants():
+def test_concrete_backend_scalar_arrays_can_be_captured_as_literal_constants():
     assert run_python('''
+import numpy as np
+from diffractix.backend import xp
+from diffractix.graph import Parameter, compile_ast
+p = Parameter(1.0).variable()
+for scalar in (2, 2.0, 2.0 + 1j):
+    graph = compile_ast((p + xp.array(scalar),))
+    assert graph.variables == (p,)
+    for theta in (1.0, 4.0):
+        np.testing.assert_allclose(graph.evaluate(xp.array([theta])), [theta + scalar])
+print('ok')
+''', 'jax') == 'ok'
+
+
+def test_backend_vector_arrays_are_not_converted_to_literal_constants():
+    assert run_python('''
+import pytest
+from diffractix.backend import xp
+from diffractix.graph import Parameter
+p = Parameter(1.0).variable()
+for value in (xp.array([2.0]), xp.array([2.0, 3.0])):
+    with pytest.raises(TypeError, match='numeric scalar'):
+        p + value
+print('ok')
+''', 'jax') == 'ok'
+
+
+def test_active_jax_tracers_cannot_be_captured_as_literal_constants():
+    assert run_python('''
+import pytest
+from jax.errors import ConcretizationTypeError
 from diffractix.backend import jit, xp
 from diffractix.graph import Parameter
 p = Parameter(1.0).variable()
-for value in (xp.array(2.0), xp.array([2.0])):
-    try:
-        p + value
-    except TypeError as error:
-        assert 'numeric scalar' in str(error)
-    else:
-        raise AssertionError('Graph literals require an explicit Python scalar')
-try:
+with pytest.raises(ConcretizationTypeError, match='concrete'):
     jit(lambda value: p + value)(xp.array(2.0))
-except TypeError as error:
-    assert 'numeric scalar' in str(error)
-else:
-    raise AssertionError('Active tracers must not become literal constants')
 print('ok')
 ''', 'jax') == 'ok'
 

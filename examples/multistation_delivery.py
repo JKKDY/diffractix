@@ -21,7 +21,15 @@ from diffractix import (
     System,
     ThickLens,
     ThinLens,
+    Backend
 )
+
+from diffractix.backend import current_backend, xp
+print(current_backend())
+
+xp.add(1.0, 2.0)
+
+print(current_backend())  # "jax" or "autograd"
 
 WAVELENGTH = 1064e-9
 INPUT_RADIUS = 0.65e-3
