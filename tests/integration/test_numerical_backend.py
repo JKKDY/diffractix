@@ -74,22 +74,6 @@ def test_gaussian_concrete_domain_validation_remains_active():
         GaussianBeam.w_R_from_q(-1j, 1e-6, 1.0)
 
 
-def test_backend_derivative_wrappers_and_configured_jit_decorator():
-    from diffractix.backend import jacrev
-
-    @jit(static_argnums=1)
-    def expression(theta, power):
-        return xp.stack((theta[0]**power, theta[0] * theta[1]))
-
-    theta = xp.array([2.0, 3.0])
-    np.testing.assert_allclose(expression(theta, 3), [8.0, 6.0])
-    function = lambda t: expression(t, 3)
-    for derivative in (jacobian, jacrev):
-        actual = derivative(function)(theta)
-        assert np.all(np.isfinite(actual))
-        np.testing.assert_allclose(actual, [[12.0, 0.0], [3.0, 2.0]])
-
-
 @pytest.mark.parametrize('kind', ['ray', 'bundle', 'custom'])
 def test_jit_propagation_preserves_python_and_custom_states(kind):
     from dataclasses import dataclass

@@ -862,6 +862,9 @@ def test_sequence_outputs_preserve_packed_root_order_shape_and_dtype(left, right
     packed = graph.evaluate(np.array([]), bindings=bindings)
     sequence = graph._evaluate_sequence(np.array([]), bindings=bindings)
 
+    if current_backend() == "jax" and isinstance(left, np.float32) and type(right) is float:
+        # Native JAX packing keeps a Python float weak beside a strong float32.
+        dtype = "float32"
     assert isinstance(packed, type(anp.array([])))
     assert isinstance(sequence, tuple)
     assert packed.dtype == np.dtype(dtype)
@@ -900,6 +903,8 @@ def test_sequence_array_bindings_preserve_packed_copy_semantics(binding):
 
 @pytest.mark.parametrize("method", ["evaluate", "_evaluate_sequence"])
 def test_sequence_and_public_evaluation_share_validation(method):
+    from diffractix.backend import current_backend
+
     parameter = Parameter(1.0).variable()
     graph = compile_ast((parameter, parameter + Symbol("missing")))
     evaluate = getattr(graph, method)
@@ -908,7 +913,9 @@ def test_sequence_and_public_evaluation_share_validation(method):
         evaluate(np.array([]))
     with pytest.raises(KeyError, match="missing"):
         evaluate(np.array([1.0]))
-    with pytest.raises(ValueError, match="inhomogeneous|sequence"):
+    error, message = ((TypeError, "different numbers of dimensions")
+                      if current_backend() == "jax" else (ValueError, "inhomogeneous|sequence"))
+    with pytest.raises(error, match=message):
         evaluate(np.array([1.0]), bindings={"missing": np.array([1.0, 2.0])})
 
 

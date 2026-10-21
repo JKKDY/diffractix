@@ -4,6 +4,12 @@
 - `integration/`: real build/propagation pipelines, solver tracing and runtime evaluation, backend optimization, and optical inverse-design workflows.
 - `helpers/`: small shared solver snapshots and analytical optimization problems. Other fixtures stay local to their test modules.
 
+Numerical backend configuration, explicitly selected Autograd/JAX behavior, and
+cross-backend comparisons live in `unit/backend/`. See its [README](unit/backend/README.md)
+for process isolation, optional JAX handling, and eager-versus-traced validation.
+The real multi-station parity scenario lives in `integration/test_backend_parity.py`;
+it reuses the example without running optimization.
+
 Happy paths, invalid inputs, and regression cases stay beside the feature they exercise. There is no separate edge-case or regression suite.
 
 Run from the repository root with the development environment installed:

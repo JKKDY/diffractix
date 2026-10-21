@@ -269,11 +269,12 @@ def test_weighted_objectives_report_the_backend_cost():
 def test_real_runtime_lookup_sources_reproduce_solution_run():
     system, space, _ = distance_system()
     reference = system.build().run(xp.array([0.2]))
-    desired_w = reference.after(space).w
+    before_w = float(reference.at(space).w)
+    desired_w = float(reference.after(space).w)
     solver = Solver(system)
     solver.target(
         lambda context: context.z[1] - 0.2,
-        lambda context: context.at(space).w - reference.at(space).w,
+        lambda context: context.at(space).w - before_w,
         lambda context: context.after(space).w - desired_w,
         lambda context: context.states[1].w - desired_w,
     )
@@ -383,10 +384,10 @@ def test_solver_expression_resolves_explicit_element_occurrence():
     system.add(repeated)
     simulation = system.build()
     desired_distance = 0.15
-    desired_w = simulation.run(xp.array([desired_distance])).at(
+    desired_w = float(simulation.run(xp.array([desired_distance])).at(
         repeated,
         occurrence=1,
-    ).w
+    ).w)
     solver = Solver(simulation)
     solver.target(
         lambda context: 1e4 * (

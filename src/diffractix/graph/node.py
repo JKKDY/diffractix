@@ -42,6 +42,9 @@ class Node:
 
     @staticmethod
     def _make_literal(value: Scalar) -> Literal:
+        # Capture concrete backend scalar constants; active tracers cannot .item().
+        if getattr(value, "shape", None) == () and hasattr(value, "item"):
+            value = value.item()
         if not isinstance(value, (int, float, complex)):
             raise TypeError(f"Expected numeric scalar, got {type(value)}")
         return Literal(value)

@@ -154,16 +154,16 @@ def _load_jax() -> _Backend:
         if not valid:
             raise ValueError(message)
 
-        return _Backend(
-            name="jax",
-            xp=jnp,
-            grad=jax.grad,
-            jacobian=jax.jacfwd,
-            jacrev=jax.jacrev,
-            hessian=jax.hessian,
-            jit=jax.jit,
-            require=_jax_require,
-        )
+    return _Backend(
+        name="jax",
+        xp=jnp,
+        grad=jax.grad,
+        jacobian=jax.jacfwd,
+        jacrev=jax.jacrev,
+        hessian=jax.hessian,
+        jit=jax.jit,
+        require=_jax_require,
+    )
 
 
 def _initialize(preference: str) -> _Backend:
