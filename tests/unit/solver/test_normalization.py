@@ -100,5 +100,5 @@ def test_strict_parameter_relations_normalize_to_open_residual_bounds(
 def test_empty_objective_and_constraint_collections_compile_to_empty_tuples():
     solver, _, _ = make_solver()
 
-    assert solver._compile_objectives() == ()
+    assert solver._compile_objectives(solver.objectives) == ()
     assert solver._compile_constraints(()) == ()

@@ -177,7 +177,7 @@ def test_solver_sequence_projection_composes_with_optical_states_and_composites(
     ).require(Constraint(lambda ctx: getattr(ctx.states[-1], field), lower_bound=-1., upper_bound=1.))
 
     def compile_functions():
-        objectives = solver._compile_objectives()
+        objectives = solver._compile_objectives(solver.objectives)
         constraints = solver._compile_constraints(solver.constraints)
         def cost(theta):
             context = SolverContext(theta, simulation.run)

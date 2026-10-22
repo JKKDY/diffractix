@@ -617,5 +617,5 @@ def test_shared_leaf_in_distinct_nested_composites_keeps_requirements_and_locati
 
     solver = Solver(simulation)
     solver.target(lambda ctx: ctx.z_after(shared, occurrence=1) - ctx.z_after(shared, occurrence=0))
-    objective, = solver._compile_objectives()
+    objective, = solver._compile_objectives(solver.objectives)
     assert objective.evaluate(SolverContext(xp.array([0.02]), simulation.run)) == pytest.approx(0.02)

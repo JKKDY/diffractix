@@ -8,9 +8,11 @@ from dataclasses import replace
 from types import ModuleType, SimpleNamespace
 import numpy as np
 import pytest
-from diffractix.solver import Backend, Objective, OptimizationResult, Solution, Solver
+from diffractix.solver import Backend, OptimizationResult, Solution, Solver
 from diffractix.solver.problem import Problem
+from diffractix.graph import Parameter
 from tests.helpers.optimization import make_constrained_problem, make_problem, make_scaling_problem
+from tests.helpers.simulation import make_simulation
 
 
 def import_fake_cyipopt_backend(monkeypatch):
@@ -154,20 +156,8 @@ def test_solver_dispatch_matrix_copies_options(
 ):
     from diffractix.solver import solver as solver_module
 
-    solver = object.__new__(Solver)
-    solver.objectives = ()
-    solver.constraints = ()
-    solver.simulation = SimpleNamespace(
-        initial_values=np.array([1.0]),
-        run=lambda theta: None,
-        requirements=(),
-        parameter_info={},
-        compile_context={},
-    )
-    solver._compile_objectives = lambda: (Objective(lambda context: 0.0),)
-    solver._compile_constraints = lambda constraints: ()
-    solver._parameter_bounds = lambda: (np.array([0.0]), np.array([2.0]))
-    solver._constraint_bounds = lambda constraints: (np.array([]), np.array([]))
+    parameter = Parameter(1.0).variable(bounds=(0.0, 2.0))
+    solver = Solver(make_simulation((parameter,))).target(parameter - 1.0)
     received = {}
 
     def solve(problem, method=None, options=None):

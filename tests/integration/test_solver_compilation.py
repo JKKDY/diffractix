@@ -40,7 +40,7 @@ def test_labeled_callable_shorthand_matches_explicit_objective():
     residual = lambda ctx: ctx.at(lens).w / 2.0 - 1.0
     assert solver.target(residual, label="radius") is solver
     solver.target(Objective(residual, label="radius"))
-    objectives = solver._compile_objectives()
+    objectives = solver._compile_objectives(solver.objectives)
     for objective in objectives:
         assert objective.label == "radius"
         assert objective.weight == 1.0
@@ -55,7 +55,7 @@ def test_value_matching_residual_and_derivatives_match_explicit_objective(target
     value = lambda ctx: parameter**2 + 3 * ctx.at(lens).w
     solver.target(value=value, target=target, scale=scale, label="match")
     solver.target(Objective(lambda ctx: (value(ctx) - target) / scale, label="match"))
-    shorthand, explicit = solver._compile_objectives()
+    shorthand, explicit = solver._compile_objectives(solver.objectives)
 
     for objective in (shorthand, explicit):
         evaluate = lambda theta: objective.evaluate(SolverContext(theta, solver.simulation.run))
@@ -78,7 +78,7 @@ def test_value_matching_default_scale_and_dynamic_control_flow():
         return 5.0
 
     solver.target(value=value, target=0.0)
-    objective, = solver._compile_objectives()
+    objective, = solver._compile_objectives(solver.objectives)
     assert objective.evaluate(context(solver, [4.0])) == 16.0
     assert objective.evaluate(context(solver, [1.0])) == 5.0
     derivative = grad(lambda theta: objective.evaluate(SolverContext(theta, solver.simulation.run)))
@@ -92,7 +92,7 @@ def test_target_existing_multiple_objectives_keep_weights_labels_and_order():
     solver.target(first, second, parameter + 1)
     assert solver.objectives[0] is first
     assert solver.objectives[1] is second
-    compiled = solver._compile_objectives()
+    compiled = solver._compile_objectives(solver.objectives)
     assert [obj.label for obj in compiled] == ["direct", "runtime", None]
     assert [obj.weight for obj in compiled] == [2.0, 4.0, 1.0]
     assert [obj.evaluate(context(solver, [4.0])) for obj in compiled] == [1.0, 5.0, 5.0]
@@ -102,7 +102,7 @@ def test_compile_direct_node_objective():
     solver, _, parameter = make_solver()
     solver.target(parameter - 3.0)
 
-    objective, = solver._compile_objectives()
+    objective, = solver._compile_objectives(solver.objectives)
 
     assert objective.evaluate(context(solver, [5.0])) == 2.0
 
@@ -118,7 +118,7 @@ def test_compile_traced_objective_mixes_all_runtime_sources():
             + ctx.states[1].q,
     )
 
-    objective, = solver._compile_objectives()
+    objective, = solver._compile_objectives(solver.objectives)
 
     assert objective.evaluate(context(solver, [3.0])) == 33.0
 
@@ -130,7 +130,7 @@ def test_at_symbols_preserve_property_identity_and_repeated_uses():
         lambda ctx: ctx.at(lens).w + ctx.at(lens).w,
     )
 
-    first, second = solver._compile_objectives()
+    first, second = solver._compile_objectives(solver.objectives)
     runtime_context = context(solver, [3.0])
 
     assert first.evaluate(runtime_context) == 9.0
@@ -146,7 +146,7 @@ def test_at_symbols_distinguish_occurrences():
         lambda ctx: ctx.at(lens, occurrence=2).w,
     )
 
-    difference, third = solver._compile_objectives()
+    difference, third = solver._compile_objectives(solver.objectives)
 
     runtime_context = context(solver, [3.0])
     assert difference.evaluate(runtime_context) == -1.0
@@ -160,7 +160,7 @@ def test_after_z_and_states_resolve_independently():
         lambda ctx: ctx.states[0].w + ctx.states[1].R,
     )
 
-    first, second = solver._compile_objectives()
+    first, second = solver._compile_objectives(solver.objectives)
     runtime_context = context(solver, [3.0])
 
     assert first.evaluate(runtime_context) == 10.0
@@ -174,7 +174,7 @@ def test_z_at_and_z_after_compile_and_resolve_runtime_symbols():
         lambda ctx: parameter + ctx.z_after(lens, occurrence=2),
     )
 
-    first, second = solver._compile_objectives()
+    first, second = solver._compile_objectives(solver.objectives)
     runtime_context = context(solver, [3.0])
 
     assert first.evaluate(runtime_context) == 26.0
@@ -185,7 +185,7 @@ def test_z_indices_produce_distinct_runtime_values():
     solver, _, parameter = make_solver()
     solver.target(lambda ctx: parameter + ctx.z[0], lambda ctx: parameter + ctx.z[1])
 
-    first, second = solver._compile_objectives()
+    first, second = solver._compile_objectives(solver.objectives)
     runtime_context = context(solver, [3.0])
 
     assert first.evaluate(runtime_context) == 3.0
@@ -201,7 +201,7 @@ def test_constant_callable_is_theta_independent_and_never_runs_simulation():
     solver.simulation.run = forbidden_run
     solver.target(lambda ctx: 7.0)
 
-    objective, = solver._compile_objectives()
+    objective, = solver._compile_objectives(solver.objectives)
 
     for theta in ([100.0], [-5.0]):
         assert objective.evaluate(context(solver, theta)) == 7.0
@@ -217,7 +217,7 @@ def test_dynamic_python_branch_falls_back_to_interpreter():
 
     solver.objectives = [Objective(objective)]
 
-    compiled, = solver._compile_objectives()
+    compiled, = solver._compile_objectives(solver.objectives)
 
     assert compiled.evaluate(context(solver, [1.0])) == 11.0
     assert compiled.evaluate(context(solver, [4.0])) == 1.0
@@ -239,7 +239,7 @@ def test_dynamic_callable_can_have_multiple_python_branches():
 
     solver.objectives = [Objective(objective)]
 
-    compiled, = solver._compile_objectives()
+    compiled, = solver._compile_objectives(solver.objectives)
 
     assert compiled.evaluate(context(solver, [0.0])) == 1.0
     assert compiled.evaluate(context(solver, [2.0])) == 4.0
@@ -256,7 +256,7 @@ def test_dynamic_callable_supports_node_and_numerical_results():
 
     solver.target(objective)
 
-    compiled, = solver._compile_objectives()
+    compiled, = solver._compile_objectives(solver.objectives)
 
     assert compiled.evaluate(context(solver, [1.0])) == 5.0
     assert compiled.evaluate(context(solver, [4.0])) == 8.0
@@ -272,7 +272,7 @@ def test_dynamic_callable_falls_back_for_raw_symbol_truth_testing():
 
     solver.target(objective)
 
-    compiled, = solver._compile_objectives()
+    compiled, = solver._compile_objectives(solver.objectives)
 
     assert compiled.evaluate(context(solver, [-1.0])) == 5.0
     assert compiled.evaluate(context(solver, [2.0])) == 4.0
@@ -287,7 +287,7 @@ def test_snapshot_fixed_value_overrides_live_parameter_mutation():
     parameter.value = 100.0
     solver.target(parameter * 3.0)
 
-    objective, = solver._compile_objectives()
+    objective, = solver._compile_objectives(solver.objectives)
 
     assert objective.evaluate(context(solver, [999.0])) == 6.0
 
@@ -297,7 +297,7 @@ def test_snapshot_variable_membership_overrides_live_fixed_state():
     parameter.fixed()
     solver.target(parameter * 2.0)
 
-    objective, = solver._compile_objectives()
+    objective, = solver._compile_objectives(solver.objectives)
 
     assert objective.evaluate(context(solver, [4.0])) == 8.0
 
@@ -311,7 +311,7 @@ def test_snapshot_fixed_membership_overrides_live_variable_state():
     parameter.variable()
     solver.target(parameter * 2.0)
 
-    objective, = solver._compile_objectives()
+    objective, = solver._compile_objectives(solver.objectives)
 
     assert objective.evaluate(context(solver, [4.0])) == 4.0
 
@@ -331,7 +331,7 @@ def test_tracing_does_not_run_simulation():
         Constraint(lambda ctx: ctx.after(lens).R, lower_bound=0.0),
     ]
 
-    solver._compile_objectives()
+    solver._compile_objectives(solver.objectives)
     solver._compile_constraints(solver.constraints)
 
     assert calls == 0
@@ -354,7 +354,7 @@ def test_runtime_context_runs_simulation_only_once():
         Objective(lambda ctx: ctx.states[1].q),
     ]
 
-    objectives = solver._compile_objectives()
+    objectives = solver._compile_objectives(solver.objectives)
     runtime_context = context(solver, [3.0])
     values = [objective.evaluate(runtime_context) for objective in objectives]
 
@@ -373,7 +373,7 @@ def test_different_runtime_contexts_do_not_share_simulation_results():
 
     solver.simulation.run = run
     solver.target(lambda ctx: ctx.at(lens).w)
-    objective, = solver._compile_objectives()
+    objective, = solver._compile_objectives(solver.objectives)
 
     first_context = context(solver, [1.0])
     second_context = context(solver, [4.0])
@@ -388,7 +388,7 @@ def test_different_runtime_contexts_do_not_share_simulation_results():
 def test_traced_hybrid_expression_is_autograd_differentiable():
     solver, lens, parameter = make_solver()
     solver.target(lambda ctx: parameter**2 + 3.0 * ctx.at(lens).w)
-    objective, = solver._compile_objectives()
+    objective, = solver._compile_objectives(solver.objectives)
 
     derivative = grad(
         lambda theta: objective.evaluate(
@@ -447,7 +447,7 @@ def test_dynamic_branch_is_autograd_differentiable_away_from_boundary():
         return parameter + 10.0
 
     solver.target(objective)
-    compiled, = solver._compile_objectives()
+    compiled, = solver._compile_objectives(solver.objectives)
 
     derivative = grad(
         lambda theta: compiled.evaluate(
@@ -467,14 +467,14 @@ def test_compile_callable_does_not_swallow_unrelated_errors():
     solver.objectives = [Objective(broken)]
 
     with pytest.raises(TypeError):
-        solver._compile_objectives()
+        solver._compile_objectives(solver.objectives)
 
 
 def test_unknown_element_error_propagates_at_runtime():
     solver, _, _ = make_solver()
     missing = FakeElement()
     solver.target(lambda ctx: ctx.at(missing).w)
-    objective, = solver._compile_objectives()
+    objective, = solver._compile_objectives(solver.objectives)
 
     with pytest.raises(KeyError, match="Unknown element"):
         objective.evaluate(context(solver, [2.0]))
@@ -483,7 +483,7 @@ def test_unknown_element_error_propagates_at_runtime():
 def test_unknown_runtime_property_error_propagates_at_runtime():
     solver, lens, _ = make_solver()
     solver.target(lambda ctx: ctx.at(lens).does_not_exist)
-    objective, = solver._compile_objectives()
+    objective, = solver._compile_objectives(solver.objectives)
 
     with pytest.raises(AttributeError, match="does_not_exist"):
         objective.evaluate(context(solver, [2.0]))
@@ -500,7 +500,7 @@ def test_direct_node_cannot_contain_solver_runtime_symbol():
     solver.objectives = [Objective(symbol)]
 
     with pytest.raises(ValueError, match="runtime Symbols"):
-        solver._compile_objectives()
+        solver._compile_objectives(solver.objectives)
 
 
 def test_multiple_objectives_compile_and_evaluate_in_order():
@@ -519,7 +519,7 @@ def test_multiple_objectives_compile_and_evaluate_in_order():
         Objective(lambda ctx: 7.0, label="constant"),
     )
 
-    objectives = solver._compile_objectives()
+    objectives = solver._compile_objectives(solver.objectives)
     runtime_context = context(solver, [3.0])
 
     assert [objective.evaluate(runtime_context) for objective in objectives] == [0.0, 4.0, 13.0, 6.0, 7.0]
@@ -561,7 +561,7 @@ def test_reordered_hybrid_parameters_preserve_gradient_and_cross_hessian():
     solver.target(
         lambda ctx: first**2 + 3 * first * second + second**2 + ctx.after(lens).R**2,
     )
-    objective, = solver._compile_objectives()
+    objective, = solver._compile_objectives(solver.objectives)
 
     def evaluate(theta):
         return objective.evaluate(SolverContext(theta, solver.simulation.run))
@@ -588,7 +588,7 @@ def test_dynamic_returned_node_uses_execution_bindings_and_frozen_theta(kind):
 
     if kind == "objective":
         solver.target(dynamic)
-        compiled, = solver._compile_objectives()
+        compiled, = solver._compile_objectives(solver.objectives)
     else:
         solver.require(Constraint(dynamic, lower_bound=-10, upper_bound=20))
         compiled, = solver._compile_constraints(solver.constraints)
@@ -665,7 +665,7 @@ def test_public_normalization_composes_static_and_runtime_expressions():
         ),
     )
 
-    objectives = solver._compile_objectives()
+    objectives = solver._compile_objectives(solver.objectives)
     constraints = solver._compile_constraints(solver.constraints)
     runtime_context = context(solver, [3.0])
 

@@ -487,7 +487,7 @@ def test_replacing_element_parameter_after_build_does_not_enter_frozen_simulatio
     assert simulation.run().z[-1] == pytest.approx(0.1)
 
 
-def test_solution_is_stable_after_solver_mutation():
+def test_solver_rejects_model_changes_after_solving_and_preserves_solution():
     system, _, distance = distance_system()
     solver, solution = solve_distance(system)
     original_targets = solution.targets
@@ -495,8 +495,15 @@ def test_solution_is_stable_after_solver_mutation():
     original_cost = solution.cost
     original_feasible = solution.feasible
 
-    solver.target(distance - 0.35)
-    solver.require(distance >= 0.3)
+    original_objectives = tuple(solver.objectives)
+    original_requirements = tuple(solver.constraints)
+    with pytest.raises(RuntimeError, match="model is fixed"):
+        solver.target(distance - 0.35)
+    with pytest.raises(RuntimeError, match="model is fixed"):
+        solver.require(distance >= 0.3)
+
+    assert tuple(solver.objectives) == original_objectives
+    assert tuple(solver.constraints) == original_requirements
 
     assert solution.targets is original_targets
     assert solution.constraints is original_constraints
