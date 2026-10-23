@@ -33,7 +33,19 @@ class RayBundle(ParaxialState):
             raise ValueError("x and theta must have matching shapes.")
         if len(np.shape(self.x)) != 1:
             raise ValueError("RayBundle arrays must be one-dimensional.")
+    
+    @classmethod
+    def parallel(cls, radius, count, n=1.0):
+        """Generate parallel rays across a 1D aperture."""
+        x = xp.linspace(-radius, radius, count)
+        theta = xp.zeros_like(x)
+        return cls(x=x, theta=theta, n=n)
 
+    @classmethod
+    def converging(cls, radius, count, focal_distance, n=1.0):
+        x = xp.linspace(-radius, radius, count)
+        theta = -x / focal_distance
+        return cls(x=x, theta=theta, n=n)
 
     @property
     def size(self) -> int:
@@ -45,6 +57,30 @@ class RayBundle(ParaxialState):
         """Ray vectors with shape (2, N)."""
         return xp.stack((self.x, self.theta), axis=0)
 
+    @property
+    def centroid(self):
+        """Mean transverse position of the rays."""
+        return xp.mean(self.x)
+
+    @property
+    def mean_angle(self):
+        """Mean propagation angle."""
+        return xp.mean(self.theta)
+
+    @property
+    def position_spread(self):
+        """RMS spread around the bundle centroid."""
+        return xp.std(self.x)
+
+    @property
+    def angular_spread(self):
+        """RMS angular spread around the mean angle."""
+        return xp.std(self.theta)
+
+    @property
+    def rms_x(self):
+        """RMS transverse displacement from the optical axis."""
+        return xp.sqrt(xp.mean(xp.square(self.x)))
 
 
     def propagate(self, A, B, C, D, n) -> 'RayBundle':
