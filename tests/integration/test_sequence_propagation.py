@@ -10,7 +10,7 @@ from diffractix.backend import grad, hessian, jacobian
 import numpy as numpy
 import pytest
 
-from diffractix.beams import GaussianBeam, ParaxialRay, RayBundle
+from diffractix.beams import GaussianBeam, Ray, RayBundle
 from diffractix.beams.base import ParaxialState
 from diffractix.composites import Slab, ThickLens
 from diffractix.elements import ABCD, GaussianAperture, GRIN, Interface, OpticalElement, Space, ThinLens
@@ -59,7 +59,7 @@ def source_for(kind):
     if kind == "gaussian":
         return GaussianBeam.from_waist(w0=0.5e-3, wavelength=1064e-9)
     if kind == "ray":
-        return ParaxialRay(x=1e-3, theta=0.01)
+        return Ray(x=1e-3, theta=0.01)
     if kind == "custom":
         return CustomState(x=xp.array([1e-3, -2e-3]), theta=xp.array([0.01, -0.02]))
     dtype = numpy.float32 if kind == "bundle32" else numpy.float64
@@ -207,7 +207,7 @@ def test_solver_sequence_projection_composes_with_optical_states_and_composites(
 
 @pytest.mark.parametrize("kind", ["ray", "bundle"])
 def test_scalar_float64_coefficients_keep_strong_promotion_for_float32_states(kind):
-    source = (ParaxialRay(x=numpy.float32(0.1), theta=numpy.float32(0.2))
+    source = (Ray(x=numpy.float32(0.1), theta=numpy.float32(0.2))
               if kind == "ray" else source_for("bundle32"))
     simulation = System(
         ABCD(A=1.0000000001, B=0.123456789123, C=-0.23456789123, D=0.98765432123),

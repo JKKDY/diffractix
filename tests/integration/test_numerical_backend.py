@@ -77,7 +77,7 @@ def test_gaussian_concrete_domain_validation_remains_active():
 @pytest.mark.parametrize('kind', ['ray', 'bundle', 'custom'])
 def test_jit_propagation_preserves_python_and_custom_states(kind):
     from dataclasses import dataclass
-    from diffractix import ABCD, ParaxialRay, RayBundle
+    from diffractix import ABCD, Ray, RayBundle
     from diffractix.beams.base import ParaxialState
 
     @dataclass
@@ -88,7 +88,7 @@ def test_jit_propagation_preserves_python_and_custom_states(kind):
         def propagate(self, A, B, C, D, n):
             return CustomState(A*self.x + B*self.theta, C*self.x + D*self.theta)
 
-    source = (ParaxialRay(x=0.001, theta=0.02) if kind == 'ray' else
+    source = (Ray(x=0.001, theta=0.02) if kind == 'ray' else
               RayBundle(x=np.array([0.001, 0.002]), theta=np.array([0.02, -0.01]))
               if kind == 'bundle' else CustomState(0.001, 0.02))
     distance = Parameter(0.03).variable()

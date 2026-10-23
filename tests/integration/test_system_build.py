@@ -10,7 +10,7 @@ import pytest
 import numpy as np
 from diffractix.backend import xp
 
-from diffractix.beams import GaussianBeam, ParaxialRay
+from diffractix.beams import GaussianBeam, Ray
 from diffractix.composites import CompositeElement, Slab
 from diffractix.elements import (
     ABCD,
@@ -352,7 +352,7 @@ class MalformedMatrixElement(OpticalElement):
 
 
 def make_beam():
-    return ParaxialRay(
+    return Ray(
         x=0.0,
         theta=0.0,
     )

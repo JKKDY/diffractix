@@ -21,11 +21,18 @@ class RayBundle(ParaxialState):
     """
     x: np.ndarray
     theta: np.ndarray
+    n: float = 1.0
 
     result_columns: ClassVar[tuple[str, ...]] = (
         "x",
         "theta",
     )
+
+    def __post_init__(self):
+        if np.shape(self.x) != np.shape(self.theta):
+            raise ValueError("x and theta must have matching shapes.")
+        if len(np.shape(self.x)) != 1:
+            raise ValueError("RayBundle arrays must be one-dimensional.")
 
 
     @property
@@ -42,12 +49,10 @@ class RayBundle(ParaxialState):
 
     def propagate(self, A, B, C, D, n) -> 'RayBundle':
         """Propagate all rays through an ABCD matrix."""
-        x = A * self.x + B * self.theta
-        theta = C * self.x + D * self.theta
-
         return RayBundle(
-            x=x,
-            theta=theta,
+            x=A * self.x + B * self.theta,
+            theta=C * self.x + D * self.theta,
+            n=n,
         )
 
     def x_at_z(self, z: float):
@@ -58,8 +63,4 @@ class RayBundle(ParaxialState):
 
     def __str__(self) -> str:
         """Human-readable representation of the ray bundle state."""
-        return (
-            f"RayBundle("
-            f"size={self.size}, "
-            f")"
-        )
+        return f"RayBundle(size={self.size}, n={self.n:.4g})"

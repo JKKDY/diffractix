@@ -41,7 +41,7 @@ def _graph_case():
 def _optical_cases():
     from diffractix import (
         GaussianAperture, GaussianBeam, Interface, Objective, Parameter,
-        ParaxialRay, RayBundle, Slab, Solver, Space, System, ThickLens, ThinLens,
+        Ray, RayBundle, Slab, Solver, Space, System, ThickLens, ThinLens,
     )
     from diffractix.backend import xp
     from diffractix.solver import Constraint
@@ -53,7 +53,7 @@ def _optical_cases():
     target = GaussianBeam.from_waist(0.0004, source.wavelength)
     space, lens, output = Space(d=distance), ThinLens(f=focal), Space(d=0.04)
     gaussian = System(space, lens, output, input=source).build()
-    ray = System(space, lens, output, input=ParaxialRay(x=0.001, theta=0.02)).build()
+    ray = System(space, lens, output, input=Ray(x=0.001, theta=0.02)).build()
     bundle = System(space, lens, output, input=RayBundle(
         x=np.array([0.001, -0.002]), theta=np.array([0.02, -0.01]),
     )).build()

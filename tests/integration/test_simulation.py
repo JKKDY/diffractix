@@ -9,7 +9,7 @@ import numpy as numpy
 
 from diffractix.backend import grad
 
-from diffractix.beams import GaussianBeam, ParaxialRay, RayBundle
+from diffractix.beams import GaussianBeam, Ray, RayBundle
 from diffractix.beams.base import ParaxialState
 from diffractix.elements import GaussianAperture, Interface, Space, ThinLens
 from diffractix.graph import Parameter
@@ -154,7 +154,7 @@ def test_simulation_reports_missing_execution_binding_for_runtime_symbol():
     aperture = GaussianAperture(a=1e-3)
 
     system = System()
-    system.add_input_beam(ParaxialRay(x=0.0, theta=0.0))
+    system.add_input_beam(Ray(x=0.0, theta=0.0))
     system.add(aperture)
 
     simulation = system.build()

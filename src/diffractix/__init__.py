@@ -3,7 +3,7 @@
 # Beams
 from .beams import (
     GaussianBeam,
-    ParaxialRay,
+    Ray,
     RayBundle,
 )
 
@@ -60,7 +60,7 @@ from .solver import (
 __all__ = [
     # Beams
     "GaussianBeam",
-    "ParaxialRay",
+    "Ray",
     "RayBundle",
 
     # Elements

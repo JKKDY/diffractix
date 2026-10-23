@@ -3,7 +3,7 @@
 import pytest
 from pathlib import Path
 from dataclasses import dataclass
-from diffractix.beams import ParaxialRay
+from diffractix.beams import Ray
 from diffractix.composites import Slab
 from diffractix.composites import CompositeElement
 from diffractix.system import AMBIENT_N
@@ -37,7 +37,7 @@ class FailingComposite(CompositeElement):
 
 
 def make_beam():
-    return ParaxialRay(
+    return Ray(
         x=0.0,
         theta=0.0,
     )
@@ -433,7 +433,7 @@ def test_add_input_beam():
 def test_add_input_beam_replaces_previous_beam():
     system = System()
     first = make_beam()
-    second = ParaxialRay(
+    second = Ray(
         x=0.1,
         theta=0.01,
     )
