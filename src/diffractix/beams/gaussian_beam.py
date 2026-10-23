@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from numbers import Real
 from typing import Tuple, ClassVar
 import numpy as np
 from diffractix.backend import xp, require
@@ -6,6 +7,25 @@ import cmath
 
 from .base import ParaxialState
 from diffractix.system import WAVELENGTH
+
+
+# Use backend.require() for (jit) tracer-safe validation.
+# Concrete invalid values raise; dynamically traced checks are skipped.
+def _require_real(value, name):
+    """Inspect static numerical types without converting differentiable values."""
+    dtype = getattr(value, "dtype", None)
+    if dtype is None:
+        real = isinstance(value, Real) and not isinstance(value, bool)
+    else:
+        real = xp.issubdtype(dtype, xp.integer) or xp.issubdtype(dtype, xp.floating)
+    if not real:
+        raise TypeError(f"{name} must be real-valued numerical input.")
+
+
+def _require_positive(**values):
+    for name, value in values.items():
+        _require_real(value, name)
+        require(xp.all(xp.isfinite(value) & (value > 0)), f"{name} must be finite and positive.")
 
 
 
@@ -19,6 +39,9 @@ def _curvature(inv_q_real):
 class GaussianBeam(ParaxialState):
     """
     Represents a Gaussian Beam at a specific point in space and medium.
+
+    Factories validate concrete inputs. Predicates depending on JIT-traced
+    values follow the unchecked-runtime policy of backend.require().
 
     Attributes:
         q (complex): The complex beam parameter describing curvature and width.
@@ -218,6 +241,9 @@ class GaussianBeam(ParaxialState):
                      0.0 means we are at the waist.
                      -10.0 means the waist was 10 units ago.
         """
+        _require_positive(w0=w0, wavelength=wavelength, n=n)
+        _require_real(z_waist_loc, "z_waist_loc")
+        require(xp.all(xp.isfinite(z_waist_loc)), "z_waist_loc must be finite.")
         z_r = (np.pi * w0**2 * n) / wavelength
 
         # q = (z - z_waist_loc) + i*z_r. At z=0 (current plane):
@@ -228,6 +254,9 @@ class GaussianBeam(ParaxialState):
     @classmethod
     def from_w_and_R(cls, w: float, R: float, wavelength: float, n: float = 1.0) -> 'GaussianBeam':
         """Create a beam from spot size w and curvature R at the current plane."""
+        _require_positive(w=w, wavelength=wavelength, n=n)
+        _require_real(R, "R")
+        require(xp.all(~xp.isnan(R) & (R != 0)), "R must be nonzero and not NaN; infinity is allowed.")
         inv_q_imag = -(wavelength / (np.pi * n * w**2))
         plane = xp.isinf(R)
         inv_q_real = xp.where(plane, 0.0, 1.0 / xp.where(plane, 1.0, R))
@@ -244,6 +273,7 @@ class GaussianBeam(ParaxialState):
 
         Assumes the beam starts AT the waist (z=0, R=inf).
         """
+        _require_positive(theta=theta, wavelength=wavelength, n=n)
         # theta = lambda / (pi * w0 * n)  ->  w0 = lambda / (pi * theta * n)
         w0 = wavelength / (np.pi * theta * n)
 
@@ -254,21 +284,23 @@ class GaussianBeam(ParaxialState):
         """
         Create a beam as it exits a fiber tip.
 
-        You must provide either NA or MFD.
+        You must provide either NA or MFD. NA takes precedence if both are supplied.
 
         - If NA is provided: w0 = wavelength / (pi * NA)
         - If MFD is provided: w0 = MFD / 2
         """
+        if NA is None and MFD is None:
+            raise ValueError("Must provide either 'NA' or 'MFD' to characterize the fiber tip.")
+        _require_positive(wavelength=wavelength, n=n)
         if NA is not None:
+            _require_positive(NA=NA)
             # Physics: NA = n * sin(theta) approx n * theta. 
             # In fiber optics, NA is usually defined such that w0 = wavelength / (pi * NA)
             w0 = wavelength / (np.pi * NA)
 
-        elif MFD is not None:
-            w0 = MFD / 2.0
-
         else:
-            raise ValueError("Must provide either 'NA' or 'MFD' to characterize the fiber tip.")
+            _require_positive(MFD=MFD)
+            w0 = MFD / 2.0
 
         return cls.from_waist(w0, wavelength, z_waist_loc=0.0, n=n)
 
