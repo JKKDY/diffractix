@@ -129,6 +129,8 @@ def test_simulation_resolves_beam_execution_bindings_at_runtime():
     expected_q = beam.q / (C * beam.q + 1.0)
 
     assert simulation.execution_context == beam.execution_context
+    assert not hasattr(result, "execution_context")
+    numpy.testing.assert_allclose(result.wavelength, [beam.wavelength] * 2)
     assert result.final.q == pytest.approx(expected_q)
 
 

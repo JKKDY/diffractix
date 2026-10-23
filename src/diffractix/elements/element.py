@@ -76,19 +76,6 @@ class OpticalElement(ElementBase, ABC):
         return cls._parameter_names
 
 
-    # ------------
-    # REQUIREMENTS
-    # ------------
-    @property
-    def requirements(self) -> tuple[Any, ...]:
-        """Persistent requirements attached to this element."""
-        return tuple(self._requirements)
-
-    def require(self, *requirements):
-        self._requirements.extend(requirements)
-        return self
-
-
     # ------------------
     # ELEMENT PROPERTIES
     # ------------------

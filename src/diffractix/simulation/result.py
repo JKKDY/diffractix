@@ -208,7 +208,7 @@ def result_type_for(source: ParaxialState) -> type[SimulationResult]:
     Return the generated SimulationResult type for an optical state.
 
     Public dataclass fields and properties of the state become stacked
-    properties on the generated result type.
+    properties on the generated result type, excluding execution metadata.
     """
     return _result_type_for(type(source))
 
@@ -235,6 +235,8 @@ def _result_type_for(state_type: type[ParaxialState]) -> type[SimulationResult]:
             for name, value in vars(cls).items()
             if not name.startswith("_") and isinstance(value, property)
         )
+
+    names.discard("execution_context")
 
     collisions = names.intersection(dir(SimulationResult))
 

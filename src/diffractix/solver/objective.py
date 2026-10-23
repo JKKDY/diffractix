@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-import inspect
+import math
 
 from diffractix.graph import Node
 from .utils import callable_arity
@@ -18,8 +18,8 @@ class Objective:
     def __post_init__(self):
         if not isinstance(self.evaluate, Node) and not callable(self.evaluate):
             raise TypeError("evaluate must be a Node or callable.")
-        if self.weight < 0:
-            raise ValueError("weight must be >= 0.")
+        if not math.isfinite(self.weight) or self.weight < 0:
+            raise ValueError("weight must be finite and >= 0.")
 
 
 

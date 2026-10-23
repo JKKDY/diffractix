@@ -157,3 +157,4 @@ archive/*
 
 /scratch/*
 /benchmarks/*
+*.zip

@@ -83,6 +83,10 @@ class Constraint:
         if not isinstance(self.evaluate, Node) and not callable(self.evaluate):
             raise TypeError("evaluate must be a Node or callable.")
 
+        for name, bound in (("lower_bound", self.lower_bound), ("upper_bound", self.upper_bound)):
+            if math.isnan(bound):
+                raise ValueError(f"{name} must not be NaN.")
+
         if self.lower_bound > self.upper_bound:
             raise ValueError("lower_bound must be <= upper_bound.")
 

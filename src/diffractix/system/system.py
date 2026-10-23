@@ -538,7 +538,7 @@ class System:
         element_info = []
 
         def as_node(value):
-            return value if isinstance(value, Node) else Literal(value)
+            return value if isinstance(value, Node) else Node._make_literal(value)
 
         for system_placement in elements:
             element = system_placement.element

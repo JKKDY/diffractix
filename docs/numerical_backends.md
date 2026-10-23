@@ -26,8 +26,8 @@ The existing backend implementation was relocated from the accidentally named
   backend wrappers. Static scaling coefficients stay on the host.
 - Operation functions are resolved lazily, cached, and bound into compiled
   instructions. Constant folding and symbolic semantics are unchanged.
-- Graph packing preserves strong NumPy dtype promotion and checks incompatible
-  root shapes explicitly. Its scalar sequence fast path remains available.
+- Graph packing uses the selected backend's array and dtype semantics. Its
+  scalar sequence fast path remains available.
 - Concrete backend scalars can be captured as graph constants. Active tracers
   cannot be captured as declarative constants.
 - Gaussian curvature branches use safe denominators and numerical selection;
@@ -35,10 +35,12 @@ The existing backend implementation was relocated from the accidentally named
 - Solver longitudinal-index lookup explicitly checks bounds, preserving errors
   despite JAX's different out-of-range array-indexing behavior.
 
-There is no new simulator, PyTree registration, graph fusion, numerical cache,
-automatic solver JIT, sensitivity strategy, or optimization adapter.
+Solver caches its complete numerical callbacks and lazily caches JIT wrappers
+when `solve(use_jit=True)` is requested. Changes to initial values or parameter
+bounds reuse the numerical core; constraint reduction remains outside JIT.
+There is no separate simulator, PyTree registration, or graph-fusion layer.
 
-## Verification
+## Historical integration verification
 
 Full suites ran in separate processes on Windows, Python 3.14.7:
 
@@ -85,7 +87,9 @@ weighted constraint Hessian, and nested derivative callbacks pass explicit JIT
 tests. Python state/result objects can be created and consumed inside tracing;
 the traced function must return numerical outputs, not a `SimulationResult`.
 
-Automatic solver JIT is deliberately deferred:
+Solver JIT is opt-in through `solve(use_jit=True)`; Autograd treats JIT as an
+identity operation. Objectives and requirements are fixed once callbacks have
+been prepared. The following restrictions apply:
 
 1. Dynamic Python branches are supported by the existing eager interpreter
    fallback, but not automatically rewritten into JAX control flow. Their eager
@@ -93,8 +97,8 @@ Automatic solver JIT is deliberately deferred:
 2. Concrete finite-value and optical-domain checks remain active during eager
    execution. Traced predicates cannot raise ordinary Python validation errors
    based on unknown values. Explicitly JIT-compiled numerical callbacks do not
-   provide those runtime value checks; a future automatic JIT integration needs
-   an eager validation boundary or an explicit checked-execution policy.
+   provide those runtime value checks. Validate concrete inputs eagerly when
+   runtime error reporting is required.
    Static shape checks and lookup validation remain available during tracing.
 3. Complex expressions are supported, but a differentiated scalar objective must
    be real-valued. Select real/imaginary components explicitly when appropriate;
@@ -158,15 +162,16 @@ preparation of the four actual **scaled solver callbacks** took an additional
 4.978 s. Their compilation is separate from the physical-callback diagnostic
 compilation above; neither is hidden inside the reported warm solve time.
 Preparation + scaled-callback compilation + solve is approximately 7.07 s for
-the explicit JIT experiment. No automatic production JIT behavior is implied.
+the historical explicit JIT experiment. These timings predate the reusable
+production callback cache and are not measurements of `solve(use_jit=True)`.
 
 Conclusion: eager compatibility is established, but eager JAX is slower for this
-Python-heavy workload. Explicit whole-callback JIT is promising. Until the
-validation/dynamic-control-flow policy is implemented, select Autograd explicitly
-when existing eager solver performance is the priority. This integration does
-not change the requested `auto` preference for installed JAX.
+Python-heavy workload. Use `solve(use_jit=True)` for traceable numerical callbacks,
+subject to the validation and control-flow restrictions above. Select Autograd
+explicitly when eager execution is the priority. The `auto` preference still
+selects installed JAX.
 
-## Test environment
+## Historical test environment
 
 Existing virtual-environment dependencies were not modified. The project Python
 already contained both numerical backends; pytest was installed only into the

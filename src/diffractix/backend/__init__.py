@@ -240,7 +240,8 @@ def require(condition: Any, message: str) -> None:
 
     Under eager execution, an invalid condition raises ValueError immediately.
 
-    Under JAX JIT, the condition is represented with JAX control flow and the
-    error is raised from the invalid runtime branch.
+    Under JAX JIT, predicates depending on traced values are not checked at
+    runtime. Validate concrete inputs outside JIT when errors are required.
+    False static conditions can still raise during tracing.
     """
     _get_backend().require(condition, message)

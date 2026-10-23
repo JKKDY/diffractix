@@ -5,8 +5,29 @@ import numpy as np
 import pytest
 from diffractix.graph import Literal, Parameter
 from diffractix.solver.objective import Objective
-from diffractix.solver.constraint import normalize_to_constraint
+from diffractix.solver.constraint import Constraint, normalize_to_constraint
 from tests.helpers.solver import make_solver
+
+
+@pytest.mark.parametrize("endpoint", ["lower_bound", "upper_bound"])
+def test_constraint_rejects_nan_endpoint(endpoint):
+    with pytest.raises(ValueError, match=rf"{endpoint}.*NaN"):
+        Constraint(Parameter(1.0), **{endpoint: np.nan})
+
+
+@pytest.mark.parametrize("weight", [np.nan, np.inf, -np.inf, -0.1])
+def test_objective_rejects_nonfinite_or_negative_weight(weight):
+    with pytest.raises(ValueError, match="weight.*finite.*>= 0"):
+        Objective(Parameter(1.0), weight=weight)
+
+
+def test_constraint_infinite_endpoints_and_finite_objective_weights_remain_valid():
+    parameter = Parameter(1.0)
+    constraint = Constraint(parameter, lower_bound=-np.inf, upper_bound=np.inf)
+    assert constraint.lower_bound == -np.inf
+    assert constraint.upper_bound == np.inf
+    for weight in (0.0, np.float32(2.5)):
+        assert Objective(parameter, weight=weight).weight == weight
 
 
 @pytest.mark.parametrize("args, kwargs, error, message", [

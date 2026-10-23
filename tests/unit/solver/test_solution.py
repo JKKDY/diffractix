@@ -291,13 +291,20 @@ def test_non_finite_constraint_values_are_never_reported_feasible(value):
     assert solution.feasible is False
 
 
-@pytest.mark.parametrize("x", [(), (3.0, 4.0)])
-def test_solution_rejects_backend_theta_length_mismatch(x):
+@pytest.mark.parametrize("x", [(), (3.0, 4.0), ((3.0,),), 3.0])
+def test_solution_rejects_backend_theta_shape_mismatch(x):
     parameter = Parameter(2.0, name="p").variable()
     simulation = make_simulation((parameter,))
+    result = OptimizationResult(np.array(x), True, 0.0, "done")
 
-    with pytest.raises(ValueError, match="x length.*initial_values"):
-        make_solution(x=x, simulation=simulation)
+    with pytest.raises(ValueError, match="x shape.*initial_values"):
+        Solution(result, make_problem(), simulation, (), ())
+
+
+@pytest.mark.parametrize("value", [np.nan, np.inf, -np.inf])
+def test_solution_rejects_nonfinite_backend_theta(value):
+    with pytest.raises(ValueError, match="Backend result x.*finite"):
+        make_solution(x=(value,))
 
 
 def test_solution_empty_constraints_are_feasible():

@@ -406,6 +406,28 @@ def test_build_snapshots_compile_context():
     assert frozen_temperature.value == pytest.approx(293.15)
 
 
+@pytest.mark.parametrize("dtype", [np.float32, np.complex64])
+def test_custom_numpy_scalar_matrix_compiles_and_propagates(dtype):
+    @dataclass(eq=False, kw_only=True)
+    class NumericMatrixElement(OpticalElement):
+        @property
+        def matrix(self):
+            return np.array(((1.0, 0.02), (-2.0, 0.96)), dtype=dtype)
+
+        @property
+        def element_length(self):
+            return np.float32(0.02)
+
+    source = create_beam()
+    element = NumericMatrixElement()
+    simulation = System(element, input=source).build()
+    result = simulation.run()
+    A, B, C, D = element.matrix.ravel()
+
+    assert result.final.q == pytest.approx((A * source.q + B) / (C * source.q + D))
+    assert result.z[-1] == pytest.approx(0.02)
+
+
 def test_build_reports_actual_element_graph_validation_error():
     system = System()
     system.add_input_beam(make_beam())

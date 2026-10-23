@@ -70,10 +70,12 @@ class Solution:
         x = np.array(result.x, copy=True)
         x.setflags(write=False)
 
-        if len(x) != len(simulation.initial_values):
+        if x.shape != (len(simulation.initial_values),):
             raise ValueError(
-                "Backend result x length must match simulation.initial_values."
+                "Backend result x shape must match simulation.initial_values."
             )
+        if not np.all(np.isfinite(x)):
+            raise ValueError("Backend result x must contain only finite values.")
 
         self._result = result
         self._x = x
