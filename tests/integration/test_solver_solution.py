@@ -50,6 +50,35 @@ def test_solver_solve_respects_parameter_bounds():
     numpy.testing.assert_allclose(solution.x, [3.0], atol=1e-6)
 
 
+def test_solution_feasibility_uses_each_solves_physical_bound_overrides(monkeypatch):
+    distance = Parameter(0.1).variable(bounds=(0.02, 0.4))
+    simulation = System(
+        Space(d=distance), input=GaussianBeam.from_waist(w0=1e-3, wavelength=1e-6),
+    ).build()
+    solver = Solver(simulation).target(distance - 0.2)
+    returned_values = iter((0.2, 0.2, 0.015))
+
+    def backend(problem, **kwargs):
+        # Simulate a successful optimizer that may return a point outside its bounds.
+        physical_x = numpy.array([next(returned_values)])
+        scaled_x = (physical_x - problem.scaling.x_center) / problem.scaling.x_scale
+        return OptimizationResult(scaled_x, True, 0.0, "done")
+
+    monkeypatch.setattr("diffractix.solver.solver.solve_scipy", backend)
+    original = solver.solve()
+    restricted = solver.solve(x_upper=[0.15])
+    relaxed = solver.solve(x_lower=[0.01])
+
+    # Inspect only after all solves, so later overrides cannot affect earlier reports.
+    assert [solution.feasible for solution in (original, restricted, relaxed)] == [True, False, True]
+    assert all(solution.success for solution in (original, restricted, relaxed))
+    numpy.testing.assert_allclose([solution.x[0] for solution in (original, restricted, relaxed)],
+                                 [0.2, 0.2, 0.015])
+    info = simulation.parameter_info[id(distance)]
+    assert (info.lower_bound, info.upper_bound) == (0.02, 0.4)
+    numpy.testing.assert_array_equal(simulation.initial_values, [0.1])
+
+
 @pytest.mark.scipy
 def test_solver_solve_enforces_hard_constraint():
     parameter = Parameter(

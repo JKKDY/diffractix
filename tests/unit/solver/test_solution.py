@@ -13,11 +13,11 @@ from diffractix.solver.problem import Problem
 from tests.helpers.simulation import make_simulation, parameter_info
 
 
-def make_problem(n_variables=1):
+def make_problem(n_variables=1, *, lower=None, upper=None):
     return Problem(
         x0=np.zeros(n_variables),
-        x_lower=np.full(n_variables, -np.inf),
-        x_upper=np.full(n_variables, np.inf),
+        x_lower=np.full(n_variables, -np.inf) if lower is None else np.array(lower),
+        x_upper=np.full(n_variables, np.inf) if upper is None else np.array(upper),
         objective=lambda theta: xp.sum(theta**2),
         gradient=lambda theta: 2.0 * theta,
         objective_hessian=lambda theta: 2.0 * np.eye(n_variables),
@@ -38,6 +38,7 @@ def make_solution(
     cost=1.25,
     message="done",
     simulation=None,
+    problem=None,
     objectives=(),
     constraints=(),
     feasibility_tolerance=DEFAULT_FEASIBILITY_TOLERANCE,
@@ -46,7 +47,7 @@ def make_solution(
         parameter = Parameter(2.0, name="p").variable()
         simulation = make_simulation((parameter,))
 
-    problem = make_problem(len(x))
+    problem = make_problem(len(x)) if problem is None else problem
     return Solution(
         OptimizationResult(
             x=xp.array(x),
@@ -313,6 +314,37 @@ def test_solution_empty_constraints_are_feasible():
     assert solution.constraints == ()
     assert solution.violations == ()
     assert solution.feasible is True
+
+
+@pytest.mark.parametrize("bound, direction", [(0.0, -1), (1.0, 1)])
+@pytest.mark.parametrize("tolerance", [0.0, 0.125])
+def test_parameter_bound_feasibility_includes_tolerance_boundary(bound, direction, tolerance):
+    problem = make_problem(lower=[0.0], upper=[1.0])
+    edge = bound + direction * tolerance
+    on_boundary = make_solution(x=(edge,), problem=problem, feasibility_tolerance=tolerance)
+    outside = make_solution(
+        x=(np.nextafter(edge, direction * np.inf),),
+        problem=problem,
+        feasibility_tolerance=tolerance,
+    )
+
+    assert on_boundary.feasible is True
+    assert outside.feasible is False
+    assert outside.success is True  # Backend success does not establish feasibility.
+    assert outside.constraints == outside.violations == ()
+
+
+@pytest.mark.parametrize("x, feasible", [
+    ((0.5, 1e12, 0.0), True),
+    ((0.5, -1e12, 0.25), False),
+    ((-0.25, 0.0, 0.0), False),
+])
+def test_parameter_bounds_check_every_coordinate_and_allow_unbounded_dimensions(x, feasible):
+    simulation = make_simulation(tuple(Parameter(0.0).variable() for _ in x))
+    problem = make_problem(3, lower=[0.0, -np.inf, 0.0], upper=[1.0, np.inf, 0.0])
+    solution = make_solution(x=x, simulation=simulation, problem=problem, feasibility_tolerance=0.0)
+
+    assert solution.feasible is feasible
 
 
 def test_solution_violations_preserve_unsatisfied_constraint_order():

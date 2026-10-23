@@ -174,7 +174,9 @@ class Solution:
 
     @cached_property
     def feasible(self):
-        return not self.violations
+        """Whether current-solve bounds and constraints satisfy the reporting tolerance."""
+        bound_margin = np.minimum(self.x - self._problem.x_lower, self._problem.x_upper - self.x,)
+        return bool(np.all(bound_margin >= -self.feasibility_tolerance)) and not self.violations
 
     def value_of(self, node):
         return evaluate_ast(
