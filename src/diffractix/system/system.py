@@ -690,12 +690,21 @@ class System:
         requirements = self._normalize_requirements()
 
         elements = self._resolve_elements()
+        declared_element_ids = {id(placement.element) for placement in elements}
         elements = self._resolve_layout(elements)
+
+        from diffractix.solver.constraint import Constraint, normalize_to_constraint
+        requirements += tuple(
+            normalize_to_constraint(requirement)
+            for placement in elements
+            if id(placement.element) not in declared_element_ids
+            for requirement in placement.element.requirements
+        )
+
         elements, continuity = self._resolve_refractive_indices(elements)
 
         self._validate_refractive_index_continuity(continuity)
 
-        from diffractix.solver.constraint import Constraint
         continuity_residuals = tuple(residual for _, _, _, residual in continuity)
         continuity_requirements = tuple(
             Constraint(

@@ -77,6 +77,63 @@ def test_system_resolves_absolute_element_position():
     assert result.after(lens) is result.states[3]
 
 
+@pytest.mark.parametrize("upstream_length", [0.1, 0.2, 0.25])
+def test_generated_gap_has_nonnegative_requirement_even_when_initially_infeasible(upstream_length):
+    system = System(Space(d=upstream_length), input=create_beam())
+    system.add(ThinLens(f=0.1), z=0.2)
+
+    simulation = system.build()
+
+    assert len(simulation.requirements) == 2  # Original space, then generated gap.
+    requirement = simulation.requirements[1]
+    assert requirement.lower_bound == 0.0
+    assert requirement.upper_bound == np.inf
+    graph = compile_ast((requirement.evaluate,), context=simulation.compile_context,
+                        parameter_snapshot=simulation.parameter_info)
+    assert graph.evaluate(graph.initial_values)[0] == pytest.approx(0.2 - upstream_length)
+
+
+def test_generated_gap_requirements_preserve_nested_order_without_duplicates_or_mutation():
+    slab = Slab(d=0.02, n=1.5)
+    shared = Space(d=0.01)
+    composite = NestedRequirementsComposite(slab, shared)
+    system = System(input=create_beam())
+    system_requirement = Constraint(shared.d, upper_bound=0.1, label="system")
+    composite_requirement = Constraint(slab.d, lower_bound=0.01, label="composite")
+    system.require(system_requirement)
+    composite.require(composite_requirement)
+    system.add(composite, z=0.1)
+    system.add(composite, z=0.2)
+    expected_evaluators = (
+        system_requirement.evaluate, composite_requirement.evaluate,
+        *(req.left for element in (slab.front, slab.body, slab.back, shared)
+          for req in element.requirements),
+    )
+    owners = (system, composite, slab, slab.front, slab.body, slab.back, shared)
+    snapshots = tuple(owner.requirements for owner in owners)
+    placements = system.placements
+
+    for _ in range(2):
+        simulation = system.build()
+        count = len(expected_evaluators)
+        requirements = simulation.requirements
+        assert len(requirements) == count + 2 + 6  # Two gaps and six continuity equalities.
+        for constraint, evaluator in zip(requirements[:count], expected_evaluators, strict=True):
+            assert constraint.evaluate is evaluator
+        gaps = requirements[count:count + 2]
+        assert all(c.lower_bound == 0.0 and c.upper_bound == np.inf for c in gaps)
+        graph = compile_ast(tuple(c.evaluate for c in gaps), context=simulation.compile_context,
+                            parameter_snapshot=simulation.parameter_info)
+        np.testing.assert_allclose(graph.evaluate(graph.initial_values), [0.1, 0.07])
+        assert all(c.label.startswith("Refractive index continuity")
+                   and c.lower_bound == c.upper_bound == 0.0 for c in requirements[-6:])
+
+    assert all(current is previous for current, previous in zip(system.placements, placements, strict=True))
+    for owner, snapshot in zip(owners, snapshots):
+        assert len(owner.requirements) == len(snapshot)
+        assert all(current is previous for current, previous in zip(owner.requirements, snapshot))
+
+
 def test_separate_builds_snapshot_different_element_values():
     beam = create_beam()
     space = Space(d=0.2)

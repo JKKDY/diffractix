@@ -7,7 +7,7 @@ import pytest
 
 from diffractix.beams import GaussianBeam
 from diffractix.composites import Slab, ThickLens
-from diffractix.elements import Space, ThinLens
+from diffractix.elements import Plane, Space, ThinLens
 from diffractix.graph import Parameter, Symbol
 from diffractix.solver import (
     Backend,
@@ -166,6 +166,40 @@ def test_real_parameter_bound_becomes_active_and_is_reported():
     assert solution[distance] == pytest.approx(0.3, abs=1e-6)
     assert solution.parameters[0].info.lower_bound == pytest.approx(0.02)
     assert solution.parameters[0].info.upper_bound == pytest.approx(0.3)
+
+
+@pytest.mark.parametrize("variable_position", [False, True], ids=["fixed-station", "variable-station"])
+def test_generated_gap_requirement_prevents_crossing_absolute_station(variable_position):
+    distance = Parameter(0.1).variable(bounds=(0.01, 0.3))
+    position = Parameter(0.2).variable(bounds=(0.15, 0.25)) if variable_position else 0.2
+    target = Plane(label="Station")
+    system = System(Space(d=distance), input=beam())
+    system.add(target, z=position)
+    simulation = system.build()
+    solver = Solver(simulation).target(distance - 0.25)
+    if variable_position:
+        solver.target(position - 0.2)
+    else:
+        # Bounds initially imply the gap requirement; relaxing them must restore it.
+        restricted = solver.solve(method="SLSQP", x_upper=[0.15], options={"ftol": 1e-12})
+        assert restricted[distance] == pytest.approx(0.15, abs=1e-7)
+
+    solution = solver.solve(method="SLSQP", options={"ftol": 1e-12})
+
+    assert solution.success, solution.message
+    assert solution.feasible
+    assert solution[distance] == pytest.approx(0.225 if variable_position else 0.2, abs=1e-7)
+    if variable_position:
+        assert solution[position] == pytest.approx(0.225, abs=1e-7)
+        assert position.value == 0.2
+    assert len(solution.constraints) == 2
+    gap = solution.constraints[1]
+    assert gap.lower_bound == 0.0 and gap.upper_bound == np.inf
+    assert gap.value == pytest.approx(0.0, abs=1e-7)
+    assert gap.satisfied
+    assert np.all(np.diff(solution.run().z) >= -solution.feasibility_tolerance)
+    assert distance.value == 0.1
+    assert len(system.placements) == 2
 
 
 def test_real_hard_constraint_changes_the_optimum():
