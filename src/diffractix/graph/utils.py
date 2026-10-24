@@ -323,7 +323,11 @@ def clone_ast(roots: Sequence[Node], *, preserve_owners: bool = True) -> tuple[N
             )
 
         elif isinstance(node, Symbol):
-            result = Symbol(node.key)
+            result = (
+                Symbol(node.key, default=node.default)
+                if node.has_default
+                else Symbol(node.key)
+            )
 
         else:
             raise UnsupportedNodeError(f"Unsupported AST node type: {type(node).__name__}")

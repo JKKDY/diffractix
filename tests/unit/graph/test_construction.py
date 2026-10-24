@@ -450,6 +450,28 @@ def test_symbol_has_no_standalone_value():
         _ = symbol.value
 
 
+def test_symbol_none_default_is_unset():
+    absent = Symbol("ambient_n")
+    explicit_none = Symbol("ambient_n", default=None)
+
+    assert absent.default is None
+    assert absent.has_default is False
+    assert explicit_none.default is None
+    assert explicit_none.has_default is False
+
+
+def test_symbol_set_default_updates_value_and_returns_symbol():
+    symbol = Symbol("ambient_n")
+
+    assert symbol.set_default(1.5) is symbol
+    assert symbol.default == 1.5
+    assert symbol.has_default is True
+
+    assert symbol.set_default(None) is symbol
+    assert symbol.default is None
+    assert symbol.has_default is False
+
+
 def test_symbols_are_not_interned():
     """
     Equal Symbol keys need not imply object identity.

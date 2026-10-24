@@ -9,8 +9,10 @@ from diffractix.composites import CompositeElement
 from diffractix.system import AMBIENT_N
 from diffractix.elements import OpticalElement, Space, ThinLens
 from diffractix.graph import Node, Parameter
+from diffractix.graph import Symbol
 from diffractix.system.system import System, Placement, SourceInfo
 from diffractix.system.errors import SystemValidationError
+from diffractix.system.symbols import make_symbol
 
 
 @dataclass(eq=False, kw_only=True)
@@ -34,6 +36,26 @@ class FailingComposite(CompositeElement):
         self.good = ThinLens(f=0.1)
         self.bad = FailingElement(x=1.0)
         super().__init__()
+
+
+@pytest.mark.parametrize("default", [1.5, 0.0, None])
+def test_make_symbol_preserves_default_metadata(default):
+    source = Symbol("ambient_n", default=default)
+
+    @dataclass
+    class Holder:
+        symbol: Symbol = make_symbol(source)
+
+    first = Holder().symbol
+    second = Holder().symbol
+
+    assert first is not source
+    assert second is not first
+    assert first.key == source.key
+    assert first.has_default is (default is not None)
+    assert first.default == default
+    assert second.has_default is (default is not None)
+    assert second.default == default
 
 
 def make_beam():

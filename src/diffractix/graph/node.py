@@ -402,20 +402,39 @@ class Parameter(Node):
         return f"{self.full_name}={self.value:.4g}[{status}]"
 
 
-class Symbol(Node):
-    """Immutable reference to an external value identified by a hashable key."""
 
-    def __init__(self, key):
+class Symbol(Node):
+    """Reference to an external value identified by a hashable key."""
+
+    def __init__(self, key, *, default=None):
         try:
             hash(key)
         except TypeError:
             raise TypeError("Symbol key must be hashable.") from None
 
         self._key = key
+        self._default = default
+
+    def set_default(self, value):
+        """Set the optional fallback value and return this Symbol."""
+        self._default = value
+        return self
 
     @property
     def key(self):
         return self._key
+
+    @property
+    def default(self):
+        """The optional default value, or None when no default was provided."""
+        if not self.has_default:
+            return None
+        return self._default
+
+    @property
+    def has_default(self):
+        """Whether a default was supplied, including an explicit None."""
+        return self._default is not None
 
     @property
     def is_variable(self):

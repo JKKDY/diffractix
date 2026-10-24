@@ -82,6 +82,16 @@ def test_evaluate_ast_reports_missing_symbol_binding():
         evaluate_ast(symbol, np.array([]))
 
 
+def test_evaluate_ast_does_not_use_symbol_default_as_runtime_binding():
+    symbol = Symbol("beam_width", default=2.0)
+
+    with pytest.raises(
+        KeyError,
+        match="Missing runtime binding for Symbol key 'beam_width'",
+    ):
+        evaluate_ast(symbol, np.array([]))
+
+
 def test_evaluate_ast_follows_input_node():
     handle = InputNode(Literal(2.0))
 

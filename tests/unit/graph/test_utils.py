@@ -257,6 +257,25 @@ def test_clone_ast_clones_symbol_without_resolving_it():
     assert cloned.key == key
 
 
+@pytest.mark.parametrize("default", [1.5, 0.0, None])
+def test_clone_ast_preserves_symbol_default(default):
+    symbol = Symbol("ambient_n", default=default)
+
+    cloned, = clone_ast([symbol])
+
+    assert cloned is not symbol
+    assert cloned.key == symbol.key
+    assert cloned.has_default is (default is not None)
+    assert cloned.default == default
+
+
+def test_clone_ast_preserves_absent_symbol_default():
+    cloned, = clone_ast([Symbol("ambient_n")])
+
+    assert cloned.default is None
+    assert cloned.has_default is False
+
+
 def test_clone_ast_detects_cycle():
     """Invalid cyclic graphs must not be cloneable."""
     handle = InputNode(None)

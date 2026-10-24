@@ -377,6 +377,17 @@ def test_missing_runtime_symbol_binding_fails_clearly():
         compiled.evaluate(np.array([]))
 
 
+def test_compiled_symbol_default_does_not_replace_runtime_binding():
+    """Symbol defaults are metadata only; compiled evaluation still needs a binding."""
+    compiled = compile_ast([Symbol("beam_width", default=2.0)])
+
+    with pytest.raises(
+        KeyError,
+        match="Missing runtime binding for Symbol key 'beam_width'",
+    ):
+        compiled.evaluate(np.array([]))
+
+
 # ----------------
 # INVALID GRAPHS
 # ----------------
