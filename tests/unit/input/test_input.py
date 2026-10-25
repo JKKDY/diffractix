@@ -8,6 +8,7 @@ import pytest
 from diffractix import GaussianBeam, Node, OpticalElement, OpticalInput, Parameter, Ray, RayBundle, Symbol, parameter
 from diffractix.backend import xp
 from diffractix.graph import InputNode
+from diffractix.graph.utils import ASTCycleError
 from diffractix.system import AMBIENT_N
 
 
@@ -134,12 +135,6 @@ def test_numeric_uses_current_parameters_without_mutating_the_declaration():
     assert source.direct.node is expression
     assert external.value == 5.0 and external.is_variable
 
-    external.value = 7.0
-    second = source.numeric()
-    assert first.direct == 11.0
-    assert second.direct == 15.0
-    assert type(first) is type(second) is source.numerical_type()
-
 
 def test_numeric_bindings_override_defaults_without_mutating_bindings_or_symbols():
     key = ("input", 42, "offset")
@@ -153,6 +148,42 @@ def test_numeric_bindings_override_defaults_without_mutating_bindings_or_symbols
     assert symbol.default == 2.0
     symbol.set_default(4.0)
     assert source.numeric().direct == 13.0
+
+
+def test_shared_parameters_and_symbol_keys_do_not_cache_values_between_conversions():
+    shared = Parameter(0.25).variable()
+    key = ("input", "offset")
+    source = Ray(x=shared + Symbol(key), theta=2 * shared + Symbol(key), n=1.0)
+    x_handle, theta_handle = source.x, source.theta
+
+    first = source.numeric({key: 1.0})
+    shared.fixed()
+    shared.value = 0.5
+    second = source.numeric({key: 2.0})
+
+    assert (first.x, first.theta) == (1.25, 1.5)
+    assert (second.x, second.theta) == (2.5, 3.0)
+    assert first is not second
+    assert type(first) is type(second) is source.numerical_type()
+    assert source.x is x_handle and source.theta is theta_handle
+    assert shared.value == 0.5 and not shared.is_variable
+
+
+def test_failed_cyclic_conversion_can_be_repaired_without_changing_prior_results():
+    source = ExampleInput()
+    previous = source.numeric()
+    handle = source.direct
+    source.direct = handle + 1
+
+    with pytest.raises(ASTCycleError):
+        source.numeric()
+
+    source.direct = 9.0
+    repaired = source.numeric()
+    assert source.direct is handle
+    assert previous.direct == 2.0
+    assert repaired.direct == 9.0
+    assert type(repaired) is type(previous)
 
 
 @pytest.mark.parametrize("bindings", [None, {}])

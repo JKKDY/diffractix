@@ -5,7 +5,7 @@ import numpy as np
 from diffractix.backend import xp
 
 from diffractix.composites import Slab, ThickLens
-from diffractix.elements import ABCD, Interface, Space, ThinLens
+from diffractix.elements import ABCD, GaussianAperture, Interface, Space, ThinLens
 from diffractix.graph import Parameter
 from diffractix.system.system import System
 from diffractix import GaussianBeam
@@ -41,6 +41,19 @@ def propagate_interface(q, n1, n2, R):
     return q / (C * q + D)
 
 
+@pytest.mark.parametrize("index", [1.0, 1.5], ids=["air", "glass"])
+def test_gaussian_aperture_multiplies_field_envelopes_independently_of_medium(index):
+    width, radius, wavelength, curvature = 0.8e-3, 1e-3, 1.064e-6, 0.2
+    source = GaussianBeam.from_w_and_R(width, curvature, wavelength, n=index).numeric()
+    result = System(GaussianAperture(a=radius), input=source, ambient_n=index).build().run()
+
+    # exp(-r^2/w^2) * exp(-r^2/a^2) fixes width independently of n;
+    # a purely real amplitude mask leaves wavefront curvature unchanged.
+    expected_width = 1 / np.sqrt(1 / width**2 + 1 / radius**2)
+    expected_inverse_q = 1 / curvature - 1j * wavelength / (np.pi * index * expected_width**2)
+    np.testing.assert_allclose(result.final.w, expected_width, rtol=1e-12)
+    np.testing.assert_allclose(result.final.R, curvature, rtol=1e-12)
+    np.testing.assert_allclose(result.final.q, 1 / expected_inverse_q, rtol=1e-12)
 
 
 # ----------

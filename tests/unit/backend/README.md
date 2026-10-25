@@ -9,8 +9,9 @@ backend globals or reconfigure an initialized process.
   expectations, including identity JIT and eager validation.
 - `test_jax.py`: explicitly selected 64-bit JAX, JIT, forward/reverse derivatives,
   nested/fourth derivatives, batching, and validation semantics.
-- `test_backend_parity.py`: identical shared calculations under each backend,
+- `tests/integration/test_numerical_parity.py`: identical shared calculations under each backend,
   compared with host NumPy at three parameter vectors.
+  This includes OpticalInput conversion, runtime bindings, and its derivatives.
 - `tests/integration/test_backend_parity.py`: the actual multi-station example's
   setup, captured before optimization, at three design vectors.
 
@@ -32,9 +33,9 @@ Tests assert both distinctions and ensure the traced guard has no callback-based
 assertion. This is not checked-JIT execution; validate concrete values outside
 JIT when runtime error reporting is required.
 
-Graph literal construction accepts Python scalars. Tests explicitly convert
-static beam properties to Python scalars where needed; active tracers must never
-be captured as constants. The real example is tested unchanged, so incompatible
+Graph literal construction accepts Python scalars and concrete backend scalar
+arrays. Active tracers and non-scalar arrays must never be captured as constants.
+The real example is tested unchanged, so incompatible
 example usage is reported, not silently patched by the test.
 
 ## Running

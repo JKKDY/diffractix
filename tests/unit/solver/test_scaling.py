@@ -9,7 +9,7 @@ from diffractix.solver.problem import Problem, Scaling
 from tests.helpers.optimization import make_problem, make_scaling_problem
 
 
-def test_scaling_round_trip_preserves_problem_and_result_values():
+def test_unconstrained_scaling_preserves_empty_callbacks_and_result_round_trip():
     problem = make_problem()
     scaling = problem.scaling
     assert isinstance(scaling, Scaling)
@@ -29,15 +29,10 @@ def test_scaling_round_trip_preserves_problem_and_result_values():
     np.testing.assert_array_equal(scaled.x_upper, [1.0])
     assert scaled.objective(np.array([0.5])) == pytest.approx(2.25)
 
-    restored = scaled.unscale()
-    for name in ("x0", "x_lower", "x_upper", "constraint_lower", "constraint_upper"):
-        np.testing.assert_array_equal(getattr(restored, name), getattr(problem, name))
-    x = np.array([1.5])
-    for name in ("objective", "gradient", "objective_hessian", "constraints", "jacobian"):
-        np.testing.assert_allclose(getattr(restored, name)(x), getattr(problem, name)(x))
-    np.testing.assert_allclose(
-        restored.constraint_hessian(x, np.array([])),
-        problem.constraint_hessian(x, np.array([])),
+    assert scaled.constraints(np.array([0.5])).shape == (0,)
+    assert scaled.jacobian(np.array([0.5])).shape == (0, 1)
+    np.testing.assert_array_equal(
+        scaled.constraint_hessian(np.array([0.5]), np.array([])), [[0.0]],
     )
 
     scaled_result = scaling.scale(result)
@@ -95,16 +90,20 @@ def test_variable_constraint_scaling_derivatives_and_multipliers():
     )
 
 
-def test_variable_constraint_scaling_problem_round_trip():
-    problem = make_scaling_problem()
+@pytest.mark.parametrize("factory,point,multipliers", [
+    pytest.param(make_problem, [1.5], [], id="unconstrained"),
+    pytest.param(make_scaling_problem, [3.0, 1.0], [2.0, 3.0, 4.0], id="nonlinear-constraints"),
+])
+def test_problem_scaling_round_trip_preserves_bounds_values_and_derivatives(factory, point, multipliers):
+    problem = factory()
     restored = problem.scale().unscale()
 
     for name in ("x0", "x_lower", "x_upper", "constraint_lower", "constraint_upper"):
         np.testing.assert_allclose(getattr(restored, name), getattr(problem, name))
-    x = np.array([3.0, 1.0])
+    x = np.array(point)
     for name in ("objective", "gradient", "objective_hessian", "constraints", "jacobian"):
         np.testing.assert_allclose(getattr(restored, name)(x), getattr(problem, name)(x))
-    multipliers = np.array([2.0, 3.0, 4.0])
+    multipliers = np.array(multipliers)
     np.testing.assert_allclose(
         restored.constraint_hessian(x, multipliers),
         problem.constraint_hessian(x, multipliers),

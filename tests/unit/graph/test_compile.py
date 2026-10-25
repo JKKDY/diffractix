@@ -366,20 +366,11 @@ def test_symbols_with_same_key_are_deduplicated():
     )[0] == 5.0
 
 
-def test_missing_runtime_symbol_binding_fails_clearly():
-    """Evaluation identifies the key of every missing runtime binding."""
-    compiled = compile_ast([Symbol("beam_width")])
-
-    with pytest.raises(
-        KeyError,
-        match="Missing runtime binding for Symbol key 'beam_width'",
-    ):
-        compiled.evaluate(np.array([]))
-
-
-def test_compiled_symbol_default_does_not_replace_runtime_binding():
+@pytest.mark.parametrize("symbol", [Symbol("beam_width"), Symbol("beam_width", default=2.0)],
+                         ids=["unbound", "default-is-metadata"])
+def test_missing_runtime_symbol_binding_fails_clearly(symbol):
     """Symbol defaults are metadata only; compiled evaluation still needs a binding."""
-    compiled = compile_ast([Symbol("beam_width", default=2.0)])
+    compiled = compile_ast([symbol])
 
     with pytest.raises(
         KeyError,

@@ -72,19 +72,9 @@ def test_evaluate_ast_reads_symbol_from_runtime_bindings():
     ) == 3.0
 
 
-def test_evaluate_ast_reports_missing_symbol_binding():
-    symbol = Symbol("beam_width")
-
-    with pytest.raises(
-        KeyError,
-        match="Missing runtime binding for Symbol key 'beam_width'",
-    ):
-        evaluate_ast(symbol, np.array([]))
-
-
-def test_evaluate_ast_does_not_use_symbol_default_as_runtime_binding():
-    symbol = Symbol("beam_width", default=2.0)
-
+@pytest.mark.parametrize("symbol", [Symbol("beam_width"), Symbol("beam_width", default=2.0)],
+                         ids=["unbound", "default-is-metadata"])
+def test_evaluate_ast_reports_missing_symbol_binding(symbol):
     with pytest.raises(
         KeyError,
         match="Missing runtime binding for Symbol key 'beam_width'",

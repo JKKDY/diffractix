@@ -1,4 +1,4 @@
-"""Gaussian factory domains and backend-neutral differentiation."""
+"""Gaussian input factories, physical domains, and backend-neutral derivatives."""
 
 import numpy as np
 import pytest

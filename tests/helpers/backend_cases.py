@@ -114,16 +114,29 @@ def _representative():
     from diffractix.backend import current_backend, grad, hessian, jacobian, jit, require, xp
 
     graph, graph_values, array_values = _graph_case()
-    from diffractix import GaussianBeam, Parameter
-    from diffractix.graph import compile_ast
+    from diffractix import GaussianBeam, Parameter, Ray
+    from diffractix.graph import Symbol, compile_ast
 
-    # Declarative graph constants must be Python scalars, not backend arrays.
+    # Explicit scalar capture must also remain valid when compiling derivatives.
     beam_scale = float(GaussianBeam(q=0.015+0.15j, wavelength=1.064e-6, n=1.0).z_r)
     captured = compile_ast((Parameter(0.03).variable()/beam_scale,))
     optics, problem = _optical_cases()
+    input_declaration = Ray(x=Symbol("input_position"), theta=Parameter(0.02).variable())
+
+    def input_values(theta):
+        position, index, distance = theta
+        source = input_declaration.numeric({"input_position": position, "ambient_n": index})
+        refracted = source.propagate(1, 0, 0, index / 1.5, n=1.5)
+        return refracted.propagate(1, distance, 0, 1, n=1.5).vector
+
+    input_points = xp.array([[0.001, 1.2, 0.025], [-0.0005, 1.0, 0.05], [0.002, 1.5, 0.01]])
     graph_points = xp.array([[0.6, -0.2, 1.3], [0.4, 0.3, 0.9], [-0.2, 0.5, 1.1]])
     optical_points = xp.array([[0.03, 0.12], [0.025, 0.10], [0.04, 0.15]])
     result = {"graph": {}, "optics": {}, "solver": {}}
+    result["input"] = {
+        str(index): _derivative_values(input_values, point, xp.array([0.7, -0.2]))
+        for index, point in enumerate(input_points)
+    }
     result["scalar_capture"] = {
         "values": captured.evaluate(xp.array([0.03])),
         "gradient": grad(lambda t: xp.sum(captured.evaluate(t)))(xp.array([0.03])),
@@ -160,6 +173,7 @@ def _representative():
 
     # Transform identical numerical callbacks, including runtime binding and objects.
     callbacks = {
+        "input": (input_values, input_points[0]),
         "graph": (graph_values, graph_points[0]),
         "graph_gradient": (grad(scalar), graph_points[0]),
         "graph_jacobian": (jacobian(graph_values), graph_points[0]),
@@ -212,6 +226,7 @@ def _representative():
             "batched_guarded": jit(jax.vmap(guarded))(xp.array([1.0, -2.0, 3.0])),
             "require_jaxpr": str(jax.make_jaxpr(guarded)(2.0)),
             "batched_graph": jit(jax.vmap(graph_values))(graph_points),
+            "batched_input": jit(jax.vmap(input_values))(input_points),
             **{f"batched_{name}": jit(jax.vmap(fn))(optical_points)
                for name, fn in optics.items()},
         }

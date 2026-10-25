@@ -498,8 +498,12 @@ def test_grin_zero_gradient_matrix_is_free_space_limit():
     )
 
 
-def test_grin_sinc_matrix_term_is_differentiable_at_zero():
-    from diffractix.backend import grad
+@pytest.mark.parametrize("order,expected", [
+    pytest.param(1, 0.0, id="slope"),
+    pytest.param(2, -0.02**3 / 3, id="curvature"),
+])
+def test_grin_sinc_derivatives_at_zero_match_taylor_limit(order, expected):
+    from diffractix.backend import grad, hessian, jit
 
     element = GRIN(d=0.02, g=Parameter(0.0, variable=True), n=1.5)
     compiled = compile_ast(
@@ -507,7 +511,14 @@ def test_grin_sinc_matrix_term_is_differentiable_at_zero():
         parameter_snapshot=None,
     )
 
-    assert grad(lambda theta: compiled.evaluate(theta)[0])(compiled.initial_values)[0] == pytest.approx(0.0)
+    # sin(g*d)/g = d - g^2*d^3/6 + O(g^4), so B''(0) = -d^3/3.
+    differentiate = grad if order == 1 else hessian
+    derivative = differentiate(lambda theta: compiled.evaluate(theta)[0])
+    for evaluate in (derivative, jit(derivative)):
+        np.testing.assert_allclose(
+            evaluate(compiled.initial_values), np.full((1,) * order, expected),
+            rtol=1e-12, atol=1e-15,
+        )
 
 
 def test_grin_element_length():

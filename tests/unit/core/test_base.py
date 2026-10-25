@@ -1,7 +1,11 @@
+"""Shared optical parameter ownership, stable handles, and discovery."""
+
+from dataclasses import dataclass
+
 import pytest
 
 from diffractix.core import OpticalBase
-from diffractix.graph import Parameter, InputNode
+from diffractix.graph import Node, Parameter, InputNode, Symbol
 
 
 class DummyElement(OpticalBase):
@@ -29,15 +33,10 @@ class TwoParameterElement(OpticalBase):
 # PARAMETER ACCESS
 # ----------------
 
-def test_parameter_names():
-    element = DummyElement(x=2.0)
-
-    assert element.parameter_names == ("x",)
-
-
 def test_parameters_returns_stable_handles():
     element = TwoParameterElement(x=1.0, y=2.0)
 
+    assert element.parameter_names == ("x", "y")
     assert element.parameters == (element.x, element.y)
     assert all(isinstance(handle, InputNode) for handle in element.parameters)
 
@@ -54,6 +53,7 @@ def test_scalar_creates_element_owned_parameter():
     assert element.x.node.owner is element
     assert element.x.node.name == "x"
     assert element.x.value == 3.0
+    assert element.x.is_variable is False
 
 
 def test_existing_parameter_preserves_identity_and_owner():
@@ -79,14 +79,10 @@ def test_none_creates_empty_input_handle():
     assert element.x.node is None
 
 
-def test_invalid_parameter_value_is_rejected():
+@pytest.mark.parametrize("value", ["invalid", True])
+def test_invalid_parameter_value_is_rejected(value):
     with pytest.raises(TypeError):
-        DummyElement(x="invalid")
-
-
-def test_bool_parameter_value_is_rejected():
-    with pytest.raises(TypeError):
-        DummyElement(x=True)
+        DummyElement(x=value)
 
 
 # ----------------
@@ -131,12 +127,6 @@ def test_existing_expression_tracks_reassigned_handle():
 # VARIABILITY
 # -----------
 
-def test_parameters_are_fixed_by_default():
-    element = DummyElement(x=1.0)
-
-    assert not element.x.node.is_variable
-
-
 def test_variable_and_fixed_toggle_direct_parameter():
     element = DummyElement(x=1.0)
 
@@ -166,20 +156,13 @@ def test_named_fixed_selection():
     assert element.y.node.is_variable
 
 
-def test_named_expression_parameter_cannot_be_marked_variable():
+@pytest.mark.parametrize("method", ["variable", "fixed"])
+def test_named_expression_parameter_cannot_change_variability(method):
     x = Parameter(2.0, name="x")
     element = DummyElement(x=2 * x)
 
     with pytest.raises(TypeError):
-        element.variable("x")
-
-
-def test_named_expression_parameter_cannot_be_marked_fixed():
-    x = Parameter(2.0, name="x")
-    element = DummyElement(x=2 * x)
-
-    with pytest.raises(TypeError):
-        element.fixed("x")
+        getattr(element, method)("x")
 
 
 def test_unnamed_variable_skips_derived_parameters():
@@ -203,26 +186,32 @@ def test_unknown_parameter_name_is_rejected():
 # INTROSPECTION
 # -------------
 
-def test_values_reports_directly_evaluable_parameters():
-    element = TwoParameterElement(x=2.5, y=3.5)
+@pytest.mark.parametrize("value,expected", [(3.5, 3.5), (None, None), (Symbol("missing"), None)])
+def test_values_reports_evaluable_values_and_unresolved_inputs(value, expected):
+    element = TwoParameterElement(x=2.5, y=value)
 
-    assert element.values == (2.5, 3.5)
-
-
-def test_values_reports_none_for_unresolved_parameters():
-    element = TwoParameterElement(x=2.5, y=None)
-
-    assert element.values == (2.5, None)
+    assert element.values == (2.5, expected)
 
 
 # --------------------
 # CLASS INITIALIZATION
 # --------------------
 
-def test_subclass_resets_parameter_name_cache():
-    DummyElement._parameter_names = ("cached",)
+def test_discovery_cache_is_independent_for_parent_child_and_sibling_classes():
+    @dataclass(eq=False)
+    class Parent(OpticalBase):
+        x: Node = 1.0
 
-    class ChildElement(DummyElement):
-        pass
+    assert Parent().parameter_names == ("x",)
 
-    assert ChildElement.__dict__["_parameter_names"] is None
+    @dataclass(eq=False)
+    class Child(Parent):
+        y: Node = 2.0
+
+    @dataclass(eq=False)
+    class Sibling(Parent):
+        z: Node = 3.0
+
+    assert Child().parameter_names == ("x", "y")
+    assert Sibling().parameter_names == ("x", "z")
+    assert Parent().parameter_names == ("x",)

@@ -245,35 +245,24 @@ def test_clone_ast_clones_input_handle():
     assert cloned_handle.node.value == handle.node.value
 
 
-def test_clone_ast_clones_symbol_without_resolving_it():
-    """Generic Symbols retain their keys when structurally cloned."""
+@pytest.mark.parametrize("kwargs,expected,has_default", [
+    pytest.param({}, None, False, id="unset"),
+    pytest.param({"default": None}, None, False, id="explicit-none"),
+    pytest.param({"default": 0.0}, 0.0, True, id="zero"),
+    pytest.param({"default": 1.5}, 1.5, True, id="value"),
+])
+def test_clone_ast_preserves_symbol_key_and_default_independently(kwargs, expected, has_default):
     key = ("result", 42, "w")
-    symbol = Symbol(key)
+    symbol = Symbol(key, **kwargs)
 
     cloned, = clone_ast([symbol])
 
     assert cloned is not symbol
     assert isinstance(cloned, Symbol)
     assert cloned.key == key
-
-
-@pytest.mark.parametrize("default", [1.5, 0.0, None])
-def test_clone_ast_preserves_symbol_default(default):
-    symbol = Symbol("ambient_n", default=default)
-
-    cloned, = clone_ast([symbol])
-
-    assert cloned is not symbol
-    assert cloned.key == symbol.key
-    assert cloned.has_default is (default is not None)
-    assert cloned.default == default
-
-
-def test_clone_ast_preserves_absent_symbol_default():
-    cloned, = clone_ast([Symbol("ambient_n")])
-
-    assert cloned.default is None
-    assert cloned.has_default is False
+    assert cloned.has_default is has_default
+    symbol.set_default(9.0)
+    assert cloned.default == expected
 
 
 def test_clone_ast_detects_cycle():

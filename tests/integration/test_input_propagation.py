@@ -46,66 +46,6 @@ def test_numerical_inputs_follow_an_analytic_abcd_chain_and_preserve_type(kind):
         np.testing.assert_array_equal(source.theta, angle)
 
 
-def test_direct_numerical_ray_construction_and_assignment_are_differentiable_and_jittable():
-    numerical_ray = Ray.numerical_type()
-
-    def trace(values):
-        x, angle, distance, focal = values
-        source = numerical_ray(x=x, theta=0.0, n=1.33)
-        source.theta = angle
-        spaced = source.propagate(1.0, distance, 0.0, 1.0, n=1.33)
-        return spaced.propagate(1.0, 0.0, -1.0 / focal, 1.0, n=1.33).vector
-
-    point = xp.array([1.2e-3, -0.018, 0.025, 0.12])
-    x, angle, distance, focal = np.asarray(point)
-    height = x + distance * angle
-    expected_jacobian = np.array([
-        [1.0, distance, angle, 0.0],
-        [-1.0 / focal, 1 - distance / focal, -angle / focal, height / focal**2],
-    ])
-    expected_hessian = np.array([
-        [0.0, 0.0, 0.0, 1.0 / focal**2],
-        [0.0, 0.0, -1.0 / focal, distance / focal**2],
-        [0.0, -1.0 / focal, 0.0, angle / focal**2],
-        [1.0 / focal**2, distance / focal**2, angle / focal**2, -2 * height / focal**3],
-    ])
-    for function, expected in (
-        (trace, [height, angle - height / focal]),
-        (grad(lambda values: trace(values)[1]), expected_jacobian[1]),
-        (jacobian(trace), expected_jacobian),
-        (hessian(lambda values: trace(values)[1]), expected_hessian),
-    ):
-        np.testing.assert_allclose(function(point), expected, rtol=1e-12, atol=1e-12)
-        np.testing.assert_allclose(jit(function)(point), expected, rtol=1e-12, atol=1e-12)
-
-
-def test_direct_numerical_bundle_vector_derivatives_match_independent_rays():
-    numerical_bundle = RayBundle.numerical_type()
-    positions = xp.array([-1.2e-3, 0.0, 0.9e-3])
-    angles = xp.array([0.018, 0.0, -0.012])
-
-    def trace(distance):
-        source = numerical_bundle(x=positions, theta=angles, n=1.33)
-        return source.propagate(1.0, distance, 0.0, 1.0, n=1.33).vectors
-
-    def cost(distance):
-        return xp.sum(trace(distance)[0] ** 2)
-
-    distance = 0.025
-    expected = np.stack((np.asarray(positions + distance * angles), np.asarray(angles)))
-    expected_jacobian = np.stack((np.asarray(angles), np.zeros(3)))
-    expected_gradient = 2 * np.sum(np.asarray(angles) * expected[0])
-    expected_hessian = 2 * np.sum(np.asarray(angles) ** 2)
-    for function, answer in (
-        (trace, expected),
-        (jacobian(trace), expected_jacobian),
-        (grad(cost), expected_gradient),
-        (hessian(cost), expected_hessian),
-    ):
-        np.testing.assert_allclose(function(distance), answer, rtol=1e-12, atol=1e-15)
-        np.testing.assert_allclose(jit(function)(distance), answer, rtol=1e-12, atol=1e-15)
-
-
 def test_numerical_gaussian_factory_and_complex_propagation_derivatives():
     numerical_gaussian = GaussianBeam.numerical_type()
     width, wavelength, distance = 0.5e-3, 1e-6, 0.04
@@ -132,6 +72,27 @@ def test_numerical_gaussian_factory_and_complex_propagation_derivatives():
     ):
         np.testing.assert_allclose(function(focal), expected, rtol=1e-12, atol=1e-14)
         np.testing.assert_allclose(jit(function)(focal), expected, rtol=1e-12, atol=1e-14)
+
+
+def test_numeric_preserves_tracers_in_ordinary_complex_fields():
+    wavelength, index, rayleigh = 1e-6, 1.5, 0.03
+    coefficient = wavelength / (np.pi * index * rayleigh)
+
+    def width_squared(position):
+        q = position + 1j * rayleigh
+        declaration = GaussianBeam(q=q, wavelength=wavelength, n=index)
+        numerical = declaration.numeric()
+        assert numerical.q is q
+        return numerical.w**2
+
+    position = 0.01
+    for function, expected in (
+        (width_squared, coefficient * (position**2 + rayleigh**2)),
+        (grad(width_squared), 2 * coefficient * position),
+        (hessian(width_squared), 2 * coefficient),
+    ):
+        np.testing.assert_allclose(function(position), expected, rtol=1e-12)
+        np.testing.assert_allclose(jit(function)(position), expected, rtol=1e-12)
 
 
 def test_bindings_through_numeric_and_propagation_keep_nested_derivatives():

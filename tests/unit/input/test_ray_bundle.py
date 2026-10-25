@@ -1,4 +1,4 @@
-"""Vectorized independent-ray propagation, shape contracts, and derivatives."""
+"""Numerical bundle physics, shape contracts, and independent-ray derivatives."""
 
 import numpy as np
 import pytest
@@ -152,6 +152,17 @@ def test_bundle_source_and_optical_derivatives_have_independent_ray_axes():
         assert np.shape(eager) == np.shape(compiled) == np.shape(expected)
         np.testing.assert_allclose(eager, expected, rtol=1e-12, atol=1e-12)
         np.testing.assert_allclose(compiled, expected, rtol=1e-12, atol=1e-12)
+
+    def free_space_energy(d):
+        point = xp.stack((d, values[1], values[2], values[3]))
+        return xp.sum(trace(point)[0] ** 2)
+
+    for derivative, expected in (
+        (grad(free_space_energy), 2 * np.dot(height, angles)),
+        (hessian(free_space_energy), 2 * np.dot(angles, angles)),
+    ):
+        np.testing.assert_allclose(derivative(distance), expected, rtol=1e-12, atol=1e-15)
+        np.testing.assert_allclose(jit(derivative)(distance), expected, rtol=1e-12, atol=1e-15)
 
 
 def test_parallel_factory_samples_aperture_and_preserves_medium():

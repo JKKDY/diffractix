@@ -678,12 +678,8 @@ def test_distinct_equal_valued_parameters_remain_distinct():
         (Relation.GT, ">"),
     ],
 )
-def test_relation_values(relation, symbol):
-    assert relation.value == symbol
-
-
-def test_comparison_repr_contains_relation():
+def test_comparison_repr_contains_unambiguous_relation(relation, symbol):
     x = Parameter(1.0, name="x")
-    comparison = x <= 2.0
+    comparison = Comparison(relation, x, Literal(2.0))
 
-    assert "<=" in repr(comparison)
+    assert f" {symbol} " in repr(comparison)

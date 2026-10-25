@@ -62,7 +62,7 @@ print('ok')
 @pytest.mark.parametrize("name", [
     "graph", "graph_gradient", "graph_jacobian", "objective", "gradient",
     "constraints", "jacobian", "hessian", "weighted_hessian", "nested", "fourth",
-    "gaussian", "ray", "bundle", "refractive", "aperture",
+    "gaussian", "ray", "bundle", "refractive", "aperture", "input",
 ])
 def test_complete_jit_callbacks_and_intermediate_state_objects(jax_results, name):
     values = jax_results["values"]["jit"][name]
@@ -101,9 +101,9 @@ def test_require_eager_validation_and_unchecked_dynamic_predicates(jax_results):
         assert callback not in values["require_jaxpr"]
 
 
-@pytest.mark.parametrize("name", ["graph", "gaussian", "ray", "bundle", "refractive", "aperture"])
+@pytest.mark.parametrize("name", ["graph", "input", "gaussian", "ray", "bundle", "refractive", "aperture"])
 def test_vmap_matches_scalar_numerical_evaluations(jax_results, name):
-    expected = (np.array([values["values"] for values in jax_results["values"]["graph"].values()])
-                if name == "graph" else jax_results["values"]["optics"][name])
+    expected = (np.array([values["values"] for values in jax_results["values"][name].values()])
+                if name in ("graph", "input") else jax_results["values"]["optics"][name])
     assert_close(jax_results["jax"][f"batched_{name}"], expected,
                  description=f"JAX vmap/{name}", rtol=2e-10, atol=1e-11)

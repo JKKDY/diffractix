@@ -1,4 +1,4 @@
-"""Single-ray physical-angle ABCD propagation and backend-neutral derivatives."""
+"""Numerical ray physics and derivatives, independent of System compilation."""
 
 import numpy as np
 import pytest
@@ -111,7 +111,8 @@ def test_on_axis_ray_stays_on_axis_through_a_powered_system():
 def test_propagation_derivatives_and_jit_for_source_distance_and_focal_length(focal_length):
     def trace(values):
         x, angle, distance, focal = values
-        source = Ray.numerical_type()(x=x, theta=angle, n=1.33)
+        source = Ray.numerical_type()(x=x, theta=0.0, n=1.33)
+        source.theta = angle
         spaced = source.propagate(1.0, distance, 0.0, 1.0, n=source.n)
         return spaced.propagate(1.0, 0.0, -1.0/focal, 1.0, n=source.n).vector
 
