@@ -11,7 +11,7 @@ from diffractix.solver import solver as solver_module
 def test_whole_solver_callbacks_jit_and_nested_derivatives(monkeypatch):
     distance = Parameter(0.03).variable(bounds=(0.01, 0.06))
     space = Space(d=distance)
-    simulation = System(space, input=GaussianBeam.from_waist(0.0005, 1.064e-6)).build()
+    simulation = System(space, input=GaussianBeam.from_waist(0.0005, 1.064e-6).numeric()).build()
     solver = Solver(simulation)
     solver.target(lambda ctx: ctx.after(space).w * 1000)
     solver.require(Constraint(lambda ctx: ctx.after(space).w * 1000,
@@ -52,7 +52,7 @@ def test_whole_solver_callbacks_jit_and_nested_derivatives(monkeypatch):
 
 def test_gaussian_curvature_factories_are_traceable_at_waist():
     def curvature(t):
-        beam = GaussianBeam(q=t[0] + 1j, wavelength=1e-6, n=1.0)
+        beam = GaussianBeam.numerical_type()(q=t[0] + 1j, wavelength=1e-6, n=1.0)
         return xp.stack((beam.w, beam.gouy_phase))
     theta = xp.array([0.0])
     for derivative in (jacobian(curvature), hessian(lambda t: xp.sum(curvature(t)**2))):
@@ -60,16 +60,16 @@ def test_gaussian_curvature_factories_are_traceable_at_waist():
         assert np.all(np.isfinite(actual))
         np.testing.assert_allclose(actual, derivative(theta), rtol=1e-12, atol=1e-12)
     for radius in (np.inf, 0.2, -0.2):
-        value = jit(lambda r: GaussianBeam.from_w_and_R(0.001, r, 1e-6).w)(radius)
+        value = jit(lambda r: GaussianBeam.numerical_type().from_w_and_R(0.001, r, 1e-6).w)(radius)
         assert value == pytest.approx(0.001)
 
 
 def test_gaussian_concrete_domain_validation_remains_active():
-    first = GaussianBeam(q=1j, wavelength=1e-6, n=1.0)
+    first = GaussianBeam(q=1j, wavelength=1e-6, n=1.0).numeric()
     with pytest.raises(ValueError, match='media'):
-        first.overlap_with(GaussianBeam(q=1j, wavelength=1e-6, n=1.5))
+        first.overlap_with(GaussianBeam(q=1j, wavelength=1e-6, n=1.5).numeric())
     with pytest.raises(ValueError, match='wavelength'):
-        first.overlap_with(GaussianBeam(q=1j, wavelength=2e-6, n=1.0))
+        first.overlap_with(GaussianBeam(q=1j, wavelength=2e-6, n=1.0).numeric())
     with pytest.raises(Exception, match='Invalid q'):
         GaussianBeam.w_R_from_q(-1j, 1e-6, 1.0)
 
@@ -78,7 +78,7 @@ def test_gaussian_concrete_domain_validation_remains_active():
 def test_jit_propagation_preserves_python_and_custom_states(kind):
     from dataclasses import dataclass
     from diffractix import ABCD, Ray, RayBundle
-    from diffractix.beams.base import ParaxialState
+    from diffractix import ParaxialState
 
     @dataclass
     class CustomState(ParaxialState):
@@ -88,8 +88,8 @@ def test_jit_propagation_preserves_python_and_custom_states(kind):
         def propagate(self, A, B, C, D, n):
             return CustomState(A*self.x + B*self.theta, C*self.x + D*self.theta)
 
-    source = (Ray(x=0.001, theta=0.02) if kind == 'ray' else
-              RayBundle(x=np.array([0.001, 0.002]), theta=np.array([0.02, -0.01]))
+    source = (Ray(x=0.001, theta=0.02).numeric({"ambient_n": 1.0}) if kind == 'ray' else
+              RayBundle(x=np.array([0.001, 0.002]), theta=np.array([0.02, -0.01])).numeric({"ambient_n": 1.0})
               if kind == 'bundle' else CustomState(0.001, 0.02))
     distance = Parameter(0.03).variable()
     simulation = System(ABCD(A=1, B=distance, C=0, D=1), input=source).build()
@@ -115,7 +115,7 @@ def test_complex_optical_derivatives_against_central_differences():
     focal_length = Parameter(0.12).variable()
     simulation = System(Space(d=distance), ThinLens(f=focal_length),
                         GaussianAperture(a=0.001), Space(d=0.04),
-                        input=GaussianBeam.from_waist(0.0005, 1.064e-6)).build()
+                        input=GaussianBeam.from_waist(0.0005, 1.064e-6).numeric()).build()
 
     def values(theta):
         state = simulation.run(theta).final

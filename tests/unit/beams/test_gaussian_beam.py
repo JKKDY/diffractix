@@ -52,7 +52,8 @@ def test_factories_describe_the_same_waist_in_a_non_air_medium():
         GaussianBeam.from_fiber_tip(wavelength, MFD=2 * width, n=index),
     )
     expected_q = 1j * np.pi * width**2 * index / wavelength
-    for beam in beams:
+    for declaration in beams:
+        beam = declaration.numeric()
         assert beam.q == pytest.approx(expected_q)
         assert beam.w == pytest.approx(width)
         assert beam.n == index
@@ -80,13 +81,13 @@ def test_waist_position_must_be_finite(position):
 def test_fiber_mode_selection_retains_na_precedence_and_requires_a_mode():
     with pytest.raises(ValueError, match="NA.*MFD"):
         GaussianBeam.from_fiber_tip(1e-6)
-    beam = GaussianBeam.from_fiber_tip(1e-6, NA=0.1, MFD=50e-6)
+    beam = GaussianBeam.from_fiber_tip(1e-6, NA=0.1, MFD=50e-6).numeric()
     assert beam.w == pytest.approx(1e-6 / (np.pi * 0.1))
 
 
 def test_factory_preserves_backend_arrays_and_broadcasting():
     widths = xp.array([5e-4, 1e-3], dtype="float32")
-    beam = GaussianBeam.from_waist(widths, wavelength=1e-6)
+    beam = GaussianBeam.numerical_type().from_waist(widths, wavelength=1e-6)
     np.testing.assert_allclose(beam.w, widths, rtol=1e-6)
     assert beam.q.shape == (2,)
     with pytest.raises(ValueError, match="w0.*positive"):
@@ -95,7 +96,7 @@ def test_factory_preserves_backend_arrays_and_broadcasting():
 
 def test_waist_factory_first_second_and_nested_derivatives_and_jit():
     def moments(t):
-        beam = GaussianBeam.from_waist(1e-3 * t[0], 1e-6 * t[1], n=t[2],
+        beam = GaussianBeam.numerical_type().from_waist(1e-3 * t[0], 1e-6 * t[1], n=t[2],
                                        z_waist_loc=0.01 * t[3])
         return xp.stack((xp.real(beam.q) / 0.01, xp.imag(beam.q) / np.pi))
 
@@ -127,13 +128,13 @@ def test_other_factory_derivatives_and_jit_match_independent_formulas(kind):
     def imaginary_q(t):
         a, wavelength, n, radius = t
         if kind == "wavefront":
-            beam = GaussianBeam.from_w_and_R(a, radius, wavelength, n=n)
+            beam = GaussianBeam.numerical_type().from_w_and_R(a, radius, wavelength, n=n)
         elif kind == "divergence":
-            beam = GaussianBeam.from_divergence(a, wavelength, n=n)
+            beam = GaussianBeam.numerical_type().from_divergence(a, wavelength, n=n)
         elif kind == "NA":
-            beam = GaussianBeam.from_fiber_tip(wavelength, NA=a, n=n)
+            beam = GaussianBeam.numerical_type().from_fiber_tip(wavelength, NA=a, n=n)
         else:
-            beam = GaussianBeam.from_fiber_tip(wavelength, MFD=a, n=n)
+            beam = GaussianBeam.numerical_type().from_fiber_tip(wavelength, MFD=a, n=n)
         return xp.imag(beam.q)
 
     def reference(t):

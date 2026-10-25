@@ -1,10 +1,10 @@
 import pytest
 
-from diffractix.elements.base import ElementBase
+from diffractix.core import OpticalBase
 from diffractix.graph import Parameter, InputNode
 
 
-class DummyElement(ElementBase):
+class DummyElement(OpticalBase):
 
     def __init__(self, x):
         self.x = x
@@ -14,7 +14,7 @@ class DummyElement(ElementBase):
         return ("x",)
 
 
-class TwoParameterElement(ElementBase):
+class TwoParameterElement(OpticalBase):
 
     def __init__(self, x, y):
         self.x = x

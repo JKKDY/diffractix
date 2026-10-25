@@ -66,7 +66,7 @@ def test_thin_lens_declaration():
     assert lens.f.value == 0.1
 
     assert lens.element_length == 0.0
-    assert lens.element_refractive_index is None
+    assert lens.refractive_index is None
 
 
 def test_thin_lens_matrix():
@@ -120,7 +120,7 @@ def test_space_declaration():
     assert space.n.value == 1.5
 
     assert space.element_length is space.d
-    assert space.element_refractive_index is space.n
+    assert space.refractive_index is space.n
 
 
 def test_space_matrix():
@@ -143,7 +143,7 @@ def test_space_can_request_refractive_index_inheritance():
 
     assert isinstance(space.n, InputNode)
     assert space.n.node is None
-    assert space.element_refractive_index is space.n
+    assert space.refractive_index is space.n
 
 
 def test_space_refractive_index_does_not_affect_matrix():
@@ -177,7 +177,7 @@ def test_mirror_declaration():
     assert mirror.parameter_names == ("R",)
     assert mirror.R.value == 0.5
     assert mirror.element_length == 0.0
-    assert mirror.element_refractive_index is None
+    assert mirror.refractive_index is None
 
 
 def test_mirror_matrix():
@@ -222,7 +222,7 @@ def test_interface_declaration():
 
     assert interface.parameter_names == ("n1", "n2", "R")
     assert interface.element_length == 0.0
-    assert interface.element_refractive_index is interface.n2
+    assert interface.refractive_index is interface.n2
 
 
 def test_interface_matrix():
@@ -308,7 +308,7 @@ def test_abcd_declaration():
     assert element.D.value == 0.5
 
     assert element.element_length is element.thickness
-    assert element.element_refractive_index is element.n
+    assert element.refractive_index is element.n
 
 
 def test_abcd_matrix_is_declarative():
@@ -389,14 +389,14 @@ def test_abcd_can_request_refractive_index_inheritance():
 
     assert isinstance(element.n, InputNode)
     assert element.n.node is None
-    assert element.element_refractive_index is element.n
+    assert element.refractive_index is element.n
 
 
 def test_abcd_explicit_refractive_index():
     element = ABCD(n=1.5)
 
     assert element.n.value == 1.5
-    assert element.element_refractive_index is element.n
+    assert element.refractive_index is element.n
 
 
 def test_abcd_refractive_index_can_be_context_dependent():
@@ -406,7 +406,7 @@ def test_abcd_refractive_index_can_be_context_dependent():
     assert element.n.node is glass_n
 
     compiled = compile_ast(
-        [element.element_refractive_index],
+        [element.refractive_index],
         context={"glass_n": 1.5},
     )
 
@@ -440,7 +440,7 @@ def test_gaussian_aperture_declaration():
     assert aperture.wavelength.node.key == "wavelength"
 
     assert aperture.element_length == 0.0
-    assert aperture.element_refractive_index is None
+    assert aperture.refractive_index is None
 
 
 def test_gaussian_aperture_matrix():
@@ -519,7 +519,7 @@ def test_grin_element_length():
 def test_grin_refractive_index():
     element = GRIN(d=0.02, g=10.0, n=1.5)
 
-    assert element.element_refractive_index.value == pytest.approx(1.5)
+    assert element.refractive_index.value == pytest.approx(1.5)
 
 
 def test_grin_parameters():

@@ -48,10 +48,15 @@ class OpticalInput(OpticalBase):
         Explicit numerical Symbol bindings take precedence over Symbol defaults.
         Variable Parameters use their current values; no Simulation theta is used.
         Custom constructors must accept the dataclass init fields as keywords.
+        Derived init=False fields are rebuilt by the numerical constructor.
         """
-        names = self.parameter_names
+        input_fields = tuple(item for item in fields(self) if item.init)
+        parameters = {
+            item.name: getattr(self, item.name) for item in input_fields
+            if item.name in self.parameter_names
+        }
         roots = {
-            name: handle for name, handle in zip(names, self.parameters)
+            name: handle for name, handle in parameters.items()
             if handle.node is not None
         }
 
@@ -62,7 +67,7 @@ class OpticalInput(OpticalBase):
             if symbol.key not in resolved_bindings and symbol.has_default:
                 resolved_bindings[symbol.key] = symbol.default
                 
-        values = dict.fromkeys(names)
+        values = dict.fromkeys(parameters)
         values.update(zip(
             roots,
             graph._evaluate_sequence(graph.initial_values,bindings=resolved_bindings)
@@ -70,8 +75,7 @@ class OpticalInput(OpticalBase):
         
         numerical = self.numerical_type()(**{
             item.name: values.get(item.name, getattr(self, item.name))
-            for item in fields(self)
-            if item.init
+            for item in input_fields
         })
 
         return numerical

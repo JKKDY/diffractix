@@ -62,7 +62,7 @@ class ValidationElement(OpticalElement):
         return self.length_value
 
     @property
-    def element_refractive_index(self):
+    def refractive_index(self):
         return self.refractive_index_value
 
 
@@ -177,10 +177,10 @@ def test_requirements_are_not_shared_between_elements():
 # ELEMENT PROPERTIES
 # ------------------
 
-def test_element_refractive_index_defaults_to_none():
+def test_refractive_index_defaults_to_none():
     element = DummyElement(x=1.0)
 
-    assert element.element_refractive_index is None
+    assert element.refractive_index is None
 
 
 def test_optical_element_requires_matrix():
@@ -270,7 +270,7 @@ def test_build_validation_rejects_invalid_element_length(length):
 def test_build_validation_rejects_invalid_refractive_index(index):
     element = ValidationElement(refractive_index_value=index)
 
-    with pytest.raises(TypeError, match="element_refractive_index"):
+    with pytest.raises(TypeError, match="refractive_index"):
         element._validate_for_build()
 
 

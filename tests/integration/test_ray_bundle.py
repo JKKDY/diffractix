@@ -13,7 +13,7 @@ def source():
         x=xp.array([-1.2e-3, 0.0, 0.9e-3, 2e-3]),
         theta=xp.array([0.018, 0.0, -0.012, 0.006]),
         n=1.33,
-    )
+    ).numeric()
 
 
 @pytest.mark.parametrize("kind", ["space", "lens", "planar", "curved", "slab", "thick-lens", "chain"])
@@ -35,7 +35,7 @@ def test_bundle_optical_traces_match_independent_rays(source, kind):
     original = np.array(source.vectors, copy=True)
     result = System(*elements, input=source, ambient_n=source.n).build().run()
     references = [
-        System(*elements, input=Ray(x=x, theta=angle, n=source.n), ambient_n=source.n).build().run()
+        System(*elements, input=Ray.numerical_type()(x=x, theta=angle, n=source.n), ambient_n=source.n).build().run()
         for x, angle in zip(source.x, source.theta)
     ]
 
@@ -53,7 +53,7 @@ def test_bundle_optical_traces_match_independent_rays(source, kind):
 
 @pytest.mark.parametrize("count", [0, 1])
 def test_empty_and_single_bundles_propagate_through_composites(count):
-    source = RayBundle(x=xp.array([1.2e-3][:count]), theta=xp.array([-0.018][:count]))
+    source = RayBundle(x=xp.array([1.2e-3][:count]), theta=xp.array([-0.018][:count])).numeric({"ambient_n": 1.0})
     elements = (Space(d=0.025), ThinLens(f=0.12), Slab(d=0.008, n=1.52))
     result = System(*elements, input=source).build().run()
 
@@ -63,7 +63,7 @@ def test_empty_and_single_bundles_propagate_through_composites(count):
     assert all(state.size == count for state in result.states)
     np.testing.assert_allclose(result.n, [1.0, 1.0, 1.0, 1.52, 1.52, 1.0], atol=1e-15)
     if count:
-        reference = System(*elements, input=Ray(x=1.2e-3, theta=-0.018)).build().run()
+        reference = System(*elements, input=Ray(x=1.2e-3, theta=-0.018).numeric({"ambient_n": 1.0})).build().run()
         np.testing.assert_allclose(result.x[:, 0], reference.x, atol=1e-15)
         np.testing.assert_allclose(result.theta[:, 0], reference.theta, atol=1e-15)
 
@@ -74,7 +74,7 @@ def test_bundle_simulation_derivatives_and_jit_match_independent_rays(source):
     elements = (Space(d=distance), ThinLens(f=focal), Slab(d=0.008, n=1.52))
     simulation = System(*elements, input=source, ambient_n=source.n).build()
     references = [
-        System(*elements, input=Ray(x=x, theta=angle, n=source.n), ambient_n=source.n).build()
+        System(*elements, input=Ray.numerical_type()(x=x, theta=angle, n=source.n), ambient_n=source.n).build()
         for x, angle in zip(source.x, source.theta)
     ]
     assert simulation.graph.variables == (distance, focal)
@@ -109,11 +109,11 @@ def test_bundle_simulation_derivatives_and_jit_match_independent_rays(source):
 @pytest.mark.parametrize("kind", ["parallel", "converging"])
 def test_factory_bundles_propagate_and_expose_stacked_statistics(kind):
     if kind == "parallel":
-        source = RayBundle.parallel(radius=2e-3, count=5, n=1.33)
+        source = RayBundle.parallel(radius=2e-3, count=5, n=1.33).numeric()
         expected_x = [-2e-3, -1e-3, 0.0, 1e-3, 2e-3]
         expected_spread = np.sqrt(2)*1e-3
     else:
-        source = RayBundle.converging(radius=2e-3, count=5, focal_distance=0.05, n=1.33)
+        source = RayBundle.converging(radius=2e-3, count=5, focal_distance=0.05, n=1.33).numeric()
         expected_x = np.zeros(5)
         expected_spread = 0.0
     result = System(Space(d=0.05), input=source, ambient_n=source.n).build().run()

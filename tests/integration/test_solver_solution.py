@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as numpy
 import pytest
 from diffractix.graph import Parameter
-from diffractix.beams import GaussianBeam
+from diffractix import GaussianBeam
 from diffractix.elements import Space
 from diffractix.solver import Backend, Constraint, Objective, OptimizationResult, Solution, Solver
 from diffractix.system import System
@@ -53,7 +53,7 @@ def test_solver_solve_respects_parameter_bounds():
 def test_solution_feasibility_uses_each_solves_physical_bound_overrides(monkeypatch):
     distance = Parameter(0.1).variable(bounds=(0.02, 0.4))
     simulation = System(
-        Space(d=distance), input=GaussianBeam.from_waist(w0=1e-3, wavelength=1e-6),
+        Space(d=distance), input=GaussianBeam.from_waist(w0=1e-3, wavelength=1e-6).numeric(),
     ).build()
     solver = Solver(simulation).target(distance - 0.2)
     returned_values = iter((0.2, 0.2, 0.015))
@@ -105,7 +105,7 @@ def test_solver_solve_enforces_hard_constraint():
 def test_simulation_require_combines_with_system_and_solver_constraints():
     distance = Parameter(0.5).variable(bounds=(0.1, 1.0))
     space = Space(d=distance)
-    beam = GaussianBeam.from_waist(w0=1e-3, wavelength=1e-6)
+    beam = GaussianBeam.from_waist(w0=1e-3, wavelength=1e-6).numeric()
     system = System(space, input=beam)
     system.require(Constraint(distance, lower_bound=0.2, label="system minimum"))
     simulation = system.build()
@@ -181,7 +181,7 @@ def test_reduced_optimizer_constraints_do_not_erase_physical_solution_reporting(
     d1 = Parameter(0.006).variable(bounds=(0.004, 0.010))
     d2 = Parameter(0.010).variable(bounds=(0.005, 0.014))
     d3 = 0.025 - d1 - d2
-    beam = GaussianBeam.from_waist(w0=1e-3, wavelength=1e-6)
+    beam = GaussianBeam.from_waist(w0=1e-3, wavelength=1e-6).numeric()
     simulation = System(Space(d=d1), Space(d=d2), Space(d=d3), input=beam).build()
     solver = Solver(simulation)
     solver.target(d1 - 0.007, d2 - 0.010)

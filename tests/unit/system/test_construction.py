@@ -3,7 +3,7 @@
 import pytest
 from pathlib import Path
 from dataclasses import dataclass
-from diffractix.beams import Ray
+from diffractix import Ray
 from diffractix.composites import Slab
 from diffractix.composites import CompositeElement
 from diffractix.system import AMBIENT_N
@@ -120,7 +120,7 @@ def test_system_preserves_positional_ambient_index_constructor():
 
 
 def test_variadic_system_uses_existing_element_validation():
-    with pytest.raises(TypeError, match="ElementBase"):
+    with pytest.raises(TypeError, match="OpticalElement"):
         System(ThinLens(f=0.1), object())
 
 
@@ -161,7 +161,7 @@ def test_add_index_reuses_validation():
     system = System()
     with pytest.raises(TypeError):
         system.add(ThinLens(f=0.1), index=1.5)
-    with pytest.raises(TypeError, match="ElementBase"):
+    with pytest.raises(TypeError, match="OpticalElement"):
         system.add([object()], index=0)
     with pytest.raises(ValueError, match="absolute position"):
         system.add(ThinLens(f=0.1), Space(d=0.1), z=0.5, index=0)

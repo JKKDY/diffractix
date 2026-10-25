@@ -5,7 +5,7 @@ from diffractix.backend import xp
 import numpy as numpy
 import pytest
 
-from diffractix.beams import GaussianBeam
+from diffractix import GaussianBeam
 from diffractix.composites import Slab, ThickLens
 from diffractix.elements import Plane, Space, ThinLens
 from diffractix.graph import Parameter, Symbol
@@ -29,7 +29,7 @@ def beam():
     return GaussianBeam.from_waist(
         w0=100e-6,
         wavelength=1064e-9,
-    )
+    ).numeric()
 
 
 def distance_system(
@@ -953,7 +953,7 @@ def test_context_bound_independent_indices_still_enforce_physical_continuity(mon
     from diffractix.solver.backends import scipy as scipy_backend
 
     required = Parameter(1.2).variable(bounds=(1.0, 2.0))
-    source = GaussianBeam.from_waist(w0=100e-6, wavelength=1064e-9, n=1.2)
+    source = GaussianBeam.from_waist(w0=100e-6, wavelength=1064e-9, n=1.2).numeric()
     system = System(
         Space(d=0.01, n=Symbol("required_n")),
         input=source, ambient_n=1.2, ambient_n_variable=True,

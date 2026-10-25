@@ -42,7 +42,7 @@ def _hybrid_solver():
     p = Parameter(0.6).variable(bounds=(0.2, 1.5))
     q = Parameter(0.8).variable(bounds=(0.3, 2.0))
     first, second = Space(d=p), Space(d=q)
-    source = RayBundle(x=np.array([1.0, 2.0]), theta=np.array([2.0, -1.0]))
+    source = RayBundle(x=np.array([1.0, 2.0]), theta=np.array([2.0, -1.0])).numeric({"ambient_n": 1.0})
     solver = Solver(System(first, second, input=source))
     solver.target(
         Objective(lambda ctx: q**2 + ctx.after(first).x - 2, weight=2.0),
@@ -276,7 +276,7 @@ def test_reduced_vector_constraints_and_duplicate_hessian_weights(numerical_back
 def _check_repeated_solves():
     distance = Parameter(1.5).variable(bounds=(1.0, 4.0))
     space = Space(d=distance)
-    simulation = System(space, input=GaussianBeam.from_waist(0.001, 1e-6)).build()
+    simulation = System(space, input=GaussianBeam.from_waist(0.001, 1e-6).numeric()).build()
     solver = Solver(simulation)
     solver.target(lambda ctx: ctx.z_after(space) - 0.2)
     solver.require(Constraint(distance, lower_bound=0.5, label="minimum length"))
@@ -331,7 +331,7 @@ def _check_empty_constraints(use_jit):
     import warnings
 
     focal = Parameter(1.5).variable(bounds=(0.2, 3.0))
-    solver = Solver(System(ThinLens(f=focal), input=GaussianBeam.from_waist(0.001, 1e-6)))
+    solver = Solver(System(ThinLens(f=focal), input=GaussianBeam.from_waist(0.001, 1e-6).numeric()))
     solver.target(focal - 1)
     problem = capture_problem(solver, use_jit=use_jit)
     theta = xp.array([1.2])
@@ -356,7 +356,7 @@ def _check_real_solve():
     wavelength, waist = 1e-6, 1e-4
     distance = Parameter(0.15).variable(bounds=(0.05, 0.4))
     space = Space(d=distance)
-    simulation = System(space, input=GaussianBeam.from_waist(waist, wavelength)).build()
+    simulation = System(space, input=GaussianBeam.from_waist(waist, wavelength).numeric()).build()
     target_w = np.sqrt(waist**2 + (wavelength*0.3/(np.pi*waist))**2)
     solver = Solver(simulation)
     solver.target(value=lambda ctx: ctx.after(space).w, target=target_w,
@@ -395,7 +395,7 @@ def test_solver_jit_real_constrained_gaussian_optimization(numerical_backend):
 def _check_dynamic_control_flow():
     distance = Parameter(0.6).variable(bounds=(0.2, 1.5))
     space = Space(d=distance)
-    solver = Solver(System(space, input=GaussianBeam.from_waist(0.001, 1e-6)))
+    solver = Solver(System(space, input=GaussianBeam.from_waist(0.001, 1e-6).numeric()))
 
     def objective(ctx):
         if ctx.z_after(space) > 0.5:

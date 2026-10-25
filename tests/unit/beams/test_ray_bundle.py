@@ -13,13 +13,13 @@ def bundle():
         x=xp.array([-1.2e-3, 0.0, 0.9e-3, 2.0e-3]),
         theta=xp.array([0.018, 0.0, -0.012, 0.006]),
         n=1.33,
-    )
+    ).numeric()
 
 
 def test_bundle_construction_default_medium_size_and_vectors():
     positions = xp.array([-1.2e-3, 0.0, 0.9e-3])
     angles = xp.array([0.018, 0.0, -0.012])
-    bundle = RayBundle(x=positions, theta=angles)
+    bundle = RayBundle(x=positions, theta=angles).numeric({"ambient_n": 1.0})
 
     assert bundle.n == 1.0
     assert bundle.size == 3
@@ -37,7 +37,7 @@ def test_bundle_x_at_z_extrapolates_every_ray_without_changing_source(bundle):
 
 @pytest.mark.parametrize("positions, angles", [([], []), ([1.2e-3], [-0.018])])
 def test_empty_and_single_ray_bundles_preserve_the_ray_axis(positions, angles):
-    bundle = RayBundle(x=xp.array(positions), theta=xp.array(angles))
+    bundle = RayBundle(x=xp.array(positions), theta=xp.array(angles)).numeric({"ambient_n": 1.0})
     count = len(positions)
     propagated = bundle.propagate(1.0, 0.0, 0.0, 1.0/1.52, n=1.52)
 
@@ -49,7 +49,7 @@ def test_empty_and_single_ray_bundles_preserve_the_ray_axis(positions, angles):
     assert propagated.n == 1.52
     assert bundle.n == 1.0
     if count:
-        scalar = Ray(x=positions[0], theta=angles[0]).propagate(1, 0, 0, 1/1.52, n=1.52)
+        scalar = Ray.numerical_type()(x=positions[0], theta=angles[0], n=1.0).propagate(1, 0, 0, 1/1.52, n=1.52)
         np.testing.assert_allclose(propagated.vectors[:, 0], scalar.vector, atol=1e-15)
         assert bundle.centroid == pytest.approx(positions[0])
         assert bundle.mean_angle == pytest.approx(angles[0])
@@ -78,7 +78,7 @@ def test_bundle_rejects_mismatched_or_non_vector_inputs(positions, angles, messa
 ])
 def test_bundle_abcd_matches_independent_rays_and_does_not_mutate_source(bundle, matrix, output_index):
     original = np.array(bundle.vectors, copy=True)
-    rays = [Ray(x=x, theta=angle, n=bundle.n) for x, angle in zip(bundle.x, bundle.theta)]
+    rays = [Ray.numerical_type()(x=x, theta=angle, n=bundle.n) for x, angle in zip(bundle.x, bundle.theta)]
     scalar_results = [ray.propagate(*matrix, n=output_index) for ray in rays]
     propagated = bundle.propagate(*matrix, n=output_index)
 
@@ -96,7 +96,7 @@ def test_bundle_abcd_matches_independent_rays_and_does_not_mutate_source(bundle,
 
 def test_sequential_bundle_propagation_matches_rays_and_matrix_product(bundle):
     source_vectors = np.array(bundle.vectors, copy=True)
-    rays = [Ray(x=x, theta=angle, n=bundle.n) for x, angle in zip(bundle.x, bundle.theta)]
+    rays = [Ray.numerical_type()(x=x, theta=angle, n=bundle.n) for x, angle in zip(bundle.x, bundle.theta)]
     combined = np.eye(2)
     sequence = (
         ((1, 0.025, 0, 1), 1.33),
@@ -117,7 +117,7 @@ def test_sequential_bundle_propagation_matches_rays_and_matrix_product(bundle):
 def test_bundle_source_and_optical_derivatives_have_independent_ray_axes():
     def trace(values):
         distance, focal, selected_x, selected_angle = values
-        source = RayBundle(
+        source = RayBundle.numerical_type()(
             x=xp.stack((-1.2e-3, selected_x, 2e-3)),
             theta=xp.stack((0.018, 0.0, selected_angle)),
             n=1.33,
@@ -155,7 +155,7 @@ def test_bundle_source_and_optical_derivatives_have_independent_ray_axes():
 
 
 def test_parallel_factory_samples_aperture_and_preserves_medium():
-    bundle = RayBundle.parallel(radius=2e-3, count=5, n=1.33)
+    bundle = RayBundle.parallel(radius=2e-3, count=5, n=1.33).numeric()
 
     assert bundle.size == 5
     assert bundle.n == 1.33
@@ -164,7 +164,7 @@ def test_parallel_factory_samples_aperture_and_preserves_medium():
 
 
 def test_converging_factory_points_all_rays_toward_common_focus():
-    bundle = RayBundle.converging(radius=2e-3, count=5, focal_distance=0.05)
+    bundle = RayBundle.converging(radius=2e-3, count=5, focal_distance=0.05).numeric()
 
     assert bundle.size == 5
     assert bundle.n == 1.0
@@ -174,7 +174,7 @@ def test_converging_factory_points_all_rays_toward_common_focus():
 
 
 def test_bundle_statistics_distinguish_spread_from_axis_referenced_rms():
-    bundle = RayBundle(x=xp.array([1e-3, 2e-3, 4e-3]), theta=xp.array([0.01, 0.02, 0.04]))
+    bundle = RayBundle(x=xp.array([1e-3, 2e-3, 4e-3]), theta=xp.array([0.01, 0.02, 0.04])).numeric({"ambient_n": 1.0})
 
     assert bundle.centroid == pytest.approx(7e-3/3)
     assert bundle.mean_angle == pytest.approx(0.07/3)
@@ -185,7 +185,7 @@ def test_bundle_statistics_distinguish_spread_from_axis_referenced_rms():
 
 def test_bundle_statistics_derivatives_and_jit_away_from_zero_spread():
     def metrics(values):
-        bundle = RayBundle(x=values[:3], theta=values[3:])
+        bundle = RayBundle.numerical_type()(x=values[:3], theta=values[3:], n=1.0)
         return xp.stack((bundle.centroid, bundle.mean_angle, bundle.position_spread,
                          bundle.angular_spread, bundle.rms_x))
 
@@ -213,7 +213,7 @@ def test_bundle_statistics_derivatives_and_jit_away_from_zero_spread():
 
 def test_converging_factory_radius_and_focus_derivatives_and_jit():
     def trace(values):
-        return RayBundle.converging(radius=values[0], count=5, focal_distance=values[1]).vectors
+        return RayBundle.numerical_type().converging(radius=values[0], count=5, focal_distance=values[1]).vectors
 
     values = xp.array([2e-3, 0.05])
     radius, focal = np.asarray(values)

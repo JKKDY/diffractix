@@ -9,7 +9,7 @@ from diffractix.backend import grad, hessian, jacobian, jit, xp
 
 @pytest.fixture
 def source():
-    return Ray(x=1.2e-3, theta=0.018, n=1.33)
+    return Ray(x=1.2e-3, theta=0.018, n=1.33).numeric()
 
 
 def assert_trace(result, *, x, theta, n, z):
@@ -43,7 +43,7 @@ def test_ray_space_and_thin_lens_follow_physical_angle_convention(source, focal_
 
 @pytest.mark.parametrize("n1, n2", [(1.0, 1.5), (1.5, 1.0)])
 def test_ray_planar_interface_preserves_paraxial_snell_invariant(n1, n2):
-    source = Ray(x=1.2e-3, theta=-0.018, n=n1)
+    source = Ray(x=1.2e-3, theta=-0.018, n=n1).numeric()
     interface = Interface(n1=n1, n2=n2)
     result = System(interface, input=source, ambient_n=n1).build().run()
 
@@ -114,7 +114,7 @@ def test_ray_thick_lens_matches_two_refractions_and_internal_translation(source)
 
 
 def test_ray_variable_index_updates_trace_and_reuses_jitted_simulation():
-    source = Ray(x=1.2e-3, theta=0.018)
+    source = Ray(x=1.2e-3, theta=0.018).numeric({"ambient_n": 1.0})
     index = Parameter(1.5).variable(bounds=(1.1, 1.8))
     front, body, back = Interface(n1=1.0, n2=index), Space(d=0.01, n=index), Interface(n1=index, n2=1.0)
     simulation = System(front, body, back, input=source).build()

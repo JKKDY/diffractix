@@ -49,14 +49,14 @@ def _optical_cases():
 
     distance = Parameter(0.03).variable(bounds=(0.01, 0.06))
     focal = Parameter(0.12).variable(bounds=(0.08, 0.2))
-    source = GaussianBeam(q=0.015+0.15j, wavelength=1.064e-6, n=1.0)
-    target = GaussianBeam.from_waist(0.0004, source.wavelength)
+    source = GaussianBeam(q=0.015+0.15j, wavelength=1.064e-6, n=1.0).numeric()
+    target = GaussianBeam.from_waist(0.0004, source.wavelength).numeric()
     space, lens, output = Space(d=distance), ThinLens(f=focal), Space(d=0.04)
     gaussian = System(space, lens, output, input=source).build()
-    ray = System(space, lens, output, input=Ray(x=0.001, theta=0.02)).build()
+    ray = System(space, lens, output, input=Ray(x=0.001, theta=0.02).numeric({"ambient_n": 1.0})).build()
     bundle = System(space, lens, output, input=RayBundle(
         x=np.array([0.001, -0.002]), theta=np.array([0.02, -0.01]),
-    )).build()
+    ).numeric({"ambient_n": 1.0})).build()
     refractive = System(
         Interface(n1=1, n2=1.5, R=0.11), Space(d=0.01, n=1.5),
         Interface(n1=1.5, n2=1, R=-0.13), Slab(d=0.007, n=1.4),

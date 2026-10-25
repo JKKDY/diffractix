@@ -8,7 +8,7 @@ from diffractix.composites import Slab, ThickLens
 from diffractix.elements import ABCD, Interface, Space, ThinLens
 from diffractix.graph import Parameter
 from diffractix.system.system import System
-from diffractix.beams import GaussianBeam
+from diffractix import GaussianBeam
 
 
 def create_beam(n=1.0):
@@ -16,7 +16,7 @@ def create_beam(n=1.0):
         w0=1e-3,
         wavelength=1064e-9,
         n=n,
-    )
+    ).numeric()
 
 
 def theta_with(simulation, *updates):

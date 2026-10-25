@@ -7,8 +7,7 @@ from numpy.testing import assert_allclose, assert_array_equal
 
 from diffractix.backend import grad
 
-from diffractix.beams import GaussianBeam, Ray, RayBundle
-from diffractix.beams.base import ParaxialState
+from diffractix import GaussianBeam, Ray, RayBundle, ParaxialState
 from diffractix.graph import Literal, Parameter
 from diffractix.simulation import Simulation, SimulationResult
 from diffractix.simulation.simulation import SimulationStep
@@ -338,9 +337,9 @@ def test_paraxial_state_has_no_default_result_columns():
 
 def test_concrete_state_result_columns_reference_existing_properties():
     states = (
-        GaussianBeam.from_waist(w0=1e-3, wavelength=1e-6),
-        Ray(x=1.0, theta=0.1),
-        RayBundle(x=xp.array([0.0, 1.0]), theta=xp.array([0.0, 0.1])),
+        GaussianBeam.from_waist(w0=1e-3, wavelength=1e-6).numeric(),
+        Ray(x=1.0, theta=0.1).numeric({"ambient_n": 1.0}),
+        RayBundle(x=xp.array([0.0, 1.0]), theta=xp.array([0.0, 0.1])).numeric({"ambient_n": 1.0}),
     )
 
     assert GaussianBeam.result_columns == ("w", "R", "gouy_phase")

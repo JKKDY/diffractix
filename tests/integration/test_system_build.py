@@ -10,7 +10,7 @@ import pytest
 import numpy as np
 from diffractix.backend import xp
 
-from diffractix.beams import GaussianBeam, Ray
+from diffractix import GaussianBeam, Ray
 from diffractix.composites import CompositeElement, Slab
 from diffractix.elements import (
     ABCD,
@@ -34,7 +34,7 @@ def create_beam(n=1.0):
         w0=1e-3,
         wavelength=1064e-9,
         n=n,
-    )
+    ).numeric()
 
 
 class NestedRequirementsComposite(CompositeElement):
@@ -412,7 +412,7 @@ def make_beam():
     return Ray(
         x=0.0,
         theta=0.0,
-    )
+    ).numeric({"ambient_n": 1.0})
 
 
 def test_variadic_system_matches_incremental_construction_and_run():
@@ -509,7 +509,7 @@ class NestedComposite(CompositeElement):
 def build_simulation(*elements):
     system = System()
     system.add_input_beam(
-        GaussianBeam.from_waist(w0=1e-3, wavelength=1e-6)
+        GaussianBeam.from_waist(w0=1e-3, wavelength=1e-6).numeric()
     )
 
     for element in elements:
@@ -521,7 +521,7 @@ def build_simulation(*elements):
 def test_build_still_rejects_initial_refractive_index_mismatch():
     system = System(ambient_n=1.0)
     system.add_input_beam(
-        GaussianBeam.from_waist(w0=1e-3, wavelength=1e-6)
+        GaussianBeam.from_waist(w0=1e-3, wavelength=1e-6).numeric()
     )
     system.add(Space(d=0.1, n=1.5, label="Glass"))
 
@@ -532,7 +532,7 @@ def test_build_still_rejects_initial_refractive_index_mismatch():
 def test_build_appends_continuity_equality_constraint_after_existing_requirements():
     system = System(ambient_n=1.0)
     system.add_input_beam(
-        GaussianBeam.from_waist(w0=1e-3, wavelength=1e-6)
+        GaussianBeam.from_waist(w0=1e-3, wavelength=1e-6).numeric()
     )
     refractive_index = Parameter(1.0, name="glass_n").variable()
     space = Space(d=0.1, n=refractive_index, label="Glass")
@@ -556,7 +556,7 @@ def test_build_appends_continuity_equality_constraint_after_existing_requirement
 def test_shared_refractive_index_parameter_remains_one_variable_with_continuity():
     system = System(ambient_n=1.0, ambient_n_variable=True)
     system.add_input_beam(
-        GaussianBeam.from_waist(w0=1e-3, wavelength=1e-6)
+        GaussianBeam.from_waist(w0=1e-3, wavelength=1e-6).numeric()
     )
     system.add(Space(d=0.1, n=system.ambient_n))
 

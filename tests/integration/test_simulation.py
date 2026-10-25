@@ -9,8 +9,7 @@ import numpy as numpy
 
 from diffractix.backend import grad
 
-from diffractix.beams import GaussianBeam, Ray, RayBundle
-from diffractix.beams.base import ParaxialState
+from diffractix import GaussianBeam, Ray, RayBundle, ParaxialState
 from diffractix.elements import GaussianAperture, Interface, Space, ThinLens
 from diffractix.graph import Parameter
 from diffractix.system.system import System
@@ -26,7 +25,7 @@ def create_beam(n=1.0):
         w0=1e-3,
         wavelength=1064e-9,
         n=n,
-    )
+    ).numeric()
 
 
 def theta_with(simulation, *updates):
@@ -156,7 +155,7 @@ def test_simulation_reports_missing_execution_binding_for_runtime_symbol():
     aperture = GaussianAperture(a=1e-3)
 
     system = System()
-    system.add_input_beam(Ray(x=0.0, theta=0.0))
+    system.add_input_beam(Ray(x=0.0, theta=0.0).numeric({"ambient_n": 1.0}))
     system.add(aperture)
 
     simulation = system.build()
@@ -908,7 +907,7 @@ def test_original_beam_mutation_does_not_change_simulation_or_existing_results()
 
 def test_source_snapshot_owns_ray_bundle_arrays_even_when_source_uses_views():
     backing = np.array([[1e-3, -2e-3], [0.01, -0.02]])
-    source = RayBundle(x=backing[0], theta=backing[1])
+    source = RayBundle(x=backing[0], theta=backing[1]).numeric({"ambient_n": 1.0})
     original_x, original_theta = source.x.copy(), source.theta.copy()
     simulation = System(Space(d=0.2), ThinLens(f=0.1), input=source).build()
     first = simulation.run()

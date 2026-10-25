@@ -5,14 +5,13 @@ import pytest
 
 from diffractix import Ray
 from diffractix.backend import grad, hessian, jacobian, jit, xp
-from diffractix.beams import Ray as BeamRay
-from diffractix.beams.base import ParaxialState
+from diffractix.input import Ray as InputRay, ParaxialState
 
 
 def test_ray_construction_default_medium_and_public_exports():
-    ray = Ray(x=1.2e-3, theta=-0.018)
+    ray = Ray(x=1.2e-3, theta=-0.018).numeric({"ambient_n": 1.0})
 
-    assert BeamRay is Ray
+    assert InputRay is Ray
     assert isinstance(ray, ParaxialState)
     assert ray.x == 1.2e-3
     assert ray.theta == -0.018
@@ -23,14 +22,14 @@ def test_ray_construction_default_medium_and_public_exports():
 
 @pytest.mark.parametrize("z", [0.0, 0.025, -0.025])
 def test_x_at_z_uses_physical_angle_even_in_a_refractive_medium(z):
-    ray = Ray(x=1.2e-3, theta=-0.018, n=1.5)
+    ray = Ray(x=1.2e-3, theta=-0.018, n=1.5).numeric()
 
     assert ray.x_at_z(z) == pytest.approx(1.2e-3 - 0.018*z)
     assert (ray.x, ray.theta, ray.n) == (1.2e-3, -0.018, 1.5)
 
 
 def test_propagation_returns_an_independent_ray_and_tracks_output_medium():
-    ray = Ray(x=1.2e-3, theta=0.018, n=1.0)
+    ray = Ray(x=1.2e-3, theta=0.018, n=1.0).numeric()
     propagated = ray.propagate(1.0, 0.0, 0.0, 1.0/1.5, n=1.5)
 
     assert isinstance(propagated, Ray)
@@ -43,7 +42,7 @@ def test_propagation_returns_an_independent_ray_and_tracks_output_medium():
 
 
 def test_free_space_propagation_does_not_divide_distance_by_index():
-    ray = Ray(x=1.2e-3, theta=0.018, n=1.5)
+    ray = Ray(x=1.2e-3, theta=0.018, n=1.5).numeric()
     propagated = ray.propagate(1.0, 0.025, 0.0, 1.0, n=1.5)
 
     np.testing.assert_allclose(propagated.vector, [1.65e-3, 0.018], atol=1e-15)
@@ -52,7 +51,7 @@ def test_free_space_propagation_does_not_divide_distance_by_index():
 
 @pytest.mark.parametrize("focal_length", [0.12, -0.12])
 def test_thin_lens_changes_angle_not_height(focal_length):
-    ray = Ray(x=1.2e-3, theta=0.018, n=1.33)
+    ray = Ray(x=1.2e-3, theta=0.018, n=1.33).numeric()
     propagated = ray.propagate(1.0, 0.0, -1.0/focal_length, 1.0, n=ray.n)
 
     np.testing.assert_allclose(
@@ -63,7 +62,7 @@ def test_thin_lens_changes_angle_not_height(focal_length):
 
 @pytest.mark.parametrize("n1, n2", [(1.0, 1.5), (1.5, 1.0)])
 def test_planar_interface_obeys_paraxial_snell_law(n1, n2):
-    ray = Ray(x=1.2e-3, theta=-0.018, n=n1)
+    ray = Ray(x=1.2e-3, theta=-0.018, n=n1).numeric()
     propagated = ray.propagate(1.0, 0.0, 0.0, n1/n2, n=n2)
 
     np.testing.assert_allclose(propagated.vector, [ray.x, n1*ray.theta/n2], atol=1e-15)
@@ -73,7 +72,7 @@ def test_planar_interface_obeys_paraxial_snell_law(n1, n2):
 
 @pytest.mark.parametrize("radius", [0.08, -0.08])
 def test_curved_interface_includes_surface_power(radius):
-    ray = Ray(x=1.2e-3, theta=0.018, n=1.0)
+    ray = Ray(x=1.2e-3, theta=0.018, n=1.0).numeric()
     outgoing_index = 1.52
     propagated = ray.propagate(
         1.0, 0.0, (ray.n-outgoing_index)/(radius*outgoing_index),
@@ -86,7 +85,7 @@ def test_curved_interface_includes_surface_power(radius):
 
 
 def test_sequential_propagation_matches_ordered_matrix_product():
-    ray = Ray(x=1.2e-3, theta=-0.018)
+    ray = Ray(x=1.2e-3, theta=-0.018).numeric({"ambient_n": 1.0})
     interface = np.array([[1.0, 0.0], [-4.0, 2.0/3.0]])
     space = np.array([[1.0, 0.025], [0.0, 1.0]])
 
@@ -100,7 +99,7 @@ def test_sequential_propagation_matches_ordered_matrix_product():
 
 
 def test_on_axis_ray_stays_on_axis_through_a_powered_system():
-    ray = Ray(x=0.0, theta=0.0)
+    ray = Ray(x=0.0, theta=0.0).numeric({"ambient_n": 1.0})
     # A curved air/glass boundary followed by 25 mm of propagation in glass.
     propagated = ray.propagate(0.9, 0.025*2.0/3.0, -4.0, 2.0/3.0, n=1.5)
 
@@ -112,7 +111,7 @@ def test_on_axis_ray_stays_on_axis_through_a_powered_system():
 def test_propagation_derivatives_and_jit_for_source_distance_and_focal_length(focal_length):
     def trace(values):
         x, angle, distance, focal = values
-        source = Ray(x=x, theta=angle, n=1.33)
+        source = Ray.numerical_type()(x=x, theta=angle, n=1.33)
         spaced = source.propagate(1.0, distance, 0.0, 1.0, n=source.n)
         return spaced.propagate(1.0, 0.0, -1.0/focal, 1.0, n=source.n).vector
 
