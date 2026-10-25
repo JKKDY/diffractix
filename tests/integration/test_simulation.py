@@ -54,7 +54,8 @@ def test_simulation_supports_empty_optical_path():
 
     assert simulation.steps == ()
     assert len(result.states) == 1
-    assert result.initial is simulation.source
+    assert result.initial is result.source
+    assert result.initial is not simulation.source
     assert result.initial is not beam
     assert result.initial == beam
     assert result.final is result.initial
@@ -89,7 +90,8 @@ def test_simulation_propagates_single_space():
     result = simulation.run()
 
     assert len(result.states) == 2
-    assert result.initial is simulation.source
+    assert result.initial is result.source
+    assert result.initial is not simulation.source
     assert result.initial is not beam
     assert result.initial == beam
     assert result.z[-1] == pytest.approx(0.2)
@@ -113,7 +115,7 @@ def test_simulation_propagates_single_thin_lens():
     assert result.final.q == pytest.approx(expected)
 
 
-def test_simulation_resolves_beam_execution_bindings_at_runtime():
+def test_simulation_compiles_fixed_beam_bindings_into_the_model():
     beam = create_beam()
     aperture = GaussianAperture(a=1e-3)
 
@@ -127,7 +129,9 @@ def test_simulation_resolves_beam_execution_bindings_at_runtime():
     C = -1j * beam.wavelength / (np.pi * aperture.a.value**2)
     expected_q = beam.q / (C * beam.q + 1.0)
 
-    assert simulation.execution_context == beam.execution_context
+    assert simulation.execution_context == {}
+    assert simulation.graph.symbols == ()
+    assert simulation.compile_context["wavelength"].value == beam.wavelength
     assert not hasattr(result, "execution_context")
     numpy.testing.assert_allclose(result.wavelength, [beam.wavelength] * 2)
     assert result.final.q == pytest.approx(expected_q)
@@ -852,8 +856,9 @@ def test_simulation_owns_an_equivalent_source_snapshot():
     result = simulation.run()
 
     assert simulation.source is not beam
-    assert result.initial is simulation.source
-    assert result.source is simulation.source
+    assert result.initial is result.source
+    assert result.source is not simulation.source
+    assert result.source == simulation.source
     assert simulation.source.q == beam.q
     assert simulation.source.wavelength == beam.wavelength
     assert simulation.source.n == beam.n
@@ -894,7 +899,7 @@ def test_original_beam_mutation_does_not_change_simulation_or_existing_results()
     assert simulation.source is source_snapshot
     assert simulation.source is not beam
     assert simulation.execution_context == execution_context_snapshot
-    assert simulation.execution_context == simulation.source.execution_context
+    assert simulation.compile_context["wavelength"].value == simulation.source.wavelength
     assert later_values == pytest.approx(original_values)
     assert original_result.initial.q == source_snapshot.q
     assert original_result.initial.wavelength == source_snapshot.wavelength
@@ -920,7 +925,8 @@ def test_source_snapshot_owns_ray_bundle_arrays_even_when_source_uses_views():
     for result in (first, simulation.run()):
         numpy.testing.assert_allclose(result.x, [original_x, expected_x, expected_x])
         numpy.testing.assert_allclose(result.theta, [original_theta, original_theta, expected_theta])
-        assert result.source is simulation.source
+        assert result.source is result.initial
+        assert result.source is not simulation.source
     assert not np.shares_memory(simulation.source.x, backing)
     assert not np.shares_memory(simulation.source.theta, backing)
 

@@ -953,7 +953,8 @@ def test_context_bound_independent_indices_still_enforce_physical_continuity(mon
     from diffractix.solver.backends import scipy as scipy_backend
 
     required = Parameter(1.2).variable(bounds=(1.0, 2.0))
-    source = GaussianBeam.from_waist(w0=100e-6, wavelength=1064e-9, n=1.2).numeric()
+    source = GaussianBeam.from_waist(w0=100e-6, wavelength=1064e-9, n=1.2)
+    source.n = Symbol("ambient_n")
     system = System(
         Space(d=0.01, n=Symbol("required_n")),
         input=source, ambient_n=1.2, ambient_n_variable=True,

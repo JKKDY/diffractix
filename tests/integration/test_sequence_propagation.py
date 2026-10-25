@@ -49,7 +49,7 @@ def packed_reference(simulation):
     reference = copy(simulation)
     reference.graph = SimpleNamespace(
         initial_values=simulation.initial_values,
-        _evaluate_sequence=simulation.graph.evaluate,
+        _evaluate_roots=simulation.graph.evaluate,
     )
     return reference
 
@@ -109,14 +109,18 @@ def test_sequence_propagates_all_states_composites_and_custom_components(kind, c
     result, expected = simulation.run(theta), reference.run(theta)
 
     numpy.testing.assert_array_equal(result.z, expected.z)
-    assert result.z.dtype == expected.z.dtype
+    assert result.z.dtype == numpy.dtype("float64")
     assert result.element_info is simulation.element_info
     for state, original in zip(result.states, expected.states):
         assert type(state) is type(original)
         for field in fields(state):
             actual_value, expected_value = getattr(state, field.name), getattr(original, field.name)
             numpy.testing.assert_allclose(actual_value, expected_value, rtol=1e-12, atol=1e-14)
-            assert numpy.asarray(actual_value).dtype == numpy.asarray(expected_value).dtype
+            if not complex_matrix:
+                assert numpy.asarray(actual_value).dtype == numpy.asarray(expected_value).dtype
+        # Native root evaluation must not turn the real medium into complex
+        # merely because another element has a complex matrix coefficient.
+        assert numpy.isrealobj(state.n)
     assert result.after(repeated, occurrence=1) is result.final
     assert result.z_after(repeated, occurrence=1) == expected.z_after(repeated, occurrence=1)
 
@@ -230,7 +234,8 @@ def test_sequence_gaussian_aperture_keeps_complex_promotion_and_execution_bindin
     reference = packed_reference(simulation)
     theta = simulation.initial_values.copy()
     numpy.testing.assert_array_equal(simulation.run().q, reference.run().q)
-    assert simulation.run().z.dtype == reference.run().z.dtype
+    assert numpy.isrealobj(simulation.run().z)
+    assert numpy.isrealobj(simulation.run().final.n)
     fast = lambda t: xp.real(simulation.run(t).final.w)
     packed = lambda t: xp.real(reference.run(t).final.w)
     assert_finite_match(grad(fast)(theta), grad(packed)(theta), rtol=1e-10)
@@ -238,13 +243,14 @@ def test_sequence_gaussian_aperture_keeps_complex_promotion_and_execution_bindin
 
 
 @pytest.mark.filterwarnings("ignore:Casting complex values to real discards the imaginary part:numpy.exceptions.ComplexWarning")
-def test_solver_complex_expression_preserves_beam_execution_bindings(monkeypatch):
+def test_solver_complex_expression_preserves_compiled_beam_bindings(monkeypatch):
     radius = Parameter(1e-3).variable()
     output = Space(d=0.01)
     simulation = System(Space(d=0.02), GaussianAperture(a=radius), output,
                         input=source_for("gaussian")).build()
-    assert simulation.graph.symbols
-    assert all(symbol.key in simulation.execution_context for symbol in simulation.graph.symbols)
+    assert simulation.graph.symbols == ()
+    assert "wavelength" in simulation.compile_context
+    assert "wavelength" not in simulation.execution_context
     solver = Solver(simulation)
     expression = lambda ctx: radius ** 2 + ctx.after(output).q
     optimized = solver._compile_callable(expression)
@@ -284,7 +290,7 @@ def test_sequence_variable_refractive_index_transitions_match_packed_derivatives
 
 
 @pytest.mark.parametrize("binding", [numpy.float32(0.01), numpy.array(0.01), numpy.array([0.01, 0.02])])
-def test_sequence_simulation_matches_packed_runtime_binding_coercion(binding):
+def test_native_simulation_supports_scalar_and_vector_runtime_coefficients(binding):
     simulation = System(
         CustomElement(shift=0.0, power=Symbol("power")), input=source_for("custom"),
     ).build()
@@ -292,9 +298,12 @@ def test_sequence_simulation_matches_packed_runtime_binding_coercion(binding):
     reference = packed_reference(simulation)
     if numpy.ndim(binding):
         # Mixed vector/scalar graph roots were ragged before this optimization.
-        for run in (reference.run, simulation.run):
-            with pytest.raises(ValueError, match="inhomogeneous|sequence"):
-                run()
+        with pytest.raises(ValueError, match="inhomogeneous|sequence"):
+            reference.run()
+        result = simulation.run()
+        numpy.testing.assert_array_equal(result.final.x, result.source.x)
+        numpy.testing.assert_allclose(result.final.theta,
+                                      result.source.theta + binding * result.source.x)
     else:
         expected, actual = reference.run(), simulation.run()
         numpy.testing.assert_array_equal(observables(actual), observables(expected))

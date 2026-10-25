@@ -342,7 +342,9 @@ def test_interface_refractive_index_requirement_restricts_optimization():
     n2 = Parameter(1.5, variable=True, lower_bound=-2.0, upper_bound=2.0)
     system = System()
     system.ambient_n.variable(lower_bound=0.5, upper_bound=2.0)
-    system.add_input_beam(create_beam())
+    source = GaussianBeam.from_waist(w0=1e-3, wavelength=1064e-9)
+    source.n = Symbol("ambient_n")
+    system.add_input_beam(source)
     system.add(Space(d=0.01))
     interface = Interface(n1=n1, n2=n2)
     system.add(interface)
@@ -419,6 +421,7 @@ def test_variadic_system_matches_incremental_construction_and_run():
     import numpy as np
 
     beam = make_beam()
+    beam.n = 1.33
     elements = (Space(d=0.05), ThinLens(f=0.1), Space(d=0.1))
     concise = System(*elements, input=beam, ambient_n=1.33)
     incremental = System(ambient_n=1.33)

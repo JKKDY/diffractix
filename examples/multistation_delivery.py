@@ -68,7 +68,7 @@ SOLVER_OPTIONS = {
 #------
 source = GaussianBeam.from_waist(w0=INPUT_RADIUS, wavelength=WAVELENGTH)
 target_focus = GaussianBeam.from_waist(w0=FOCUS_RADIUS, wavelength=WAVELENGTH)
-if source.divergence_angle > MAX_DIVERGENCE:
+if source.numeric().divergence_angle > MAX_DIVERGENCE:
     raise ValueError("Source exceeds the paraxial divergence limit.")
 
 # Deliberately poor but feasible initial design, for testing convergence from

@@ -6,6 +6,7 @@ from diffractix.backend import xp
 from diffractix.composites import CompositeElement, Slab
 from diffractix.elements import Interface, Space, ThinLens
 from diffractix.graph import Parameter
+from diffractix import Ray
 from diffractix.system.system import ParameterInfo, Placement, SourceInfo, System, SystemPlacement
 
 
@@ -15,6 +16,12 @@ class NestedComposite(CompositeElement):
         self.lens = ThinLens(f=0.1, label="Lens")
         self.slab = Slab(d=0.01, n=1.5, label="Slab")
         super().__init__()
+
+
+def compile_elements(system, elements):
+    """Compilation requires a source; these pass tests use a fixed numerical ray."""
+    system.add_input_beam(Ray.numerical_type()(x=0.0, theta=0.0, n=1.0))
+    return system._compile(elements)
 
 
 def test_resolve_elements_preserves_optical_element():
@@ -571,7 +578,7 @@ def test_compile_creates_parameter_info_for_variable_parameter():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
+    graph, steps, parameter_info, location_map, *_ = compile_elements(system, elements)
 
     info = parameter_info[id(lens.f.node)]
 
@@ -595,7 +602,7 @@ def test_compile_parameter_info_matches_graph_variable_order():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
+    graph, steps, parameter_info, location_map, *_ = compile_elements(system, elements)
 
     variable_info = tuple(
         info
@@ -621,7 +628,7 @@ def test_compile_parameter_info_snapshots_parameter_metadata():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
+    graph, steps, parameter_info, location_map, *_ = compile_elements(system, elements)
     info = parameter_info[id(parameter)]
 
     assert info.parameter_id == id(parameter)
@@ -644,7 +651,7 @@ def test_compile_parameter_info_is_independent_of_parameter_value_changes():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
+    graph, steps, parameter_info, location_map, *_ = compile_elements(system, elements)
 
     parameter.value = 0.2
 
@@ -661,7 +668,7 @@ def test_compile_graph_is_independent_of_parameter_value_changes():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
+    graph, steps, parameter_info, location_map, *_ = compile_elements(system, elements)
     initial = graph.evaluate(graph.initial_values)
 
     parameter.value = 0.2
@@ -680,7 +687,7 @@ def test_compile_parameter_info_snapshots_variable_status_and_bounds():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
+    graph, steps, parameter_info, location_map, *_ = compile_elements(system, elements)
     info = parameter_info[id(parameter)]
 
     parameter.fixed()
@@ -700,7 +707,7 @@ def test_compile_includes_fixed_parameters_in_parameter_info():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
+    graph, steps, parameter_info, location_map, *_ = compile_elements(system, elements)
 
     assert graph.variables == ()
     assert len(graph.initial_values) == 0
@@ -725,7 +732,7 @@ def test_compile_deduplicates_shared_variable_parameter():
         Placement(element=second),
     ))
 
-    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
+    graph, steps, parameter_info, location_map, *_ = compile_elements(system, elements)
 
     assert graph.variables == (parameter,)
     info = parameter_info[id(parameter)]
@@ -743,7 +750,7 @@ def test_compile_parameter_info_supports_standalone_parameter():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
+    graph, steps, parameter_info, location_map, *_ = compile_elements(system, elements)
     info = parameter_info[id(parameter)]
 
     assert info.parameter_id == id(parameter)
@@ -764,7 +771,7 @@ def test_compile_parameter_info_tracks_multiple_standalone_parameters():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
+    graph, steps, parameter_info, location_map, *_ = compile_elements(system, elements)
 
     assert graph.variables == (x, y)
 
@@ -795,7 +802,7 @@ def test_compile_location_map_uses_element_identity():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
+    graph, steps, parameter_info, location_map, *_ = compile_elements(system, elements)
 
     assert location_map[id(lens)] == ((0, 1),)
 
@@ -809,7 +816,7 @@ def test_compile_location_map_preserves_repeated_element_occurrences():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
+    graph, steps, parameter_info, location_map, *_ = compile_elements(system, elements)
 
     assert location_map[id(lens)] == (
         (0, 1),
@@ -825,7 +832,7 @@ def test_compile_step_indices_reference_expected_root_values():
         Placement(element=space),
     ))
 
-    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
+    graph, steps, parameter_info, location_map, *_ = compile_elements(system, elements)
     values = graph.evaluate(graph.initial_values)
     step = steps[0]
 
@@ -846,7 +853,7 @@ def test_compile_preserves_derived_parameter_dependencies():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
+    graph, steps, parameter_info, location_map, *_ = compile_elements(system, elements)
     step = steps[0]
     values = graph.evaluate(xp.array([0.2]))
 
@@ -861,7 +868,7 @@ def test_compile_snapshots_fixed_parameter_values():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
+    graph, steps, parameter_info, location_map, *_ = compile_elements(system, elements)
     step = steps[0]
 
     lens.f.value = 0.2
@@ -879,7 +886,7 @@ def test_compile_snapshots_input_node_target():
         Placement(element=lens),
     ))
 
-    graph, steps, parameter_info, location_map, _, _ = system._compile(elements)
+    graph, steps, parameter_info, location_map, *_ = compile_elements(system, elements)
     step = steps[0]
 
     lens.f = 0.2

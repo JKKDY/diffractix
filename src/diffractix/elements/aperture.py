@@ -29,9 +29,14 @@ class GaussianAperture(OpticalElement):
 
     @property
     def matrix(self):
+        """Unit-index matrix; System compilation supplies the local medium."""
+        return self._matrix_in_medium(1.0)
+
+    def _matrix_in_medium(self, n):
+        """Use the resolved local index with the physical-angle ABCD convention."""
         return (
             (1.0, 0.0),
-            (-1j * self.wavelength / (np.pi * self.a**2), 1.0)
+            (-1j * self.wavelength / (np.pi * n * self.a**2), 1.0)
         )
 
     @property

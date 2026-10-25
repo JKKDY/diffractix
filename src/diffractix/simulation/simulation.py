@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from types import MappingProxyType
 
 import numpy as np
@@ -24,6 +25,26 @@ class SimulationStep:
     refractive_index_index: int
 
 
+@dataclass(frozen=True)
+class SimulationSource:
+    """Numerical constructor data, indexed by graph outputs rather than theta."""
+
+    numerical_type: type[ParaxialState]
+    fixed_fields: tuple[tuple[str, object], ...]
+    field_indices: tuple[tuple[str, int], ...]
+
+    def __post_init__(self):
+        object.__setattr__(self, "fixed_fields", deepcopy(self.fixed_fields))
+
+    def construct(self, values):
+        kwargs = deepcopy(dict(self.fixed_fields))
+        kwargs.update(
+            (name, values[index])
+            for name, index in self.field_indices
+        )
+        return self.numerical_type(**kwargs)
+
+
 class Simulation:
     """
     Compiled differentiable optical simulation.
@@ -35,7 +56,7 @@ class Simulation:
 
     def __init__(
         self,
-        source: ParaxialState,
+        source_spec: SimulationSource,
         graph: CompiledAST,
         steps: Sequence[SimulationStep],
         parameter_info: Mapping[int, ParameterInfo],
@@ -46,7 +67,7 @@ class Simulation:
         parameter_graph: CompiledAST,
         element_info: Sequence[ElementInfo],
     ):
-        self.source = source
+        self._source_spec = source_spec
         self.graph = graph
         self.steps = tuple(steps)
         self.parameter_info = MappingProxyType(dict(parameter_info))
@@ -57,11 +78,22 @@ class Simulation:
         self.element_info = tuple(element_info)
         self.execution_context = MappingProxyType(dict(execution_context))
 
+        values = self._evaluate_graph(self.initial_values) if source_spec.field_indices else ()
+        self.source = source_spec.construct(values)
         self._result_type = result_type_for(self.source)
 
     @property
     def initial_values(self):
         return self.graph.initial_values
+
+    def _evaluate_graph(self, theta):
+        values = self.graph._evaluate_roots(variable_values=theta, bindings=self.execution_context)
+        # Keep graph outputs separate so complex values don't make real values complex.
+        # Normalize scalar types and shapes to preserve differentiation behavior.
+        return tuple(
+            np.float64(value) if isinstance(value, float) else xp.reshape(value, np.shape(value))
+            for value in values
+        )
 
     def require(self, *requirements):
         """Append normalized constraints and return this simulation for chaining."""
@@ -88,9 +120,9 @@ class Simulation:
         if theta is None:
             theta = self.initial_values
 
-        values = self.graph._evaluate_sequence(variable_values=theta, bindings=self.execution_context)
-
-        state = self.source
+        values = self._evaluate_graph(theta)
+        source = self._source_spec.construct(values)
+        state = source
         z = 0.0
 
         states = [state]
@@ -111,7 +143,7 @@ class Simulation:
             positions.append(z)
 
         return self._result_type(
-            source=self.source,
+            source=source,
             z=xp.stack(positions),
             states=tuple(states),
             location_map=self.location_map,

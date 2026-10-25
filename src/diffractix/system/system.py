@@ -5,16 +5,17 @@ import inspect
 import operator
 import numpy as np
 from collections.abc import Iterable, Hashable
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from numbers import Real
 from typing import Any
 
 from diffractix.input.paraxial_input import ParaxialState
 from diffractix.composites import CompositeElement
-from diffractix.elements import OpticalElement, Interface, Space, ABCD
+from diffractix.elements import OpticalElement, Interface, Space, ABCD, GaussianAperture
 from diffractix.core import OpticalBase
-from diffractix.graph import Node, Parameter, Literal, InputNode, compile_ast, collect_parameters
-from diffractix.simulation.simulation import Simulation, SimulationStep
+from diffractix.graph import Node, Parameter, Literal, InputNode, Symbol, compile_ast, collect_parameters
+from diffractix.graph.utils import ASTCycleError
+from diffractix.simulation.simulation import Simulation, SimulationStep, SimulationSource
 
 from .errors import SystemValidationError
 from .symbols import AMBIENT_N
@@ -246,7 +247,7 @@ class System:
 
     def _normalize_requirements(self):
         from diffractix.solver.constraint import normalize_to_constraint
-        reqs = self.requirements + self._collect_element_requirements()
+        reqs = self.requirements + self.beam.requirements + self._collect_element_requirements()
         return tuple(normalize_to_constraint(requirement) for requirement in reqs)
 
 
@@ -480,7 +481,61 @@ class System:
         return tuple(resolved), tuple(continuity)
 
 
-    def _validate_refractive_index_continuity(self, continuity):
+    @staticmethod
+    def _resolve_binding(value, context):
+        """Follow handles and context aliases, without simplifying expressions."""
+        seen = set()
+        while isinstance(value, (InputNode, Symbol)):
+            if id(value) in seen:
+                raise ASTCycleError("Cycle in source/context binding.")
+            seen.add(id(value))
+            if isinstance(value, InputNode):
+                value = value.node
+            elif value.key in context:
+                value = context[value.key]
+            else:
+                break
+        return value
+
+    def _source_context(self):
+        """Compile source bindings; retain arrays as explicit runtime inputs."""
+        context = dict(self.compile_context)
+        execution_context = {}
+        for key, value in self.beam.execution_context.items():
+            value = self._resolve_binding(value, context)
+            if key in context:
+                existing = self._resolve_binding(context[key], context)
+                same_binding = value is existing or (
+                    isinstance(value, Real) and isinstance(existing, Real) and value == existing
+                )
+                if not same_binding:
+                    raise ValueError(f"Conflicting source and system binding for {key!r}.")
+            elif not isinstance(value, Node) and np.ndim(value):
+                # Array-valued graph constants are unsupported; Symbol inputs
+                # still support these legitimate vectorized runtime bindings.
+                execution_context[key] = copy.deepcopy(value)
+            else:
+                context[key] = value if isinstance(value, Node) else Node._make_literal(value)
+        return context, execution_context
+
+    def _source_continuity(self, context):
+        index = self.beam.refractive_index
+        if index is None:
+            return ()
+        index = index if isinstance(index, Node) else Node._make_literal(index)
+        source_index = self._resolve_binding(index, context)
+        ambient_index = self._resolve_binding(self.ambient_n, context)
+        if source_index is ambient_index:
+            return ()
+        if isinstance(source_index, Literal) or isinstance(source_index, Parameter) and not source_index.is_variable:
+            source_index = source_index.value
+        if isinstance(ambient_index, Parameter) and not ambient_index.is_variable:
+            ambient_index = ambient_index.value
+        if isinstance(source_index, Real) and isinstance(ambient_index, Real) and source_index == ambient_index:
+            return ()
+        return ((Placement(element=self.beam), index, self.ambient_n, index - self.ambient_n),)
+
+    def _validate_refractive_index_continuity(self, continuity, context=None, bindings=None):
         if not continuity:
             return
 
@@ -495,10 +550,10 @@ class System:
 
         graph = compile_ast(
             roots,
-            context=self.compile_context,
+            context=self.compile_context if context is None else context,
         )
 
-        values = graph.evaluate(graph.initial_values)
+        values = graph.evaluate(graph.initial_values, bindings=bindings)
 
         for i, (placement, _, _, _) in enumerate(continuity):
             actual = values[3 * i]
@@ -516,9 +571,30 @@ class System:
     # -----------
     # COMPILATION
     # -----------
-    def _compile(self, elements, additional_roots=()):
+    def _compile_source(self, roots, parameter_roots):
+        """Register constructor graph fields and snapshot the fixed input data."""
+        parameters = dict(zip(self.beam.parameter_names, self.beam.parameters))
+        fixed_fields = {}
+        field_indices = []
+        for item in fields(self.beam):
+            if not item.init:
+                continue
+            handle = parameters.get(item.name)
+            if handle is not None and handle.node is not None:
+                field_indices.append((item.name, len(roots)))
+                roots.append(handle)
+                parameter_roots.append(handle)
+            else:
+                fixed_fields[item.name] = None if handle is not None else getattr(self.beam, item.name)
+        return SimulationSource(
+            numerical_type=self.beam.numerical_type(),
+            fixed_fields=tuple(fixed_fields.items()),
+            field_indices=tuple(field_indices),
+        )
+
+    def _compile(self, elements, additional_roots=(), *, context=None):
         """
-        Compile resolved element expressions into the scalar parameter program.
+        Compile resolved elements and source fields into one parameter program.
 
         Parameters
         ----------
@@ -529,20 +605,25 @@ class System:
         -------
         tuple
             Propagation graph, simulation steps, canonical parameter metadata,
-            location metadata, and inspection-only parameter metadata.
+            location metadata, inspection metadata, and source construction data.
         """
         roots = []
         steps = []
         location_map = {}
         parameter_roots = []
         element_info = []
+        context = self.compile_context if context is None else context
 
         def as_node(value):
             return value if isinstance(value, Node) else Node._make_literal(value)
 
         for system_placement in elements:
             element = system_placement.element
-            matrix = element.matrix
+            matrix = (
+                element._matrix_in_medium(system_placement.refractive_index)
+                if isinstance(element, GaussianAperture)
+                else element.matrix
+            )
             start = len(roots)
             step_index = len(steps)
 
@@ -596,14 +677,16 @@ class System:
                 (step_index, step_index + 1)
             )
 
+        source_spec = self._compile_source(roots, parameter_roots)
+
         roots.extend(additional_roots)
-        graph = compile_ast(roots, context=self.compile_context)
+        graph = compile_ast(roots, context=context)
         parameter_graph = compile_ast(
             parameter_roots,
-            context=self.compile_context,
+            context=context,
         )
 
-        parameters = collect_parameters(roots, context=self.compile_context)
+        parameters = collect_parameters(roots, context=context)
 
         variable_indices = { 
             id(parameter): index 
@@ -639,10 +722,11 @@ class System:
             location_map,
             parameter_graph,
             tuple(element_info),
+            source_spec,
         )
 
 
-    def _build_simulation(self, compiled, requirements):
+    def _build_simulation(self, compiled, requirements, context, execution_context):
         """
         Construct the executable Simulation from the compiled system.
 
@@ -664,18 +748,18 @@ class System:
             location_map,
             parameter_graph,
             element_info,
+            source_spec,
         ) = compiled
 
-        source = copy.deepcopy(self.beam)
         return Simulation(
-            source=source,
+            source_spec=source_spec,
             graph=graph,
             steps=steps,
             parameter_info=parameter_info,
             location_map=location_map,
             requirements=requirements,
-            compile_context=self.compile_context,
-            execution_context=source.execution_context,
+            compile_context=context,
+            execution_context=execution_context,
             parameter_graph=parameter_graph,
             element_info=element_info,
         )
@@ -688,6 +772,7 @@ class System:
         self._validate()
 
         requirements = self._normalize_requirements()
+        context, execution_context = self._source_context()
 
         elements = self._resolve_elements()
         declared_element_ids = {id(placement.element) for placement in elements}
@@ -702,8 +787,9 @@ class System:
         )
 
         elements, continuity = self._resolve_refractive_indices(elements)
+        continuity = self._source_continuity(context) + continuity
 
-        self._validate_refractive_index_continuity(continuity)
+        self._validate_refractive_index_continuity(continuity, context, execution_context)
 
         continuity_residuals = tuple(residual for _, _, _, residual in continuity)
         continuity_requirements = tuple(
@@ -720,9 +806,9 @@ class System:
         )
         requirements = (*requirements, *continuity_requirements)
 
-        compiled = self._compile(elements, additional_roots=continuity_residuals)
+        compiled = self._compile(elements, additional_roots=continuity_residuals, context=context)
 
-        return self._build_simulation(compiled, requirements)
+        return self._build_simulation(compiled, requirements, context, execution_context)
 
 
 

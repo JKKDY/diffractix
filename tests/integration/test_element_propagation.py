@@ -56,6 +56,45 @@ def test_gaussian_aperture_multiplies_field_envelopes_independently_of_medium(in
     np.testing.assert_allclose(result.final.q, 1 / expected_inverse_q, rtol=1e-12)
 
 
+def test_reused_gaussian_aperture_uses_each_placements_local_medium():
+    width, radius, wavelength = 0.8e-3, 1e-3, 1.064e-6
+    source = GaussianBeam.from_waist(width, wavelength).numeric()
+    aperture = GaussianAperture(a=radius)
+    simulation = System(
+        aperture, Interface(n1=1.0, n2=1.5), aperture, input=source,
+    ).build()
+    result = simulation.run()
+
+    np.testing.assert_allclose(result.at(aperture, occurrence=1).n, 1.5)
+    np.testing.assert_allclose(result.final.w, 1 / np.sqrt(1 / width**2 + 2 / radius**2), rtol=1e-12)
+    # Building in different media must not rewrite the shared element's graph.
+    assert aperture.parameter_names == ("a", "wavelength")
+    assert aperture.refractive_index is None
+
+
+def test_gaussian_aperture_tracks_variable_local_index_under_autodiff_and_jit():
+    from diffractix.backend import hessian, jit
+
+    wavelength, radius, interface_radius = 1.064e-6, 1e-3, 0.5
+    source = GaussianBeam.from_w_and_R(0.8e-3, 0.2, wavelength).numeric()
+    index = Parameter(1.5).variable(bounds=(1.1, 2.0))
+    simulation = System(
+        Interface(n1=1.0, n2=index, R=interface_radius), GaussianAperture(a=radius), input=source,
+    ).build()
+    # Interface refraction and the amplitude mask give q = n / (k - n/R).
+    k = 1 / source.q + 1 / interface_radius - 1j * wavelength / (np.pi * radius**2)
+    evaluate = lambda theta: xp.imag(simulation.run(theta).final.q)
+    for theta in (xp.array([1.3]), xp.array([1.8])):
+        denominator = k - theta[0] / interface_radius
+        for function in (evaluate, jit(evaluate)):
+            np.testing.assert_allclose(function(theta), xp.imag(theta[0] / denominator), rtol=1e-12)
+        np.testing.assert_allclose(jit(grad(evaluate))(theta), [xp.imag(k / denominator**2)], rtol=1e-12)
+        np.testing.assert_allclose(
+            jit(hessian(evaluate))(theta), [[xp.imag(2 * k / (interface_radius * denominator**3))]],
+            rtol=1e-12,
+        )
+
+
 # ----------
 # COMPOSITES
 # ----------

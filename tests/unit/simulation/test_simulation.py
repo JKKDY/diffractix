@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 
 import pytest
 import numpy as np
@@ -10,7 +10,7 @@ from diffractix.backend import grad
 from diffractix import GaussianBeam, Ray, RayBundle, ParaxialState
 from diffractix.graph import Literal, Parameter
 from diffractix.simulation import Simulation, SimulationResult
-from diffractix.simulation.simulation import SimulationStep
+from diffractix.simulation.simulation import SimulationSource, SimulationStep
 from diffractix.solver.constraint import Constraint
 from diffractix.system.info import ElementInfo
 
@@ -52,6 +52,15 @@ class DummyState(ParaxialState):
         )
 
 
+def fixed_source(source=None):
+    source = DummyState() if source is None else source
+    return SimulationSource(
+        numerical_type=source.numerical_type(),
+        fixed_fields=tuple((item.name, getattr(source, item.name)) for item in fields(source) if item.init),
+        field_indices=(),
+    )
+
+
 @dataclass
 class DummyGraph:
     initial_values: np.ndarray
@@ -64,7 +73,7 @@ class DummyGraph:
         self.last_bindings = bindings
         return self.evaluator(theta)
 
-    def _evaluate_sequence(self, variable_values, bindings=None):
+    def _evaluate_roots(self, variable_values, bindings=None):
         return tuple(self.evaluate(variable_values=variable_values, bindings=bindings))
 
 
@@ -101,7 +110,7 @@ def create_simulation(
     )
 
     return Simulation(
-        source=source,
+        source_spec=fixed_source(source),
         graph=graph,
         steps=steps,
         parameter_info=parameter_info,
@@ -202,7 +211,7 @@ def test_simulation_stores_compiled_data():
     )
 
     simulation = Simulation(
-        source=source,
+        source_spec=fixed_source(source),
         graph=graph,
         steps=[step],
         parameter_info=parameter_info,
@@ -214,7 +223,8 @@ def test_simulation_stores_compiled_data():
         element_info=[element_info],
     )
 
-    assert simulation.source is source
+    assert simulation.source is not source
+    assert simulation.source.value == source.value
     assert simulation.graph is graph
     assert simulation.steps == (step,)
     assert simulation.parameter_info == parameter_info
@@ -233,7 +243,7 @@ def test_simulation_snapshots_context_mappings():
     compile_context = {"ambient_n": object()}
     execution_context = {"runtime_value": 3.0}
     simulation = Simulation(
-        source=DummyState(),
+        source_spec=fixed_source(),
         graph=DummyGraph(
             initial_values=xp.array([]),
             evaluator=lambda theta: xp.array([]),
@@ -261,7 +271,7 @@ def test_simulation_snapshots_context_mappings():
 
 def test_simulation_converts_sequence_fields_to_tuples():
     simulation = Simulation(
-        source=DummyState(),
+        source_spec=fixed_source(),
         graph=DummyGraph(
             initial_values=xp.array([]),
             evaluator=lambda theta: xp.array([]),
@@ -289,7 +299,7 @@ def test_simulation_initial_values_are_graph_initial_values():
     )
 
     simulation = Simulation(
-        source=DummyState(),
+        source_spec=fixed_source(),
         graph=graph,
         steps=(),
         parameter_info={},
@@ -314,7 +324,7 @@ def test_simulation_rejects_non_dataclass_state():
     )
     with pytest.raises(TypeError, match="must be a dataclass"):
         Simulation(
-            source=InvalidState(),
+            source_spec=SimulationSource(InvalidState, (), ()),
             graph=graph,
             steps=(),
             parameter_info={},
@@ -364,9 +374,10 @@ def test_run_records_source_as_initial_state():
     assert isinstance(result, SimulationResult)
     assert_array_equal(result.value, [source.value])
     assert_array_equal(result.z, [0.0])
-    assert result.source is source
-    assert result.states == (source,)
-    assert result.states[0] is source
+    assert result.source is result.initial
+    assert result.source is not source
+    assert result.source is not simulation.source
+    assert result.states == (result.source,)
 
 
 def test_run_forwards_location_map_to_result():
@@ -393,7 +404,7 @@ def test_run_forwards_execution_context_to_graph():
         evaluator=lambda theta: xp.array([]),
     )
     simulation = Simulation(
-        source=DummyState(),
+        source_spec=fixed_source(),
         graph=graph,
         steps=(),
         parameter_info={},
@@ -815,7 +826,7 @@ def test_run_uses_initial_values_when_theta_is_none():
     )
 
     simulation = Simulation(
-        source=DummyState(),
+        source_spec=fixed_source(),
         graph=graph,
         steps=(step,),
         parameter_info={},
@@ -852,7 +863,7 @@ def test_run_uses_supplied_theta():
     )
 
     simulation = Simulation(
-        source=DummyState(),
+        source_spec=fixed_source(),
         graph=graph,
         steps=(step,),
         parameter_info={},
@@ -889,7 +900,7 @@ def test_run_does_not_modify_initial_values():
     )
 
     simulation = Simulation(
-        source=DummyState(),
+        source_spec=fixed_source(),
         graph=graph,
         steps=(step,),
         parameter_info={},
@@ -963,8 +974,9 @@ def test_repeated_runs_are_independent():
     first = simulation.run()
     second = simulation.run()
 
-    assert first.states[0] is simulation.source
-    assert second.states[0] is simulation.source
+    assert first.states[0] is not simulation.source
+    assert second.states[0] is not simulation.source
+    assert first.source is not second.source
     assert first.states[1] is not second.states[1]
     assert first.states[1] == second.states[1]
 
@@ -993,7 +1005,7 @@ def test_run_is_differentiable_with_respect_to_theta():
     )
 
     simulation = Simulation(
-        source=DummyState(),
+        source_spec=fixed_source(),
         graph=graph,
         steps=(step,),
         parameter_info={},

@@ -2,6 +2,7 @@ from enum import Enum, auto
 from functools import lru_cache
 from collections.abc import Callable
 
+import numpy as np
 
 from diffractix.backend import xp
 
@@ -114,6 +115,21 @@ OP_UNICODE = {
 }
 
 
+def _sinc(x):
+    """Unnormalized sinc, with its Taylor derivatives retained near zero."""
+    dtype = getattr(x, "dtype", None)
+    epsilon = np.finfo(
+        dtype if dtype is not None and np.issubdtype(dtype, np.inexact) else float
+    ).eps
+    # The omitted Taylor term is O(x**8); use the input precision to switch.
+    small = xp.abs(x) < epsilon**(1 / 8)
+    series_x = xp.where(small, x, 0.0)
+    squared = series_x * series_x
+    series = 1 + squared * (-1 / 6 + squared * (1 / 120 - squared / 5040))
+    safe_x = xp.where(small, 1.0, x)
+    return xp.where(small, series, xp.sin(safe_x) / safe_x)
+
+
 @lru_cache(maxsize=1)
 def get_op_functions():
     return {
@@ -135,11 +151,7 @@ def get_op_functions():
         Op.SINH: xp.sinh,
         Op.COSH: xp.cosh,
         Op.TANH: xp.tanh,
-        Op.SINC: lambda x: xp.where(
-            x == 0,
-            1.0,
-            xp.sin(x) / xp.where(x == 0, 1.0, x),
-        ),
+        Op.SINC: _sinc,
         Op.MAX: xp.maximum,
         Op.MIN: xp.minimum,
     }
