@@ -1,0 +1,400 @@
+from dataclasses import dataclass
+from numbers import Real
+from typing import Tuple, ClassVar
+import numpy as np
+from diffractix.backend import xp, require
+import cmath
+
+from .paraxial_input import ParaxialState
+from diffractix.graph import Node
+from diffractix.system.symbols import AMBIENT_N, WAVELENGTH, make_symbol
+
+
+# Use backend.require() for (jit) tracer-safe validation.
+# Concrete invalid values raise; dynamically traced checks are skipped.
+def _require_real(value, name):
+    """Inspect static numerical types without converting differentiable values."""
+    dtype = getattr(value, "dtype", None)
+    if dtype is None:
+        real = isinstance(value, Real) and not isinstance(value, bool)
+    else:
+        real = xp.issubdtype(dtype, xp.integer) or xp.issubdtype(dtype, xp.floating)
+    if not real:
+        raise TypeError(f"{name} must be real-valued numerical input.")
+
+
+def _require_positive(**values):
+    for name, value in values.items():
+        _require_real(value, name)
+        require(xp.all(xp.isfinite(value) & (value > 0)), f"{name} must be finite and positive.")
+
+
+
+def _curvature(inv_q_real):
+    plane = xp.abs(inv_q_real) < 1e-16
+    # Avoid differentiating a division by zero in the inactive branch.
+    return xp.where(plane, np.inf, 1.0 / xp.where(plane, 1.0, inv_q_real))
+
+
+@dataclass
+class GaussianBeam(ParaxialState):
+    """
+    Represents a Gaussian Beam at a specific point in space and medium.
+
+    Factories validate concrete inputs. Predicates depending on JIT-traced
+    values follow the unchecked-runtime policy of backend.require().
+
+    Attributes:
+        q (complex): The complex beam parameter describing curvature and width.
+        wavelength: Vacuum-wavelength graph input.
+        n: Refractive-index graph input; defaults to the ambient-index Symbol.
+    """
+    q: complex
+    wavelength: Node
+    n: Node = make_symbol(AMBIENT_N)
+
+    result_columns: ClassVar[tuple[str, ...]] = (
+        "w",
+        "R",
+        "gouy_phase",
+    )
+
+    def propagate(self, A, B, C, D, n) -> 'GaussianBeam':
+        q = (A * self.q + B) / (C * self.q + D)
+
+        return type(self)(
+            q=q,
+            wavelength=self.wavelength,
+            n=n,
+        )
+
+
+    #-----------
+    # PROPERTIES
+    #-----------
+    @property
+    def refractive_index(self):
+        return self.n
+
+    @property
+    def execution_context(self):
+        return {
+            WAVELENGTH.key: self.wavelength,
+        }
+
+    @property
+    def w(self) -> float:
+        """Spot size radius (1/e^2 intensity) at the current position."""
+        inv_q_imag = xp.imag(1.0 / self.q)
+        return xp.sqrt(-self.wavelength / (np.pi * self.n * inv_q_imag))
+
+    @property
+    def R(self) -> float:
+        """Radius of curvature at the current position."""
+        inv_q_real = xp.real(1.0 / self.q)
+        return _curvature(inv_q_real)
+
+    @property
+    def z_r(self) -> float:
+        """Rayleigh range (in terms of propagation distance z)."""
+        # q = z + i*z_r
+        return xp.imag(self.q)
+
+    @property
+    def z0(self) -> float:
+        """
+        Position of the waist relative to current plane.
+        (+) Waist is in front (Converging). (-) Waist is behind (Diverging).
+        """
+        # q = (z - z_waist) + i*z_r
+        # Real(q) = z - z_waist. If we define current z=0, then Real(q) = -z_waist.
+        return -xp.real(self.q)
+
+    @property
+    def w0(self) -> float:
+        """Calculate waist radius w0 (minimum radius the beam reaches at its focal point)"""
+        # z_r = (pi * w0^2 * n) / lambda
+        return xp.sqrt(self.z_r * self.wavelength / (np.pi * self.n))
+
+    @property
+    def divergence_angle(self) -> float:
+        """Far-field divergence half-angle (radians)."""
+        return self.wavelength / (np.pi * self.w0 * self.n)
+
+    @property
+    def NA(self) -> float:
+        """
+        Numerical Aperture (NA). 
+        Approximation: NA ≈ n * theta (for small angles).
+        Useful for fiber coupling or objective lens matching.
+        """
+        # theta = lambda / (pi * w0 * n)
+        # NA = n * theta = lambda / (pi * w0)
+        return self.wavelength / (np.pi * self.w0)
+
+    @property
+    def gouy_phase(self) -> float:
+        """
+        The Gouy phase shift psi(z) at the current position relative to the waist.
+        psi = arctan(z / z_r)
+        Range: -pi/2 to +pi/2
+        """
+        # Re(q) is the distance z from the waist. Im(q) is z_r.
+        return xp.arctan2(xp.real(self.q), xp.imag(self.q))
+
+    @property
+    def b(self) -> float:
+        """The Confocal Parameter (twice the Rayleigh range)."""
+        return 2 * self.z_r
+
+
+    #--------------------
+    # CALCULATION METHODS
+    #--------------------
+
+    def R_at_z(self, z: float) -> float:
+        """Radius of curvature R at distance z."""
+        q_z = self.q + z
+        _, R_new = self.w_R_from_q(q_z, self.wavelength, self.n) 
+        return R_new
+
+    def w_at_z(self, z: float) -> float:
+        """Calculate spot size w at distance z from current plane."""
+        q_z = self.q + z
+        w_new, _ = self.w_R_from_q(q_z, self.wavelength, self.n)
+        return w_new
+
+    def overlap_with(self, other: 'GaussianBeam') -> float:
+        """
+        Calculates the power coupling efficiency (0.0 to 1.0) between this beam 
+        and another Gaussian beam (e.g., a fiber mode).
+
+        Formula: 4 * Im(1/q1) * Im(1/q2) / |(1/q1)* - (1/q2)|^2
+
+        (Requires both beams to be at the same z position and in the same n)
+        """
+        require(
+            xp.abs(self.n - other.n) <= 1e-6,
+            "Cannot calculate overlap between beams in different media.",
+        )
+
+        require(
+            xp.abs(self.wavelength - other.wavelength) <= 1e-9,
+            "Cannot calculate overlap between beams of different wavelengths.",
+        )
+
+        # Using the q-parameter mismatch formula for coupling efficiency
+        q1 = self.q
+        q2 = other.q
+
+        # Mismatch factor
+        # This is a generalized formula for fundamental mode overlap
+        # eta = 4 / ( abs( (w1/w2) + (w2/w1) )^2 + ( pi*w1*w2/lambda * (1/R1 - 1/R2) )^2 )
+        # But computing via complex q is faster:
+        # Power Coupling = 4 / ( |(w1/w2) + (w2/w1)|^2 + ... )
+        # A simpler complex form:
+        # eta = 4 * Im(1/q1) * Im(1/q2) / | 1/q1* - 1/q2 |^2
+        # Note: q1* is complex conjugate.
+        inv_q1 = 1.0 / q1
+        inv_q2 = 1.0 / q2
+        inv_q1_imag = xp.imag(inv_q1)
+        inv_q2_imag = xp.imag(inv_q2)
+
+        numerator = 4 * inv_q1_imag * inv_q2_imag
+        denominator = abs(xp.conj(inv_q1) - inv_q2)**2
+        return numerator / denominator
+
+    @staticmethod
+    def w_R_from_q(q: complex, wavelength: float, n: float) -> tuple[float, float]:
+        """
+        Extracts beam width (w) and radius of curvature (R) from the complex q-parameter.
+
+        Math: 1/q = 1/R - i * (lambda / (pi * n * w^2))
+        """
+        inv_q = 1.0 / q
+
+        # need to use np.real/imag to ensure autograd compatibility
+        inv_q_real = xp.real(inv_q)
+        inv_q_imag = xp.imag(inv_q)
+
+        # radius of curvature (real part of 1/q)
+        R = _curvature(inv_q_real)
+
+        # Beam waist 
+        # Im(1/q) = - lambda / (pi * n * w^2)  =>  w = sqrt( -lambda / (pi * n * Im(1/q)) )        
+        # safety check: q.imag should always be negative for a valid Gaussian beam (forward propagation)
+        require(
+            inv_q_imag <= -1e-16,
+            "Invalid q-parameter: Imaginary part of 1/q must be negative for a physical Gaussian beam."
+        )
+
+        w_sq = -wavelength / (np.pi * n * inv_q_imag)
+        w = xp.sqrt(w_sq)
+        return w, R
+
+
+    #----------------
+    # FACTORY METHODS
+    #----------------
+
+    @classmethod
+    def from_waist(cls, w0: float, wavelength: float, z_waist_loc: float = 0.0, n: float = 1.0) -> 'GaussianBeam':
+        """
+        Create a beam defined by its waist size.
+
+        z_waist_loc: Where the waist is relative to the *current* plane.
+                     0.0 means we are at the waist.
+                     -10.0 means the waist was 10 units ago.
+        """
+        _require_positive(w0=w0, wavelength=wavelength, n=n)
+        _require_real(z_waist_loc, "z_waist_loc")
+        require(xp.all(xp.isfinite(z_waist_loc)), "z_waist_loc must be finite.")
+        z_r = (np.pi * w0**2 * n) / wavelength
+
+        # q = (z - z_waist_loc) + i*z_r. At z=0 (current plane):
+        q = -z_waist_loc + 1j * z_r
+
+        return cls(q=q, wavelength=wavelength, n=n)
+
+    @classmethod
+    def from_w_and_R(cls, w: float, R: float, wavelength: float, n: float = 1.0) -> 'GaussianBeam':
+        """Create a beam from spot size w and curvature R at the current plane."""
+        _require_positive(w=w, wavelength=wavelength, n=n)
+        _require_real(R, "R")
+        require(xp.all(~xp.isnan(R) & (R != 0)), "R must be nonzero and not NaN; infinity is allowed.")
+        inv_q_imag = -(wavelength / (np.pi * n * w**2))
+        plane = xp.isinf(R)
+        inv_q_real = xp.where(plane, 0.0, 1.0 / xp.where(plane, 1.0, R))
+
+        denom = inv_q_real + 1j * inv_q_imag
+        q = 1.0 / denom
+
+        return cls(q=q, wavelength=wavelength, n=n)
+
+    @classmethod
+    def from_divergence(cls, theta: float, wavelength: float, n: float = 1.0) -> 'GaussianBeam':
+        """
+        Create a beam defined by its far-field divergence half-angle (in radians).
+
+        Assumes the beam starts AT the waist (z=0, R=inf).
+        """
+        _require_positive(theta=theta, wavelength=wavelength, n=n)
+        # theta = lambda / (pi * w0 * n)  ->  w0 = lambda / (pi * theta * n)
+        w0 = wavelength / (np.pi * theta * n)
+
+        return cls.from_waist(w0, wavelength, z_waist_loc=0.0, n=n)
+
+    @classmethod
+    def from_fiber_tip(cls, wavelength: float, NA: float = None, MFD: float = None, n: float = 1.0) -> 'GaussianBeam':
+        """
+        Create a beam as it exits a fiber tip.
+
+        You must provide either NA or MFD. NA takes precedence if both are supplied.
+
+        - If NA is provided: w0 = wavelength / (pi * NA)
+        - If MFD is provided: w0 = MFD / 2
+        """
+        if NA is None and MFD is None:
+            raise ValueError("Must provide either 'NA' or 'MFD' to characterize the fiber tip.")
+        _require_positive(wavelength=wavelength, n=n)
+        if NA is not None:
+            _require_positive(NA=NA)
+            # Physics: NA = n * sin(theta) approx n * theta. 
+            # In fiber optics, NA is usually defined such that w0 = wavelength / (pi * NA)
+            w0 = wavelength / (np.pi * NA)
+
+        else:
+            _require_positive(MFD=MFD)
+            w0 = MFD / 2.0
+
+        return cls.from_waist(w0, wavelength, z_waist_loc=0.0, n=n)
+
+
+    #----------
+    # DEBUGGING
+    #----------
+
+    def __str__(self) -> str:
+        """
+        Human-readable representation assuming n=1.0 (Air/Vacuum).
+        Shows current beam parameters and waist location.
+        """
+        # calculate parameters
+        w_current = self.w_at_z(0)
+        R_current = self.R_at_z(0)
+        w_waist = self.w0
+        z_waist = self.z0
+
+        # formatting helper
+        def fmt(val, unit='m'):
+            if abs(val) < 1e-6: return f"{val*1e9:.1f} nm"
+            if abs(val) < 1e-3: return f"{val*1e6:.1f} um"
+            if abs(val) < 1.0:  return f"{val*1e3:.1f} mm"
+            if abs(val) >= 1e3: return f"{val/1e3:.1f} km"
+            return f"{val:.2f} {unit}"
+
+        # Inf handling for curvature
+        R_str = "Plane" if np.isinf(R_current) or abs(R_current) > 1e10 else fmt(R_current)
+
+        return (
+            f"GaussianBeam("
+            f"lam={fmt(self.wavelength)}, "
+            f"Current[w={fmt(w_current)}, R={R_str}], "
+            f"Waist[w0={fmt(w_waist)} @ z={fmt(z_waist)}]"
+            f")"
+        )
+
+    def plot(self, span: float = None, points: int = 200):
+        """
+        Debug plot: Visualizes the beam's envelope relative to the current position.
+
+        Args:
+            span (float): Total propagation distance to plot centered on the current position.
+                          If None, defaults to 4 * Rayleigh Range or 4 * z_waist (whichever is larger).
+            points (int): Number of plotting points.
+        """
+        import matplotlib.pyplot as plt
+
+        # We want to show enough context. If the waist is 1km away, showing 1mm is useless.
+        # If the waist is 1mm away, showing 1km is useless.
+        if span is None:
+            # Heuristic: Look at distance to waist (z0) and Rayleigh range (z_r)
+            dist_to_waist = abs(self.z0)
+            scale = max(dist_to_waist, self.z_r)
+            span = 4 * scale if scale > 0 else 0.1 # Default to 10cm if scale is tiny
+
+        z_local = np.linspace(-span/2, span/2, points)
+
+        # Calculate Envelope w(z):
+        w_vals = [self.w_at_z(z) for z in z_local]
+        w_vals = np.array(w_vals)
+
+        # Ploting
+        plt.figure(figsize=(8, 4))
+
+        # The Envelope
+        plt.fill_between(z_local, w_vals, -w_vals, color='blue', alpha=0.1, label='Beam Envelope (1/e²)')
+        plt.plot(z_local, w_vals, 'b-', lw=1.5)
+        plt.plot(z_local, -w_vals, 'b-', lw=1.5)
+
+        # Current Position Marker
+        plt.axvline(0, color='red', linestyle='--', label='Current Position')
+        plt.text(0, max(w_vals)*0.1, " You Are Here", color='red', rotation=90, verticalalignment='bottom')
+
+        # Waist Position Marker (if within range)
+        z_waist_rel = self.z0 # z0 is "position of waist relative to us"
+
+        if min(z_local) < z_waist_rel < max(z_local):
+            plt.axvline(z_waist_rel, color='green', linestyle=':', label='Waist Location')
+            plt.text(z_waist_rel, max(w_vals)*0.1, f" Waist (w0={self.w0*1e6:.1f}um)", color='green', rotation=90)
+
+        # Labels
+        plt.title(f"Beam Diagnostic (n={self.n})")
+        plt.xlabel(f"Relative Propagation Distance [m]\n(z > 0 is forward)")
+        plt.ylabel("Beam Radius w(z) [m]")
+        plt.legend(loc='upper right')
+        plt.grid(True, which='both', alpha=0.3)
+        plt.tight_layout()
+        plt.show()
+
+

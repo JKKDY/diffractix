@@ -75,5 +75,5 @@ class ABCD(OpticalElement):
         return self.thickness
 
     @property
-    def element_refractive_index(self):
+    def refractive_index(self):
         return self.n

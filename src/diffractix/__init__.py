@@ -1,7 +1,10 @@
 """Diffractix: differentiable paraxial optics and inverse design."""
 
-# Beams
-from .beams import (
+# Optical inputs
+from .core import OpticalBase
+from .input import (
+    OpticalInput,
+    ParaxialState,
     GaussianBeam,
     Ray,
     RayBundle,
@@ -58,7 +61,10 @@ from .solver import (
 
 
 __all__ = [
-    # Beams
+    # Optical inputs
+    "OpticalBase",
+    "OpticalInput",
+    "ParaxialState",
     "GaussianBeam",
     "Ray",
     "RayBundle",

@@ -8,7 +8,9 @@ from numbers import Integral, Real
 import numpy as np
 from diffractix.backend import xp
 
-from diffractix.beams.base import ParaxialState
+from diffractix.core import OpticalBase
+from diffractix.input.paraxial_input import ParaxialState
+from diffractix.input.input import OpticalInput
 from diffractix.system.info import ElementInfo
 
 
@@ -230,6 +232,8 @@ def _result_type_for(state_type: type[ParaxialState]) -> type[SimulationResult]:
     }
 
     for cls in state_type.__mro__:
+        if cls in (OpticalBase, OpticalInput):
+            continue
         names.update(
             name
             for name, value in vars(cls).items()

@@ -391,9 +391,10 @@ class Parameter(Node):
         owner = self.owner
 
         if owner is not None:
+            label = getattr(owner, "label", None) or type(owner).__name__
             if self.name is not None:
-                return f"{owner.label}.{self.name}"
-            return owner.label
+                return f"{label}.{self.name}"
+            return label
 
         return self.name or "<parameter>"
 

@@ -46,5 +46,5 @@ class GRIN(OpticalElement):
         return self.d
 
     @property
-    def element_refractive_index(self):
+    def refractive_index(self):
         return self.n

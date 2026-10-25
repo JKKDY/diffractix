@@ -3,11 +3,11 @@ from __future__ import annotations
 from collections.abc import Iterator, Sequence
 from typing import get_type_hints
 
-from ..elements.base import ElementBase, annotation_contains_node
-from ..elements.element import OpticalElement
+from diffractix.core.base import OpticalBase, annotation_contains_node
+from diffractix.elements.element import OpticalElement
 
 
-class CompositeElement(ElementBase, Sequence):
+class CompositeElement(OpticalBase, Sequence):
     """
     Ordered collection of named optical elements.
 

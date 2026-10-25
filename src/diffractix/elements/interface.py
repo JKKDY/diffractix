@@ -50,5 +50,5 @@ class Interface(OpticalElement):
         return 0.0
 
     @property
-    def element_refractive_index(self):
+    def refractive_index(self):
         return self.n2

@@ -2,6 +2,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from numbers import Real
 
+from diffractix.core import OpticalBase
+
 
 @dataclass(frozen=True)
 class ElementInfo:
@@ -52,7 +54,7 @@ class ParameterInfo:
 class Placement:
     """A single occurrence of an element in the optical path."""
 
-    element: ElementBase
+    element: OpticalBase
     z: Node | Real | None = None
     source_info: SourceInfo | None = None
     path: str | None = None

@@ -2,7 +2,7 @@ from numbers import Real
 
 import numpy as np
 
-from diffractix.beams.base import ParaxialState
+from diffractix.input.paraxial_input import ParaxialState
 from diffractix.composites.composite import CompositeElement
 from diffractix.elements import OpticalElement
 from diffractix.graph import Node

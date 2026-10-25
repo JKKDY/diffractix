@@ -9,10 +9,10 @@ from dataclasses import dataclass
 from numbers import Real
 from typing import Any
 
-from diffractix.beams.base import ParaxialState
+from diffractix.input.paraxial_input import ParaxialState
 from diffractix.composites import CompositeElement
 from diffractix.elements import OpticalElement, Interface, Space, ABCD
-from diffractix.elements.base import ElementBase
+from diffractix.core import OpticalBase
 from diffractix.graph import Node, Parameter, Literal, InputNode, compile_ast, collect_parameters
 from diffractix.simulation.simulation import Simulation, SimulationStep
 
@@ -74,11 +74,11 @@ class System:
         return tuple(self._placements)
 
     @property
-    def elements(self) -> tuple[ElementBase, ...]:
+    def elements(self) -> tuple[OpticalBase, ...]:
         return tuple(placement.element for placement in self._placements)
 
 
-    def add(self, element: ElementBase | Iterable[ElementBase], *elements, z=_UNSET, index: int | None = None):
+    def add(self, element: OpticalBase | Iterable[OpticalBase], *elements, z=_UNSET, index: int | None = None):
         """
         Add an element or sequence of elements to the optical path.
 
@@ -100,8 +100,8 @@ class System:
         """
 
         # A non-element second argument retains the legacy positional z form.
-        if len(elements) == 1 and isinstance(element, ElementBase) and not (
-            isinstance(elements[0], ElementBase)
+        if len(elements) == 1 and isinstance(element, (OpticalElement, CompositeElement)) and not (
+            isinstance(elements[0], (OpticalElement, CompositeElement))
             or isinstance(elements[0], Iterable) and not isinstance(elements[0], (str, bytes))
         ):
             if z is not _UNSET:
@@ -114,7 +114,7 @@ class System:
         if elements:
             return self.add((element, *elements), z=z, index=index)
 
-        if isinstance(element, ElementBase):
+        if isinstance(element, (OpticalElement, CompositeElement)):
             dataclass_params = getattr(type(element), "__dataclass_params__", None)
 
             # validity checks
@@ -157,7 +157,7 @@ class System:
             return self
 
         raise TypeError(
-            f"Expected an ElementBase or iterable of elements, got {type(element).__name__}."
+            f"Expected an OpticalElement, CompositeElement, or iterable of elements, got {type(element).__name__}."
         )
 
 
@@ -293,9 +293,9 @@ class System:
         for i, placement in enumerate(self._placements):
             location_str = placement.describe(i)
 
-            if not isinstance(placement.element, ElementBase):
+            if not isinstance(placement.element, (OpticalElement, CompositeElement)):
                 errors.append(
-                    f"{location_str}: expected ElementBase, got "
+                    f"{location_str}: expected OpticalElement or CompositeElement, got "
                     f"{type(placement.element).__name__}."
                 )
                 continue
@@ -433,7 +433,7 @@ class System:
 
         for placement in placements:
             element = placement.element
-            index_handle = element.element_refractive_index
+            index_handle = element.refractive_index
 
             if isinstance(index_handle, InputNode):
                 index_node = index_handle.node

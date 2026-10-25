@@ -1,29 +1,15 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field
 from numbers import Number, Real
-from typing import Any, ClassVar, get_type_hints
+from typing import Any, ClassVar
 
-from .base import ElementBase, annotation_contains_node
+from ..core.base import OpticalBase, parameter
 from ..graph import InputNode, Node, Parameter, walk_ast
 
-_GRAPH_PARAMETER = object()
-
-
-
-def parameter(default=None):
-    """
-    Explicitly declare an element field as a graph parameter.
-
-    This is an alternative to annotating the field with Node.
-    """
-    return field(default=default, metadata={_GRAPH_PARAMETER: True})
-
-
-
 @dataclass(eq=False, kw_only=True)
-class OpticalElement(ElementBase, ABC):
+class OpticalElement(OpticalBase, ABC):
     """
     Base class for declarative optical elements.
 
@@ -54,28 +40,6 @@ class OpticalElement(ElementBase, ABC):
             OpticalElement._instance_counts[cls] = num_instances + 1
 
 
-    # -------------------
-    # PARAMETER DISCOVERY
-    # -------------------
-    @classmethod
-    def _get_parameter_names(cls) -> tuple[str, ...]:
-        cached = cls.__dict__.get("_parameter_names")
-        if cached is not None:
-            return cached
-        type_hints = get_type_hints(cls)
-        names = []
-
-        for dataclass_field in fields(cls):
-            name = dataclass_field.name
-            explicit = dataclass_field.metadata.get(_GRAPH_PARAMETER, False)
-            annotated = name in type_hints and annotation_contains_node(type_hints[name])
-            if explicit or annotated:
-                names.append(name)
-
-        cls._parameter_names = tuple(names)
-        return cls._parameter_names
-
-
     # ------------------
     # ELEMENT PROPERTIES
     # ------------------
@@ -100,17 +64,6 @@ class OpticalElement(ElementBase, ABC):
         """
         raise NotImplementedError
 
-    @property
-    def element_refractive_index(self):
-        """
-        Declarative output refractive index.
-
-        None means that the element leaves medium resolution to the surrounding
-        system topology.
-        """
-        return None
-
-
     # ----------
     # VALIDATION
     # ----------
@@ -121,7 +74,7 @@ class OpticalElement(ElementBase, ABC):
 
         matrix = self.matrix
         length = self.element_length
-        refractive_index = self.element_refractive_index
+        refractive_index = self.refractive_index
 
         # Validate matrix shape.
         try:
@@ -166,7 +119,7 @@ class OpticalElement(ElementBase, ABC):
             isinstance(refractive_index, bool) or not isinstance(refractive_index, Real)
         ):
             raise TypeError(
-                "element_refractive_index must be a Node, real numeric scalar, "
+                "refractive_index must be a Node, real numeric scalar, "
                 f"or None; got {type(refractive_index).__name__}."
             )
 

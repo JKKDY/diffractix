@@ -8,7 +8,7 @@ from diffractix.backend import xp
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from diffractix.beams.base import ParaxialState
+from diffractix.input.paraxial_input import ParaxialState
 from diffractix.graph import CompiledAST, Node
 from diffractix.simulation.result import SimulationResult, result_type_for
 
