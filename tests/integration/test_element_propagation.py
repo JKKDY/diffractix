@@ -56,6 +56,30 @@ def test_gaussian_aperture_multiplies_field_envelopes_independently_of_medium(in
     np.testing.assert_allclose(result.final.q, 1 / expected_inverse_q, rtol=1e-12)
 
 
+def test_gaussian_planar_interface_variable_index_has_finite_derivatives():
+    from diffractix.backend import hessian, jacobian, jit
+
+    source = GaussianBeam.from_w_and_R(0.8e-3, 0.2, 1.064e-6).numeric()
+    index = Parameter(1.5).variable(bounds=(1.1, 2.0))
+    distance = 0.02
+    simulation = System(Interface(n1=1.0, n2=index), Space(d=distance), input=source).build()
+
+    def evaluate(theta):
+        q = simulation.run(theta).final.q
+        return xp.stack((xp.real(q), xp.imag(q)))
+
+    for value in (1.2, 1.8):
+        theta = xp.array([value])
+        expected_q = value * source.q + distance
+        for function in (evaluate, jit(evaluate)):
+            np.testing.assert_allclose(function(theta), [expected_q.real, expected_q.imag], rtol=1e-12)
+        for function in (jacobian(evaluate), jit(jacobian(evaluate))):
+            np.testing.assert_allclose(function(theta), [[source.q.real], [source.q.imag]], rtol=1e-12)
+        derivative = hessian(lambda values: evaluate(values)[1])
+        for function in (derivative, jit(derivative)):
+            np.testing.assert_allclose(function(theta), [[0.0]], atol=1e-14)
+
+
 def test_reused_gaussian_aperture_uses_each_placements_local_medium():
     width, radius, wavelength = 0.8e-3, 1e-3, 1.064e-6
     source = GaussianBeam.from_waist(width, wavelength).numeric()

@@ -56,6 +56,45 @@ def test_ray_planar_interface_preserves_paraxial_snell_invariant(n1, n2):
     assert n2*result.final.theta == pytest.approx(n1*source.theta)
 
 
+def test_ray_planar_interface_variable_index_derivatives_through_simulation():
+    source = Ray(x=1.2e-3, theta=0.018, n=1.0).numeric()
+    index = Parameter(1.5).variable(bounds=(1.1, 2.0))
+    distance = 0.02
+    simulation = System(Interface(n1=1.0, n2=index), Space(d=distance), input=source).build()
+    evaluate = lambda theta: simulation.run(theta).final.vector
+    angle = lambda theta: simulation.run(theta).final.theta
+    for value in (1.2, 1.8):
+        theta = xp.array([value])
+        expected_angle = source.theta / value
+        for function in (evaluate, jit(evaluate)):
+            np.testing.assert_allclose(function(theta), [source.x + distance * expected_angle, expected_angle])
+        for function in (jacobian(evaluate), jit(jacobian(evaluate))):
+            np.testing.assert_allclose(
+                function(theta), [[-distance * source.theta / value**2], [-source.theta / value**2]],
+                rtol=1e-12, atol=1e-15,
+            )
+        for function in (hessian(angle), jit(hessian(angle))):
+            np.testing.assert_allclose(function(theta), [[2 * source.theta / value**3]], rtol=1e-12)
+
+
+@pytest.mark.scipy
+def test_solver_can_optimize_planar_interface_refractive_index():
+    from diffractix import Solver
+
+    source = Ray(x=1e-3, theta=0.018, n=1.0).numeric()
+    index = Parameter(1.3).variable(bounds=(1.1, 2.0))
+    interface = Interface(n1=1.0, n2=index)
+    simulation = System(interface, input=source).build()
+    solver = Solver(simulation).target(lambda ctx: ctx.after(interface).theta / source.theta - 1 / 1.6)
+    solution = solver.solve(method="SLSQP", use_jit=True, options={"ftol": 1e-12})
+
+    assert solution.success, solution.message
+    assert solution.feasible
+    assert solution[index] == pytest.approx(1.6, abs=1e-6)
+    np.testing.assert_allclose(solution.run().final.theta, source.theta / 1.6, rtol=1e-6)
+    assert index.value == 1.3
+
+
 @pytest.mark.parametrize("radius", [0.08, -0.08])
 def test_ray_curved_interface_uses_height_and_surface_curvature(source, radius):
     n2 = 1.52

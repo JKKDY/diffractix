@@ -40,9 +40,10 @@ class Interface(OpticalElement):
 
     @property
     def matrix(self):
+        # Keep a fixed infinite radius out of products with variable indices.
         return (
             (1.0, 0.0),
-            ((self.n1 - self.n2) / (self.R * self.n2), self.n1 / self.n2),
+            (((self.n1 - self.n2) / self.n2) / self.R, self.n1 / self.n2),
         )
 
     @property

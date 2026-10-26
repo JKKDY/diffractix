@@ -262,6 +262,46 @@ def test_flat_interface_has_zero_power():
     assert matrix[1, 1] == 1.0 / 1.5
 
 
+@pytest.mark.parametrize("radius", [np.inf, -np.inf, 0.1, -0.1])
+@pytest.mark.filterwarnings("error:invalid value encountered:RuntimeWarning")
+def test_interface_index_derivatives_match_analytical_refraction(radius):
+    from diffractix.backend import hessian, jacobian, jit, xp
+
+    n1, n2 = Parameter(1.0).variable(), Parameter(1.5).variable()
+    interface = Interface(n1=n1, n2=n2, R=radius)
+    graph = compile_ast(interface.matrix[1])
+    assert graph.variables == (n1, n2)
+    evaluate = lambda theta: graph.evaluate(theta)
+    curvature = 1 / radius
+    for first, second in ((1.0, 1.5), (1.4, 1.1)):
+        theta = xp.array([first, second])
+        expected = [curvature * (first / second - 1), first / second]
+        ratio_gradient = np.array([1 / second, -first / second**2])
+        ratio_hessian = np.array([[0, -1 / second**2], [-1 / second**2, 2 * first / second**3]])
+        for function in (evaluate, jit(evaluate)):
+            np.testing.assert_allclose(function(theta), expected, atol=1e-14)
+        for function in (jacobian(evaluate), jit(jacobian(evaluate))):
+            np.testing.assert_allclose(function(theta), [curvature * ratio_gradient, ratio_gradient], atol=1e-14)
+        for index, factor in enumerate((curvature, 1.0)):
+            derivative = hessian(lambda values: evaluate(values)[index])
+            for function in (derivative, jit(derivative)):
+                np.testing.assert_allclose(function(theta), factor * ratio_hessian, rtol=1e-12, atol=1e-14)
+
+
+@pytest.mark.parametrize("radius", [0.1, -0.1])
+def test_curved_interface_retains_radius_derivatives(radius):
+    from diffractix.backend import grad, hessian, jit
+
+    interface = Interface(n1=1.0, n2=1.5, R=Parameter(radius).variable())
+    graph = compile_ast([interface.matrix[1][0]])
+    evaluate = lambda theta: graph.evaluate(theta)[0]
+    power_factor = (1.0 - 1.5) / 1.5
+    for function in (grad(evaluate), jit(grad(evaluate))):
+        np.testing.assert_allclose(function(graph.initial_values), [-power_factor / radius**2], rtol=1e-12)
+    for function in (hessian(evaluate), jit(hessian(evaluate))):
+        np.testing.assert_allclose(function(graph.initial_values), [[2 * power_factor / radius**3]], rtol=1e-12)
+
+
 @pytest.mark.parametrize("radius", (0.5, -0.5, np.inf, -np.inf))
 def test_interface_build_validation_accepts_nonzero_radius(radius):
     Interface(n1=1.0, n2=1.5, R=radius)._validate_for_build()
