@@ -184,6 +184,7 @@ class Solution:
             self.x,
             parameter_snapshot=self._simulation.parameter_info,
             bindings=self._simulation.execution_context,
+            context=self._simulation.compile_context,
         )
     def __getitem__(self, node):
         return self.value_of(node)

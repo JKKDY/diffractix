@@ -92,8 +92,11 @@ def evaluate_ast(
     theta,
     parameter_snapshot: ParameterSnapshot | None = None,
     bindings: Mapping[Hashable, object] | None = None,
+    *,
+    context: ASTContext | None = None,
 ):
-    """Evaluate a declarative AST against canonical theta and Symbol bindings."""
+    """Evaluate against canonical theta, resolving context before runtime bindings."""
+    context = {} if context is None else context
     bindings = {} if bindings is None else bindings
     active: set[int] = set()
 
@@ -140,6 +143,10 @@ def evaluate_ast(
                 return current.value
 
             if isinstance(current, Symbol):
+                if current.key in context:
+                    value = context[current.key]
+                    return evaluate(value) if isinstance(value, Node) else value
+
                 try:
                     return bindings[current.key]
                 except KeyError:

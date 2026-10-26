@@ -238,6 +238,7 @@ class Solver:
                         context.theta,
                         parameter_snapshot=self.simulation.parameter_info,
                         bindings=self.simulation.execution_context,
+                        context=self.simulation.compile_context,
                     )
                 return result
 

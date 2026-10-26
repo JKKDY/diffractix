@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from diffractix.backend import xp as anp
 import numpy as np
 import pytest
-from diffractix.backend import grad
+from diffractix.backend import grad, hessian, jit
 
 from diffractix.graph import (
     InputNode,
@@ -109,3 +109,60 @@ def test_evaluate_ast_remains_autograd_differentiable():
     derivative = grad(lambda theta: evaluate_ast(expression, theta, snapshot))
 
     np.testing.assert_allclose(derivative(anp.array([4.0])), [11.0])
+
+
+def test_context_alias_resolves_snapshot_parameters_before_runtime_bindings():
+    variable = Parameter(1.0).variable()
+    fixed = Parameter(2.0)
+    snapshot = {
+        id(variable): snapshot_info(1.0, 1),
+        id(fixed): snapshot_info(2.0, None),
+    }
+    key = ("source", "position")
+    context = {key: Symbol("expression"), "expression": InputNode(variable**2 + fixed)}
+    variable.fixed()
+    variable.value = 99.0
+    fixed.value = 99.0
+    point = anp.array([100.0, 3.0])
+
+    def evaluate(theta):
+        return evaluate_ast(
+            Symbol(key) + Symbol("offset"), theta, snapshot,
+            bindings={key: -99.0, "offset": 0.5}, context=context,
+        )
+
+    for function in (evaluate, jit(evaluate)):
+        assert function(point) == pytest.approx(11.5)
+    for function in (grad(evaluate), jit(grad(evaluate))):
+        np.testing.assert_allclose(function(point), [0.0, 6.0])
+    for function in (hessian(evaluate), jit(hessian(evaluate))):
+        np.testing.assert_allclose(function(point), [[0.0, 0.0], [0.0, 2.0]])
+    # Resolution is read-only, including the numerical runtime bindings.
+    assert context["expression"].node.right is fixed
+
+
+@pytest.mark.parametrize("cycle", ["self", "aliases", "expression"])
+def test_evaluate_ast_detects_context_symbol_cycles(cycle):
+    context = {
+        "self": {"a": Symbol("a")},
+        "aliases": {"a": Symbol("b"), "b": Symbol("a")},
+        "expression": {"a": Symbol("a") + 1},
+    }[cycle]
+    with pytest.raises(ASTCycleError, match="Cycle"):
+        evaluate_ast(Symbol("a"), anp.array([]), context=context)
+
+
+def test_context_alias_can_resolve_a_runtime_array_without_coercion():
+    values = anp.array([1.0, 2.0])
+    result = evaluate_ast(
+        Symbol("alias"), anp.array([]), context={"alias": Symbol("runtime")},
+        bindings={"runtime": values},
+    )
+    assert result is values
+
+
+def test_missing_symbol_in_context_expression_keeps_useful_error():
+    with pytest.raises(KeyError, match="Missing runtime binding.*'missing'"):
+        evaluate_ast(
+            Symbol("alias"), anp.array([]), context={"alias": Symbol("missing") + 1},
+        )
