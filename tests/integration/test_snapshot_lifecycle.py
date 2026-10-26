@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 
 from diffractix import Constraint, Parameter, Ray, Solver, Space, Symbol, System
+from diffractix.graph import Literal
 from diffractix.backend import xp
 from diffractix.solver.context import SolverContext
 
@@ -58,6 +59,58 @@ def test_context_ast_keeps_build_time_handles_for_fresh_solver_compilation(compo
     assert simulation.run(point).source.x == pytest.approx(0.3)
     after = Solver(simulation)._compile_node(Symbol("position"))
     assert after(context) == pytest.approx(expected)
+
+
+def test_requirements_and_context_share_an_independent_snapshot_of_the_same_ast():
+    parameter = Parameter(0.1).variable()
+    source = Ray(x=parameter, theta=0.0)
+    expression = 2 * source.x + 0.01
+    system = System(input=source).add_context("position", expression)
+    system.require(
+        Constraint(expression, lower_bound=0.0, label="lower"),
+        Constraint(expression, upper_bound=1.0, label="upper"),
+    )
+    simulation = system.build()
+    first, second = simulation.requirements
+    assert first.evaluate is second.evaluate is simulation.compile_context["position"]
+    assert first.evaluate is not expression
+    assert simulation.graph.variables == (parameter,)
+    assert [c.label for c in simulation.requirements] == ["lower", "upper"]
+
+    expression.right = Literal(99.0)
+    source.x = 0.8
+    context = SolverContext(xp.array([0.3]), simulation.run)
+    compiled = Solver(simulation)._compile_constraints(simulation.requirements)
+    assert [c.evaluate(context) for c in compiled] == pytest.approx([0.61, 0.61])
+    assert Solver(simulation)._compile_node(Symbol("position"))(context) == pytest.approx(0.61)
+
+
+@pytest.mark.parametrize("variable", [False, True], ids=["fixed", "external-variable"])
+def test_unused_context_parameter_state_is_also_captured_without_adding_theta(variable):
+    external = Parameter(0.02, name="external", variable=variable)
+    source = Ray(x=Parameter(0.1).variable(), theta=0.0)
+    simulation = System(input=source).add_context("offset", external).build()
+    assert simulation.graph.variables == (source.x.node,)
+    external.value = 99.0
+    external.fixed() if variable else external.variable()
+
+    solver = Solver(simulation)
+    if variable:
+        with pytest.raises(ValueError, match="not part of this Simulation"):
+            solver._compile_node(Symbol("offset"))
+    else:
+        context = SolverContext(simulation.initial_values, simulation.run)
+        assert solver._compile_node(Symbol("offset"))(context) == pytest.approx(0.02)
+
+
+def test_requirement_added_to_simulation_captures_its_handle_at_attachment():
+    source = Ray(x=Parameter(0.1).variable(), theta=0.0)
+    simulation = System(input=source).build()
+    simulation.require(source.x >= 0.05)
+    source.x = 0.8
+
+    constraint, = Solver(simulation)._compile_constraints(simulation.requirements)
+    assert constraint.evaluate(SolverContext(xp.array([0.3]), simulation.run)) == pytest.approx(0.3)
 
 
 def test_generated_continuity_keeps_independent_source_and_ambient_indices():

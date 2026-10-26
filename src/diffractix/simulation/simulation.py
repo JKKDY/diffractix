@@ -7,10 +7,11 @@ import numpy as np
 from diffractix.backend import xp
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from diffractix.input.paraxial_input import ParaxialState
 from diffractix.graph import CompiledAST, Node
+from diffractix.graph.utils import clone_ast
 from diffractix.simulation.result import SimulationResult, result_type_for
 
 from diffractix.system.info import ElementInfo
@@ -52,6 +53,9 @@ class Simulation:
     A Simulation contains the numerical program and metadata required to
     evaluate an optical system. Running a simulation does not mutate the source
     System, its elements, or parameter graph.
+
+    Retained ASTs are detached from declarative handles. Callable requirements
+    retain normal Python closure semantics.
     """
 
     def __init__(
@@ -72,8 +76,8 @@ class Simulation:
         self.steps = tuple(steps)
         self.parameter_info = MappingProxyType(dict(parameter_info))
         self.location_map = MappingProxyType(dict(location_map))
-        self.requirements = tuple(requirements)
-        self.compile_context = MappingProxyType(dict(compile_context))
+        self.requirements, context = self._snapshot_expressions(requirements, compile_context)
+        self.compile_context = MappingProxyType(context)
         self.parameter_graph = parameter_graph
         self.element_info = tuple(element_info)
         self.execution_context = MappingProxyType(dict(execution_context))
@@ -85,6 +89,22 @@ class Simulation:
     @property
     def initial_values(self):
         return self.graph.initial_values
+
+    def _snapshot_expressions(self, requirements, context):
+        """Detach retained ASTs from live handles, preserving canonical leaves."""
+        requirements = tuple(requirements)
+        roots = [c.evaluate for c in requirements if isinstance(c.evaluate, Node)]
+        roots.extend(value for value in context.values() if isinstance(value, Node))
+        copies = iter(clone_ast(roots, preserve_parameter_ids=self.parameter_info))
+        requirements = tuple(
+            replace(c, evaluate=next(copies)) if isinstance(c.evaluate, Node) else c
+            for c in requirements
+        )
+        context = {
+            key: next(copies) if isinstance(value, Node) else value
+            for key, value in context.items()
+        }
+        return requirements, context
 
     def _evaluate_graph(self, theta):
         values = self.graph._evaluate_roots(variable_values=theta, bindings=self.execution_context)
@@ -99,7 +119,10 @@ class Simulation:
         """Append normalized constraints and return this simulation for chaining."""
         from diffractix.solver.constraint import normalize_to_constraint
 
-        self.requirements += tuple(map(normalize_to_constraint, requirements))
+        requirements, _ = self._snapshot_expressions(
+            tuple(map(normalize_to_constraint, requirements)), {}
+        )
+        self.requirements += requirements
         return self
 
     def run(self, theta=None) -> SimulationResult:

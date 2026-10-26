@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 import numpy as np
 from diffractix.backend import xp
+from diffractix.graph.utils import ast_equal
 
 from diffractix import GaussianBeam, Ray
 from diffractix.composites import CompositeElement, Slab
@@ -119,7 +120,8 @@ def test_generated_gap_requirements_preserve_nested_order_without_duplicates_or_
         requirements = simulation.requirements
         assert len(requirements) == count + 2 + 6  # Two gaps and six continuity equalities.
         for constraint, evaluator in zip(requirements[:count], expected_evaluators, strict=True):
-            assert constraint.evaluate is evaluator
+            assert constraint.evaluate is not evaluator
+            assert ast_equal(constraint.evaluate, evaluator)
         gaps = requirements[count:count + 2]
         assert all(c.lower_bound == 0.0 and c.upper_bound == np.inf for c in gaps)
         graph = compile_ast(tuple(c.evaluate for c in gaps), context=simulation.compile_context,
@@ -171,8 +173,9 @@ def test_system_requirements_are_forwarded_to_simulation():
     simulation = system.build()
 
     assert all(isinstance(requirement, Constraint) for requirement in simulation.requirements)
-    assert simulation.requirements[0].evaluate is requirement.left
-    assert simulation.requirements[1].evaluate is space.requirements[0].left
+    assert ast_equal(simulation.requirements[0].evaluate, requirement.left)
+    assert ast_equal(simulation.requirements[1].evaluate, space.requirements[0].left)
+    assert simulation.requirements[0].evaluate is not requirement.left
 
 
 def test_element_requirement_is_forwarded_to_simulation():
@@ -189,8 +192,9 @@ def test_element_requirement_is_forwarded_to_simulation():
     simulation = system.build()
 
     assert all(isinstance(requirement, Constraint) for requirement in simulation.requirements)
-    assert simulation.requirements[0].evaluate is length_requirement.left
-    assert simulation.requirements[1].evaluate is requirement.left
+    assert ast_equal(simulation.requirements[0].evaluate, length_requirement.left)
+    assert ast_equal(simulation.requirements[1].evaluate, requirement.left)
+    assert simulation.requirements[0].evaluate is not length_requirement.left
 
 
 def test_system_and_nested_element_requirements_preserve_order():

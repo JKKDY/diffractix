@@ -135,12 +135,15 @@ def test_simulation_require_appends_comparisons_and_supports_chaining():
 
     assert simulation.require(parameter >= 1.0).require(parameter <= 3.0) is simulation
     assert isinstance(simulation.requirements, tuple)
-    assert previous_requirements == (original,)
+    assert len(previous_requirements) == 1
+    assert previous_requirements[0].label == original.label
+    assert previous_requirements[0].evaluate.value == 2.0
     first, lower, upper = simulation.requirements
-    assert first is original
-    assert lower.evaluate is parameter
+    assert first is previous_requirements[0]
+    assert lower.evaluate is not parameter
+    assert lower.evaluate.value == 2.0
     assert (lower.lower_bound, lower.upper_bound) == (1.0, np.inf)
-    assert upper.evaluate is parameter
+    assert upper.evaluate.value == 2.0
     assert (upper.lower_bound, upper.upper_bound) == (-np.inf, 3.0)
     assert simulation.require() is simulation
     assert len(simulation.requirements) == 3
@@ -160,12 +163,17 @@ def test_simulation_require_normalizes_callable_constraints():
 
     comparison, normalized, retained = simulation.requirements
     assert all(isinstance(item, Constraint) for item in simulation.requirements)
-    assert comparison.evaluate is parameter
+    assert comparison.evaluate.value == 2.0
     assert comparison.lower_bound == 1.0
-    assert normalized.evaluate is expression
+    assert normalized.evaluate is not expression
+    assert normalized.evaluate.left is comparison.evaluate
+    assert normalized.evaluate.value == 4.0
     assert normalized.upper_bound == 6.0
     assert normalized.label == "expression"
     assert retained is runtime
+    parameter.value = 99.0
+    assert comparison.evaluate.value == 2.0
+    assert normalized.evaluate.value == 4.0
 
 
 @pytest.mark.parametrize("invalid", [
@@ -230,7 +238,10 @@ def test_simulation_stores_compiled_data():
     assert simulation.parameter_info == parameter_info
     assert simulation.location_map == location_map
     assert simulation.location_map is not location_map
-    assert simulation.requirements == requirements
+    assert len(simulation.requirements) == 1
+    assert simulation.requirements[0].evaluate.value == requirements[0].evaluate.value
+    assert simulation.requirements[0].lower_bound == requirements[0].lower_bound
+    assert simulation.requirements[0].upper_bound == requirements[0].upper_bound
     assert simulation.compile_context == compile_context
     assert simulation.compile_context is not compile_context
     assert simulation.execution_context == execution_context

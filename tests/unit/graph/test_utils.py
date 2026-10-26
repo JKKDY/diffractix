@@ -245,6 +245,23 @@ def test_clone_ast_clones_input_handle():
     assert cloned_handle.node.value == handle.node.value
 
 
+def test_clone_ast_can_preserve_canonical_parameters_without_sharing_handles():
+    canonical = Parameter(0.1).variable()
+    external = Parameter(2.0)
+    handle = InputNode(canonical)
+    shared = handle * external
+    first, second = clone_ast([shared, shared + 1], preserve_parameter_ids={id(canonical)})
+
+    assert first is second.left
+    assert first.left is not handle
+    assert first.left.node is canonical
+    assert first.right is not external
+    handle.node = Parameter(99.0)
+    external.value = 99.0
+    assert first.left.node is canonical
+    assert first.right.value == 2.0
+
+
 @pytest.mark.parametrize("kwargs,expected,has_default", [
     pytest.param({}, None, False, id="unset"),
     pytest.param({"default": None}, None, False, id="explicit-none"),

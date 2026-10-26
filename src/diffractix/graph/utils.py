@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 import math
 from typing import Callable
-from collections.abc import Hashable, Mapping, Sequence
+from collections.abc import Collection, Hashable, Mapping, Sequence
 
 from .node import (
     Node,
@@ -275,7 +275,12 @@ def collect_variables(
     )
 
 
-def clone_ast(roots: Sequence[Node], *, preserve_owners: bool = True) -> tuple[Node, ...]:
+def clone_ast(
+    roots: Sequence[Node],
+    *,
+    preserve_owners: bool = True,
+    preserve_parameter_ids: Collection[int] = (),
+) -> tuple[Node, ...]:
     """
     Clone an AST while preserving its sharing structure.
 
@@ -283,6 +288,9 @@ def clone_ast(roots: Sequence[Node], *, preserve_owners: bool = True) -> tuple[N
     Structurally equivalent but distinct source nodes remain distinct.
 
     Symbols are copied but not resolved.
+    Parameters listed in preserve_parameter_ids retain their original identity;
+    other Parameters are copied, including their current value and bounds.
+    preserve_owners applies only to copied Parameters.
     """
     memo: dict[int, Node] = {}
     active: set[int] = set()
@@ -302,7 +310,7 @@ def clone_ast(roots: Sequence[Node], *, preserve_owners: bool = True) -> tuple[N
             result = Literal(node.value)
 
         elif isinstance(node, Parameter):
-            result = Parameter(
+            result = node if node_id in preserve_parameter_ids else Parameter(
                 value=node.value,
                 name=node.name,
                 variable=node.is_variable,
