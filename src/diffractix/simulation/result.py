@@ -142,9 +142,15 @@ class SimulationResult:
         _, after = self._resolve_location(element, occurrence)
         return self.z[after]
 
-    def plot(self):
-        """Plot this simulation result."""
-        raise NotImplementedError
+    def plot(self, ax=None, *, show_elements=True, show_axis=True):
+        """Plot a concrete 2D trace, sampling only known homogeneous Spaces.
+
+        Requires the optional ``diffractix[plot]`` extra. Returns ``(fig, ax)``
+        without showing or saving the figure. Lengths are interpreted as metres.
+        """
+        from diffractix.plotting import plot
+
+        return plot(self, ax=ax, show_elements=show_elements, show_axis=show_axis)
 
     def __str__(self) -> str:
         def fmt_val(v):

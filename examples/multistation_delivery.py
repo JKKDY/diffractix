@@ -6,6 +6,7 @@ fixed-position instrument modules: 20 design variables in total.
 
 The AOM/EOM slabs describe passive first-order refraction only, not modulation.
 All lengths are in meters; named stations stay at fixed absolute positions.
+Before/after plots require the optional diffractix[plot] extra.
 """
 
 from time import perf_counter
@@ -267,8 +268,9 @@ for label, slab, desired in (
 ):
     solver.target((slab.d - desired) / 20e-3, label=f"{label} preferred crystal thickness")
 
+
 start = perf_counter()
-solution = solver.solve(method=SOLVER_METHOD, options=SOLVER_OPTIONS[SOLVER_METHOD])
+solution = solver.solve(method=SOLVER_METHOD, options=SOLVER_OPTIONS[SOLVER_METHOD], use_jit=True)
 elapsed = perf_counter() - start
 initial = simulation.run()
 optimized = solution.run()
@@ -351,3 +353,16 @@ print("\n\n###### OBJECTIVES AT OPTIMUM ######")
 for result in solution.targets:
     print(f"  {result.objective.label}: "
           f"residual={result.value:.3e}, cost={result.cost:.3e}")
+
+
+if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+
+    fig, axes = plt.subplots(2, 1, figsize=(11, 7), sharex=True, sharey=True, layout="constrained")
+    fig.suptitle("Multi-station delivery", fontsize=12)
+    axes[0].set_title("Before optimization", loc="left", fontsize=11)
+    axes[1].set_title("After optimization", loc="left", fontsize=11)
+    initial.plot(ax=axes[0])
+    optimized.plot(ax=axes[1])
+    axes[0].set_xlabel("")
+    plt.show()

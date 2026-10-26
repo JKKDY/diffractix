@@ -1,4 +1,7 @@
-"""Constrained Gaussian fiber-to-fiber mode matching with packaged thin lenses."""
+"""Constrained Gaussian fiber-to-fiber mode matching with packaged thin lenses.
+
+Before/after plots require the optional diffractix[plot] extra.
+"""
 
 from time import perf_counter
 
@@ -50,9 +53,9 @@ class PackagedThinLens(CompositeElement):
 #------
 # Input and target fiber modes
 source = GaussianBeam.from_fiber_tip(wavelength=WAVELENGTH, MFD=10.4e-6)
-target_mode = GaussianBeam.from_fiber_tip(wavelength=WAVELENGTH, MFD=9.2e-6)
+target_mode = GaussianBeam.from_fiber_tip(wavelength=WAVELENGTH, MFD=9.2e-6).numeric()
 
-if max(source.divergence_angle, target_mode.divergence_angle) > MAX_DIVERGENCE:
+if max(source.numeric().divergence_angle, target_mode.divergence_angle) > MAX_DIVERGENCE:
     raise ValueError("Source or target mode exceeds the paraxial divergence limit.")
 
 # Intentionally imperfect starting design (~7% overlap in the ideal ABCD model).
@@ -221,3 +224,16 @@ print("\n\n###### OBJECTIVES AT OPTIMUM ###### ")
 for result in solution.targets:
     print(f"  {result.objective.label}: "
           f"residual={result.value:.3e}, cost={result.cost:.3e}")
+
+
+if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+
+    fig, axes = plt.subplots(2, 1, figsize=(11, 7), sharex=True, sharey=True, layout="constrained")
+    fig.suptitle("Fiber mode matching", fontsize=12)
+    axes[0].set_title("Before optimization", loc="left", fontsize=11)
+    axes[1].set_title("After optimization", loc="left", fontsize=11)
+    initial.plot(ax=axes[0])
+    optimized.plot(ax=axes[1])
+    axes[0].set_xlabel("")
+    plt.show()

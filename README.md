@@ -14,3 +14,33 @@ Current features:
 
 Status:
 This is still very much a work in progress. Forward simulation and differentiable system compilation work; the inverse-design API is still under development.
+
+### Plotting
+
+Install the optional renderer with `python -m pip install 'diffractix[plot]'`:
+
+```python
+from diffractix import GaussianBeam, Space, System, ThinLens
+
+system = System(Space(d=0.06), ThinLens(f=0.08), Space(d=0.18),
+                input=GaussianBeam.from_waist(0.3e-3, 1064e-9))
+simulation = system.build()
+result = simulation.run()
+fig, ax = result.plot()  # Or: from diffractix.plotting import plot; plot(result)
+```
+
+`result.plot(ax=ax, show_elements=True, show_axis=True)` also accepts existing
+Matplotlib axes and never shows or saves the figure automatically. Plotting
+assumes input lengths in metres; z is labelled in m and transverse values in mm.
+
+This is a schematic 2D paraxial visualization for Ray, RayBundle, GaussianBeam,
+and their subclasses. Continuous curves are sampled using the entrance state
+of each Space, including Spaces inside composites. Other thick elements
+(such as GRIN or black-box ABCD components) show only their extents and boundary
+states; no internal trajectory is invented. Sampling recognizes `Space` by the
+existing element type name; a custom class
+literally named `Space` is therefore assumed to have homogeneous-space behavior.
+Bundles show up to 41 evenly spaced rays.
+Element markers are schematic, not mechanical drawings. Use concrete evaluated
+results outside differentiation/JIT. See [the plotting example](examples/plotting.py)
+for Ray, RayBundle, and GaussianBeam figures.

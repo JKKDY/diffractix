@@ -1,4 +1,7 @@
-"""Design a Gaussian laser focusing system with a fixed workpiece position."""
+"""Design a Gaussian laser focusing system with a fixed workpiece position.
+
+Before/after plots require the optional diffractix[plot] extra.
+"""
 
 from time import perf_counter
 
@@ -31,7 +34,7 @@ DEFOCUS = 2e-3         # Workpiece positioning error to inspect
 source = GaussianBeam.from_waist(w0=INPUT_RADIUS, wavelength=WAVELENGTH)
 target_focus = GaussianBeam.from_waist(
     w0=TARGET_WAIST_RADIUS, wavelength=WAVELENGTH
-)
+).numeric()
 
 input_gap = Space(d=60e-3, label="Source-to-lens distance")
 input_gap.d.variable(bounds=(40e-3, None))
@@ -104,7 +107,7 @@ solver.target(
 )
 
 start = perf_counter()
-solution = solver.solve(method="SLSQP")
+solution = solver.solve(method="SLSQP", use_jit=True)
 elapsed = perf_counter() - start
 optimized = solution.run()
 
@@ -167,3 +170,16 @@ print("\n\n###### OBJECTIVES AT OPTIMUM ######")
 for result in solution.targets:
     print(f"  {result.objective.label}: "
           f"residual={result.value:.3e}, cost={result.cost:.3e}")
+
+
+if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+
+    fig, axes = plt.subplots(2, 1, figsize=(11, 7), sharex=True, sharey=True, layout="constrained")
+    fig.suptitle("Beam focusing", fontsize=12)
+    axes[0].set_title("Before optimization", loc="left", fontsize=11)
+    axes[1].set_title("After optimization", loc="left", fontsize=11)
+    initial.plot(ax=axes[0])
+    optimized.plot(ax=axes[1])
+    axes[0].set_xlabel("")
+    plt.show()
