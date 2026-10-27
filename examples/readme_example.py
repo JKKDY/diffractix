@@ -1,30 +1,32 @@
-from diffractix import GaussianBeam, Parameter, Space, System, Solver
+from diffractix import backend
+backend.configure("autograd")
 
-INITIAL_RADIUS = 100e-6
-TARGET_RADIUS = 150e-6
+from diffractix import Ray, ThinLens, Plane, System, Solver
 
-beam = GaussianBeam.from_waist(w0=100e-6, wavelength=1064e-9)
+# Define the input ray and an adjustable lens
+ray = Ray(x=0.01, theta=0.0)
+lens = ThinLens(f=0.2).variable("f")
 
-distance = Parameter(0.05).variable()
-space = Space(d=distance)
+# Place elements at absolute positions (meters)
+image_plane = Plane()
 
-system = System()
-system.add_input_beam(beam)
-system.add(space)
+system = System(input=ray)
+system.add(lens, z=0.1)
+system.add(image_plane, z=0.2)
 
 simulation = system.build()
-result = simulation.run()
+initial = simulation.run()
 
-solver = Solver(system)
-solver.target(lambda ctx: (ctx.after(space).w - TARGET_RADIUS) / TARGET_RADIUS)
+# Focus the ray onto the optical axis at the image plane
+solver = Solver(simulation)
+solver.target(
+    value=lambda ctx: ctx.at(image_plane).x,
+    target=0.0,
+    scale=0.01,
+)
 
 solution = solver.solve()
+optimized = solution.run()
 
-print(system)
-print(simulation)
-print(result)
-
-print("Success:", solution.success)
-print("Distance:", solution[distance])
-print("Beam radius:", solution.run().after(space).w)
-print("Original distance:", distance.value)
+print(f"Focal length: {lens.f.value * 1e3:.1f} → {solution[lens.f] * 1e3:.1f} mm")
+print(f"Image height: {float(initial.at(image_plane).x) * 1e3:.1f} → {float(optimized.at(image_plane).x) * 1e3:.1f} mm")

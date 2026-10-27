@@ -1,46 +1,85 @@
 # Diffractix
 
-A differentiable gaussian optics simulation!
+**Differentiable paraxial optics in Python.**
 
-The goal is to solve inverse-design problems involving beams in the Gaussian paraxial approximation.
+Diffractix is a Python library for modeling, simulating, and optimizing paraxial optical systems using ABCD matrices.
 
-Current features:
-- Gaussian beam representation using complex q-parameters
-- ABCD propagation through spaces, lenses, mirrors, interfaces, apertures, and thick-lens/slab composites
-- Declarative optical system builder with relative and absolute positioning
-- Differentiable parameter graph for optimization with autograd
-- Layout and refractive-index consistency checks
-- Unit tests for beam physics, optical elements, system compilation, and graph behavior
+Optical systems are defined declaratively through optical elements, input states, and symbolic parameters. These descriptions are compiled into differentiable numerical simulations, enabling both forward propagation and inverse optical design.
 
-Status:
-This is still very much a work in progress. Forward simulation and differentiable system compilation work; the inverse-design API is still under development.
+## Features
 
-### Plotting
+- ABCD matrix-based optical propagation
+- Ray, ray bundle, and Gaussian beam simulation
+- Parameterized optical elements and system layouts
+- Optimizable optical elements and input conditions
+- Automatic differentiation using Autograd or JAX
+- Constraints and numerical optimization for inverse design
+- Extensible optical elements and input types
 
-Install the optional renderer with `python -m pip install 'diffractix[plot]'`:
+## Installation
 
-```python
-from diffractix import GaussianBeam, Space, System, ThinLens
+Diffractix is currently under development.
 
-system = System(Space(d=0.06), ThinLens(f=0.08), Space(d=0.18),
-                input=GaussianBeam.from_waist(0.3e-3, 1064e-9))
-simulation = system.build()
-result = simulation.run()
-fig, ax = result.plot()  # Or: from diffractix.plotting import plot; plot(result)
+To install from a local checkout:
+
+```bash
+pip install -e .
 ```
 
-`result.plot(ax=ax, show_elements=True, show_axis=True)` also accepts existing
-Matplotlib axes and never shows or saves the figure automatically. Plotting
-assumes input lengths in metres; z is labelled in m and transverse values in mm.
+## Quick start
 
-This is a schematic 2D paraxial visualization for Ray, RayBundle, GaussianBeam,
-and their subclasses. Continuous curves are sampled using the entrance state
-of each Space, including Spaces inside composites. Other thick elements
-(such as GRIN or black-box ABCD components) show only their extents and boundary
-states; no internal trajectory is invented. Sampling recognizes `Space` by the
-existing element type name; a custom class
-literally named `Space` is therefore assumed to have homogeneous-space behavior.
-Bundles show up to 41 evenly spaced rays.
-Element markers are schematic, not mechanical drawings. Use concrete evaluated
-results outside differentiation/JIT. See [the plotting example](examples/plotting.py)
-for Ray, RayBundle, and GaussianBeam figures.
+Diffractix lets you define optical systems declaratively and optimize their parameters. In this example, we adjust a lens's focal length to focus a ray onto an image plane.
+
+```python
+from diffractix import Ray, ThinLens, Plane, System, Solver
+
+# Define the input ray and an adjustable lens
+ray = Ray(x=0.01, theta=0.0)
+lens = ThinLens(f=0.2)
+lens.f.variable(bounds=(0.05, 0.5))
+
+# Place elements at absolute positions (meters)
+image_plane = Plane(label="Image plane")
+
+system = System(input=ray)
+system.add(lens, z=0.1)
+system.add(image_plane, z=0.2)
+
+simulation = system.build()
+initial = simulation.run()
+
+# Focus the ray onto the optical axis at the image plane
+solver = Solver(simulation)
+solver.target(
+    value=lambda ctx: ctx.at(image_plane).x,
+    target=0.0,
+    scale=0.01,
+)
+
+solution = solver.solve(method="SLSQP")
+optimized = solution.run()
+
+print(f"Focal length: {lens.f.value * 1e3:.1f} → {solution[lens.f] * 1e3:.1f} mm")
+print(f"Image height: {float(initial.at(image_plane).x) * 1e3:.1f} → {float(optimized.at(image_plane).x) * 1e3:.1f} mm")
+```
+
+Expected output:
+
+```text
+Focal length: 200.0 → 100.0 mm
+Image height: 5.0 → 0.0 mm
+```
+
+The system automatically inserts propagation spaces between positioned elements. The solver then finds the focal length that brings the ray to the optical axis at the image plane.
+
+## Project status
+
+**Pre-release — targeting v0.0.1**
+
+Diffractix is in active development. The API and internal architecture may change before the first stable release.
+
+Documentation, examples, and visualization tools are being developed.
+
+## License
+
+See the repository's license file for details.
