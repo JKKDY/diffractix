@@ -1,9 +1,5 @@
 """README quick start, respecting DIFFRACTIX_BACKEND when configured."""
 
-# use autograd backend as that is usually faster for small problems
-from diffractix import backend
-backend.configure("autograd")
-
 from diffractix import Ray, ThinLens, Plane, System, Solver
 
 # Define the input ray and an adjustable lens
