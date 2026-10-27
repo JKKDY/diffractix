@@ -1,10 +1,10 @@
-"""Physical sampling and the optional Matplotlib result interface."""
+"""Physical sampling and the Matplotlib result interface."""
 from dataclasses import dataclass
 
 import numpy as np
 import pytest
 
-matplotlib = pytest.importorskip("matplotlib")
+import matplotlib
 matplotlib.use("Agg", force=True)
 import matplotlib.pyplot as plt
 

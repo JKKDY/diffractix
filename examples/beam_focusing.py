@@ -1,6 +1,6 @@
 """Design a Gaussian laser focusing system with a fixed workpiece position.
 
-Before/after plots require the optional diffractix[plot] extra.
+Matplotlib is included with Diffractix for the before/after plots.
 """
 
 from time import perf_counter

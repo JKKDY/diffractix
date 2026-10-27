@@ -1,11 +1,22 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "diffractix"
 version = "0.0.1"
+description = "Differentiable paraxial optics and inverse design."
+readme = "README.md"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Physics",
+]
 dependencies = [
     "autograd",
     "numpy",
@@ -33,6 +44,10 @@ dev = [
     "pytest",
 ]
 
+[project.urls]
+Repository = "https://github.com/JKKDY/diffractix"
+Issues = "https://github.com/JKKDY/diffractix/issues"
+
 # Installation commands (run from the repository root):
 #   python -m pip install -e .                      # Base: Autograd; no JAX dependency
 #   python -m pip install -e ".[jax]"                # Base + JAX (auto prefers JAX)
@@ -50,6 +65,8 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["diffractix*"]
+namespaces = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

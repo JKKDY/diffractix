@@ -6,7 +6,7 @@ fixed-position instrument modules: 20 design variables in total.
 
 The AOM/EOM slabs describe passive first-order refraction only, not modulation.
 All lengths are in meters; named stations stay at fixed absolute positions.
-Before/after plots require the optional diffractix[plot] extra.
+Matplotlib is included with Diffractix for the before/after plots.
 """
 
 from time import perf_counter

@@ -18,7 +18,15 @@ Optical systems are defined declaratively through optical elements, input states
 
 ## Installation
 
-Diffractix is currently under development.
+Install the released package with:
+
+```bash
+pip install diffractix
+```
+
+The default installation includes Autograd, NumPy, SciPy, and Matplotlib. JAX is opt-in
+with `pip install 'diffractix[jax]'`. If JAX is installed, automatic backend
+selection prefers it; `DIFFRACTIX_BACKEND=autograd` explicitly selects Autograd.
 
 To install from a local checkout:
 
@@ -82,4 +90,9 @@ Documentation, examples, and visualization tools are being developed.
 
 ## License
 
-See the repository's license file for details.
+See [LICENSE](https://github.com/JKKDY/diffractix/blob/main/LICENSE), included unchanged in both distributions.
+
+## Development and releases
+
+See [DEVELOPMENT.md](https://github.com/JKKDY/diffractix/blob/main/DEVELOPMENT.md) for local validation commands, the CI matrix,
+package verification, and the PyPI Trusted Publishing setup.

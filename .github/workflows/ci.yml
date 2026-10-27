@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: Exact commit to validate (defaults to the triggering commit)
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  MPLBACKEND: Agg
+  JAX_ENABLE_X64: "true"
+  PYTHONUTF8: "1"
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Python ${{ matrix.python }} / ${{ matrix.backend }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.12", "3.13"]
+        backend: [autograd, jax]
+    env:
+      DIFFRACTIX_BACKEND: ${{ matrix.backend }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install package and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "${{ matrix.backend == 'jax' && '.[dev,jax]' || '.[dev]' }}"
+      - name: Verify the selected numerical backend
+        run: |
+          python -c "import os; from diffractix.backend import xp, current_backend; xp.asarray(0.0); assert current_backend() == os.environ['DIFFRACTIX_BACKEND']; print('Backend:', current_backend())"
+      - name: Run the complete test suite
+        run: python -m pytest tests
+      - name: Run every standalone example headlessly
+        run: python scripts/run_examples.py --backend "${{ matrix.backend }}"
+
+  build:
+    name: Build source distribution and wheel
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - run: python -m pip install build
+      - run: python -m build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: distributions
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+  wheel:
+    name: Validate metadata and clean wheel installation
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DIFFRACTIX_BACKEND: autograd
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - uses: actions/download-artifact@v8
+        with:
+          name: distributions
+          path: dist
+          digest-mismatch: error
+      - run: python -m pip install twine
+      - run: python -m twine check --strict dist/*
+      - name: Install and exercise the wheel in an isolated environment
+        run: |
+          python -m venv "$RUNNER_TEMP/wheel-env"
+          "$RUNNER_TEMP/wheel-env/bin/python" -m pip install dist/*.whl
+          "$RUNNER_TEMP/wheel-env/bin/python" -I scripts/smoke_wheel.py

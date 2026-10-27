@@ -29,8 +29,6 @@ SECOND_LENS_DIAMETER = 10e-3
 #------
 # Start with a Gaussian waist at the first lens.
 source = GaussianBeam.from_waist(w0=INPUT_RADIUS, wavelength=WAVELENGTH)
-target_radius = EXPANSION * source.w
-target_divergence = source.divergence_angle / EXPANSION
 
 # Intentionally poor initial guess: short separation and insufficient
 # positive focal length. Still inside the parameter and aperture limits.
@@ -62,6 +60,10 @@ system.require(optical_length <= MAX_OPTICAL_LENGTH)
 # SIMULATION
 #-----------
 simulation = system.build()
+
+input_beam = simulation.source
+target_radius = EXPANSION * input_beam.w
+target_divergence = input_beam.divergence_angle / EXPANSION
 
 # Keep the Gaussian 1/e^2 intensity radius inside half the clear-aperture
 # radius (2w clearance). Aperture clipping is not simulated explicitly.
@@ -143,12 +145,12 @@ print("\n\n###### BEAM PERFORMANCE: BEFORE / AFTER ######")
 print(f"{'':23} {'Initial':>12} {'Optimized':>12}")
 print("-" * 52)
 compare("Output radius", initial_beam.w, expanded_beam.w, 1e3, "mm")
-compare("Expansion factor", initial_beam.w / source.w,
-        expanded_beam.w / source.w, unit="x")
+compare("Expansion factor", initial_beam.w / input_beam.w,
+        expanded_beam.w / input_beam.w, unit="x")
 compare("Output divergence", initial_beam.divergence_angle,
         expanded_beam.divergence_angle, 1e3, "mrad")
-compare("Divergence reduction", source.divergence_angle / initial_beam.divergence_angle,
-        source.divergence_angle / expanded_beam.divergence_angle, unit="x")
+compare("Divergence reduction", input_beam.divergence_angle / initial_beam.divergence_angle,
+        input_beam.divergence_angle / expanded_beam.divergence_angle, unit="x")
 print(f"Target radius: {1e3 * target_radius:.4f} mm; "
       f"target divergence: {1e3 * target_divergence:.4f} mrad")
 

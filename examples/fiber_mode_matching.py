@@ -1,6 +1,6 @@
 """Constrained Gaussian fiber-to-fiber mode matching with packaged thin lenses.
 
-Before/after plots require the optional diffractix[plot] extra.
+Matplotlib is included with Diffractix for the before/after plots.
 """
 
 from time import perf_counter

@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  verify-tag:
+    name: Verify release version and resolve immutable commit
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.verify.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Match the release tag, project version and checked-out commit
+        id: verify
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python - <<'PY'
+          import os
+          import subprocess
+          import tomllib
+          from pathlib import Path
+
+          version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
+          tag = os.environ["RELEASE_TAG"]
+          if tag != f"v{version}":
+              raise SystemExit(f"Release tag {tag!r} must equal v{version}.")
+          head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          tagged = subprocess.check_output(["git", "rev-parse", f"refs/tags/{tag}^{{commit}}"], text=True).strip()
+          if head != tagged:
+              raise SystemExit("The release tag does not point to the triggering commit.")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              print(f"sha={head}", file=output)
+          print(f"Validated {tag} at {head}")
+          PY
+
+  validate:
+    name: Run all release validation
+    needs: verify-tag
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.verify-tag.outputs.sha }}
+
+  publish:
+    name: Publish the validated distributions
+    needs: [verify-tag, validate]
+    if: ${{ needs.verify-tag.result == 'success' && needs.validate.result == 'success' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/diffractix
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: distributions
+          path: dist
+          digest-mismatch: error
+      - uses: pypa/gh-action-pypi-publish@release/v1

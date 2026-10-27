@@ -1,4 +1,4 @@
-"""Schematic 2D plots: install with python -m pip install 'diffractix[plot]'."""
+"""Schematic 2D plots using Matplotlib, included with Diffractix."""
 from diffractix import GaussianBeam, Ray, RayBundle, Space, System, ThinLens
 
 

@@ -145,8 +145,8 @@ class SimulationResult:
     def plot(self, ax=None, *, show_elements=True, show_axis=True):
         """Plot a concrete 2D trace, sampling only known homogeneous Spaces.
 
-        Requires the optional ``diffractix[plot]`` extra. Returns ``(fig, ax)``
-        without showing or saving the figure. Lengths are interpreted as metres.
+        Returns ``(fig, ax)`` without showing or saving the figure.
+        Lengths are interpreted as metres. Matplotlib is included with Diffractix.
         """
         from diffractix.plotting import plot
 
