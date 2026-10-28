@@ -4,7 +4,7 @@ from dataclasses import field, fields, is_dataclass
 from numbers import Real
 from typing import ClassVar, get_args, get_type_hints
 
-from ..graph import InputNode, Node, Parameter
+from diffractix.graph import InputNode, Node, Parameter
 
 
 def annotation_contains_node(annotation) -> bool:

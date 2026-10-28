@@ -1,8 +1,4 @@
-from dataclasses import dataclass
-from enum import Enum, auto
-import math
-from typing import Callable
-from collections.abc import Collection, Hashable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 
 from .node import (
     Node,
@@ -12,11 +8,8 @@ from .node import (
     InputNode,
     BinaryOp,
     UnaryOp,
-    Scalar,
 )
 
-from .ops import Op
-from .relations import Comparison
 from .errors import ASTCycleError, UnresolvedInputError, UnsupportedNodeError
 
 

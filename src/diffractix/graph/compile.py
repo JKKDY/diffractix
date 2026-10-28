@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence, Hashable
-from dataclasses import dataclass
-from enum import Enum, auto
+from collections.abc import Mapping, Sequence
 
 import numpy as np
-from diffractix.backend import xp
 
 
 from .node import (
@@ -31,16 +28,12 @@ from .program import (
 from .errors import UnresolvedInputError, UnsupportedNodeError
 from .graph_utils import walk_ast
 
-from .ops import Op
-
-
-
 def compile_graph(roots: Sequence[Node], bindings: Mapping = {}) -> Program:
     """Compile expression graphs into an optimized executable program."""
-    return optimize(precompile_graph(roots, bindings))
+    return optimize(precompile(roots, bindings))
 
 def optimize(program: Program) -> Program:
-    """Apply graph optimizations without reusing registers."""
+    """Optimize the program and allocate registers."""
     program = _fold_constants_and_cse(program)
     program = _eliminate_dead_code(program)
     program = _allocate_registers(program)
@@ -129,7 +122,10 @@ def fuse(*programs: Program) -> Program:
     if not programs:
         raise ValueError("Expected at least one program.")
 
-    # TODO all programs must expect the same exact symbol and parameter mapping. Otherwise we cant fuse
+    for program in programs[1:]:
+        if (program.variables != programs[0].variables
+                or program.runtime_symbols != programs[0].runtime_symbols):
+            raise ValueError("Programs must have identical variable and symbol mappings to fuse.")
 
     variables = {}
     runtime_symbols = {}

@@ -1,25 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence, Hashable
+from collections.abc import Mapping, Sequence, Hashable
 from dataclasses import dataclass
-from enum import Enum, auto
 
 from typing import Any
-
-import numpy as np
-from diffractix.backend import xp
-
-
-from .node import (
-    Node,
-    Literal,
-    Parameter,
-    Symbol,
-    InputNode,
-    BinaryOp,
-    UnaryOp,
-    Scalar
-)
 
 from .ops import Op
 
@@ -142,9 +126,8 @@ class Program:
         sorted_variables = sorted(self.variables.items(), key=lambda item: item[1])
         sorted_symbols = sorted(self.runtime_symbols.items(), key=lambda item: item[1])
 
-        for parameter, index in sorted_variables:
-            comment = f"\t# {parameter.name}" if parameter.name else ""
-            lines.append(f"  i{index}\ttheta[{index}]{comment}")
+        for parameter_id, index in sorted_variables:
+            lines.append(f"  i{index}\ttheta[{index}]\t# Parameter id {parameter_id}")
 
         for key, index in sorted_symbols:
             lines.append(f"  i{len(self.variables) + index}\tsymbol[{key!r}]")
