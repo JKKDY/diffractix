@@ -37,7 +37,7 @@ class Op(Enum):
     MAX = auto()
     MIN = auto()
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return self.name
 
     @property
@@ -53,7 +53,7 @@ class Op(Enum):
         return OP_UNICODE[self]
 
     @property
-    def func(self):
+    def func(self) -> Callable:
         return get_op_functions()[self]
 
 

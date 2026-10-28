@@ -13,7 +13,6 @@ from .node import (
     BinaryOp,
     UnaryOp,
     Scalar,
-    _validate_parameter_bounds,
 )
 from .ops import Op
 from .relations import Comparison
@@ -67,7 +66,7 @@ def parameter_state(
         lower_bound = parameter.lower_bound
         upper_bound = parameter.upper_bound
 
-    _validate_parameter_bounds(lower_bound, upper_bound)
+    Parameter._validate_bounds(lower_bound, upper_bound)
 
     # Fixed unbounded curvature parameters use infinity as the established
     # representation of a plane surface.  It is never a solver input.  NaN,

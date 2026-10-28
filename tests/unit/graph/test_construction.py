@@ -34,11 +34,12 @@ def test_variable_bounds_pair_matches_existing_endpoints():
 
 
 @pytest.mark.parametrize("bounds, expected", [
-    ((None, 2.0), (-np.inf, 2.0)),
-    ((0.0, None), (0.0, np.inf)),
-    ((None, None), (-np.inf, np.inf)),
+    ((None, 2.0), (0.5, 2.0)),
+    ((0.0, None), (0.0, 1.5)),
+    ((None, None), (0.5, 1.5)),
+    ((-np.inf, np.inf), (-np.inf, np.inf)),
 ])
-def test_variable_bounds_pair_none_removes_existing_endpoint(bounds, expected):
+def test_variable_bounds_pair_ignores_none_and_accepts_infinite_endpoints(bounds, expected):
     parameter = Parameter(1.0, lower_bound=0.5, upper_bound=1.5)
     parameter.variable(bounds=bounds)
     assert (parameter.lower_bound, parameter.upper_bound) == expected
@@ -46,14 +47,31 @@ def test_variable_bounds_pair_none_removes_existing_endpoint(bounds, expected):
 
 @pytest.mark.parametrize("endpoints", [
     {"lower_bound": 0.0}, {"upper_bound": 2.0},
-    {"lower_bound": None}, {"upper_bound": None},
-    {"lower_bound": None, "upper_bound": None},
+    {"lower_bound": -np.inf}, {"upper_bound": np.inf},
+    {"lower_bound": None, "upper_bound": 2.0},
 ])
 def test_variable_bounds_pair_rejects_explicit_endpoints(endpoints):
     parameter = Parameter(1.0)
     with pytest.raises(ValueError, match="bounds cannot be combined"):
         parameter.variable(bounds=(0.0, 2.0), **endpoints)
     assert not parameter.is_variable
+
+
+@pytest.mark.parametrize("endpoints", [
+    {"lower_bound": None}, {"upper_bound": None},
+    {"lower_bound": None, "upper_bound": None},
+])
+def test_variable_bounds_pair_ignores_none_endpoint_arguments(endpoints):
+    parameter = Parameter(1.0)
+    parameter.variable(bounds=(0.0, 2.0), **endpoints)
+    assert parameter.is_variable
+    assert (parameter.lower_bound, parameter.upper_bound) == (0.0, 2.0)
+
+
+def test_variable_none_bounds_argument_does_not_conflict_with_endpoints():
+    parameter = Parameter(1.0).bound(0.0, 2.0)
+    parameter.variable(bounds=None, lower_bound=-np.inf, upper_bound=np.inf)
+    assert (parameter.lower_bound, parameter.upper_bound) == (-np.inf, np.inf)
 
 
 @pytest.mark.parametrize("bounds, error", [
@@ -75,6 +93,51 @@ def test_variable_legacy_none_and_positional_endpoints_are_preserved():
     assert (parameter.lower_bound, parameter.upper_bound) == (0.0, 2.0)
     parameter.variable(-1.0, 3.0)
     assert (parameter.lower_bound, parameter.upper_bound) == (-1.0, 3.0)
+
+
+@pytest.mark.parametrize("node, expected", [
+    (Literal(2), 2.0), (Parameter(2), 2.0),
+    (Parameter(2) * 3, 6.0), (InputNode(Parameter(2)), 2.0),
+])
+def test_symbolic_nodes_cannot_be_implicitly_converted_to_float(node, expected):
+    with pytest.raises(TypeError):
+        float(node)
+    assert float(node.value) == expected
+
+
+@pytest.mark.parametrize("value", [np.int16(2), np.float32(2.5), np.complex64(2 + 1j)])
+def test_numpy_numeric_scalars_are_valid_literals_and_expression_constants(value):
+    assert Literal(value).value == value
+    assert (Parameter(1) + value).value == 1 + value
+
+
+@pytest.mark.parametrize("value", [np.int16(2), np.float32(2.5)])
+def test_numpy_real_scalars_are_valid_parameters(value):
+    assert Parameter(value).value == value
+
+
+def test_scalar_array_constant_is_independent_of_the_original_array():
+    constant = np.array(2.0)
+    expression = Parameter(1) + constant
+    constant[...] = 99
+    assert expression.value == 3.0
+
+
+@pytest.mark.parametrize("value", [np.array([2.0]), np.array([[2.0]])])
+def test_array_constants_must_be_zero_dimensional(value):
+    with pytest.raises(TypeError, match="numeric scalar"):
+        Parameter(1) + value
+
+
+def test_scalar_like_object_is_not_implicitly_normalized():
+    class ScalarLike:
+        shape = ()
+
+        def item(self):
+            raise AssertionError("Unrecognized objects must not be converted")
+
+    with pytest.raises(TypeError, match="numeric scalar"):
+        Parameter(1) + ScalarLike()
 
 
 def test_literal_math():

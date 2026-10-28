@@ -1,51 +1,33 @@
 from __future__ import annotations
 import math
 import weakref
-from numbers import Real as RealScalar
+from numbers import Complex as Scalar, Real
 import numpy as np
+
+from diffractix.backend import xp
 
 from .ops import Op
 from .relations import Relation, Comparison, SymbolicControlFlowError
 
 
-Scalar = int | float | complex
-Real = int | float
-_UNSET = object()
-
-
-def _validate_parameter_bounds(lower_bound, upper_bound) -> None:
-    """Validate a Parameter's numerical interval."""
-    for name, bound in (
-        ("lower_bound", lower_bound),
-        ("upper_bound", upper_bound),
-    ):
-        if isinstance(bound, bool) or not isinstance(bound, RealScalar):
-            raise TypeError(f"{name} must be a real scalar.")
-        if math.isnan(bound):
-            raise ValueError(f"{name} must not be NaN.")
-
-    if lower_bound > upper_bound:
-        raise ValueError("lower_bound must be <= upper_bound.")
-
 class Node:
     """
-    Base class for all nodes in the parameter AST.
+    Base class for declarative nodes in the parameter AST.
 
-    Nodes use normal Python object identity. Structurally equivalent
-    expressions are not deduplicated during graph construction.
+    Comparisons between Nodes produce symbolic Comparison objects.
     """
 
     def __bool__(self):
-        raise SymbolicControlFlowError(
-            "Symbolic values cannot be used as Python booleans."
-        )
+        raise SymbolicControlFlowError("Symbolic values cannot be used as Python booleans.")
 
     @staticmethod
     def _make_literal(value: Scalar) -> Literal:
-        # Capture concrete backend scalar constants; active tracers cannot .item().
-        if getattr(value, "shape", None) == () and hasattr(value, "item"):
+        # Normalize concrete NumPy/backend scalar constants at graph construction.
+        if isinstance(value, (np.generic, np.ndarray, xp.ndarray)):
+            if value.ndim != 0:
+                raise TypeError(f"Expected numeric scalar, got array with shape {value.shape}")
             value = value.item()
-        if not isinstance(value, (int, float, complex)):
+        if not isinstance(value, Scalar):
             raise TypeError(f"Expected numeric scalar, got {type(value)}")
         return Literal(value)
 
@@ -133,45 +115,33 @@ class Node:
     def sinc(self) -> UnaryOp:
         return Node._make_unary_op(Op.SINC, self)
 
-    # --------
-    # Addition
-    # --------
+    # -----------------
+    # BINARY OPERATIONS
+    # -----------------
     def __add__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.ADD, self, other)
 
     def __radd__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.ADD, other, self)
 
-    # -----------
-    # Subtraction
-    # -----------
     def __sub__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.SUB, self, other)
 
     def __rsub__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.SUB, other, self)
 
-    # --------------
-    # Multiplication
-    # --------------
     def __mul__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.MUL, self, other)
 
     def __rmul__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.MUL, other, self)
 
-    # -------------
-    # True division
-    # -------------
     def __truediv__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.DIV, self, other)
 
     def __rtruediv__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.DIV, other, self)
 
-    # -----
-    # Power
-    # -----
     def __pow__(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.POW, self, other)
 
@@ -187,13 +157,6 @@ class Node:
     def minimum(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.MIN, self, other)
 
-    # ----------
-    # Conversion
-    # ----------
-    def __float__(self):
-        if not hasattr(self, "value"):
-            raise TypeError(f"{self.__class__.__name__} does not provide a value")
-        return float(self.value)
 
 
 class BinaryOp(Node):
@@ -212,7 +175,7 @@ class BinaryOp(Node):
         return self.op.func(self.left.value, self.right.value)
 
     @property
-    def is_variable(self):
+    def is_variable(self) -> bool:
         return self.left.is_variable or self.right.is_variable
 
 
@@ -239,8 +202,9 @@ class InputNode(Node):
     """
     Stable handle to another AST node.
 
-    The underlying node may be replaced without invalidating expressions
-    that already reference this InputNode.
+    Allows the underlying node to be replaced without rebuilding expressions
+    that reference the handle. Attribute access and assignment are forwarded
+    to the underlying node.
     """
 
     def __init__(self, node: Node | None):
@@ -248,9 +212,7 @@ class InputNode(Node):
 
     def __getattr__(self, name):
         if self.node is None:
-            raise AttributeError(
-                f"InputNode is empty and has no attribute '{name}'"
-            )
+            raise AttributeError(f"InputNode is empty and has no attribute '{name}'")
         return getattr(self.node, name)
 
     def __setattr__(self, name, value):
@@ -284,7 +246,7 @@ class Literal(Node):
     """
 
     def __init__(self, value: Scalar):
-        if not isinstance(value, (int, float, complex)):
+        if not isinstance(value, Scalar):
             raise TypeError("Literal value must be numeric.")
 
         self._value = value
@@ -294,10 +256,10 @@ class Literal(Node):
         return self._value
 
     @property
-    def is_variable(self):
+    def is_variable(self) -> bool:
         return False
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return repr(self._value)
 
 
@@ -322,53 +284,50 @@ class Parameter(Node):
     ):
         if isinstance(value, bool) or not isinstance(value, Real):
             raise TypeError("Parameter value must be a real scalar.")
-            
-        _validate_parameter_bounds(lower_bound, upper_bound)
-
-        if value < lower_bound or value > upper_bound:
-            raise ValueError(
-                f"Parameter value {value} lies outside bounds "
-                f"[{lower_bound}, {upper_bound}]."
-            )
 
         self.value = float(value)
         self.name = name
-        self._variable = variable
-        self.lower_bound = lower_bound
-        self.upper_bound = upper_bound
-        self._owner_ref = weakref.ref(owner) if owner is not None else None
+        self._is_variable = variable
+        self.bound(lower_bound, upper_bound)
+        self._owner = weakref.ref(owner) if owner is not None else None
 
     @property
     def is_variable(self) -> bool:
-        return self._variable
+        return self._is_variable
 
-    def variable(self, lower_bound=_UNSET, upper_bound=_UNSET, *, bounds=_UNSET):
-        """Mark variable, optionally setting bounds as endpoints or a pair."""
-        if bounds is not _UNSET:
-            if lower_bound is not _UNSET or upper_bound is not _UNSET:
+    def variable(self, lower_bound=None, upper_bound=None, *, bounds=None):
+        """Mark variable; None leaves an endpoint unchanged, infinities unbound it."""
+        if bounds is not None:
+            if lower_bound is not None or upper_bound is not None:
                 raise ValueError("bounds cannot be combined with lower_bound or upper_bound.")
             lower_bound, upper_bound = bounds
-            lower_bound = -np.inf if lower_bound is None else lower_bound
-            upper_bound = np.inf if upper_bound is None else upper_bound
-        else:
-            lower_bound = None if lower_bound is _UNSET else lower_bound
-            upper_bound = None if upper_bound is _UNSET else upper_bound
         lower_bound = self.lower_bound if lower_bound is None else lower_bound
         upper_bound = self.upper_bound if upper_bound is None else upper_bound
         self.bound(lower_bound, upper_bound)
-        self._variable = True
+        self._is_variable = True
         return self
 
-    def fixed(self):
-        self._variable = False
+    def fixed(self) -> Parameter:
+        self._is_variable = False
         return self
 
-    def bound(
-        self,
-        lower_bound: float = -np.inf,
-        upper_bound: float = np.inf,
-    ):
-        _validate_parameter_bounds(lower_bound, upper_bound)
+    @staticmethod
+    def _validate_bounds(lower_bound, upper_bound) -> None:
+        """Validate a Parameter's numerical interval."""
+        for name, bound in (
+            ("lower_bound", lower_bound),
+            ("upper_bound", upper_bound),
+        ):
+            if isinstance(bound, bool) or not isinstance(bound, Real):
+                raise TypeError(f"{name} must be a real scalar.")
+            if math.isnan(bound):
+                raise ValueError(f"{name} must not be NaN.")
+
+        if lower_bound > upper_bound:
+            raise ValueError("lower_bound must be <= upper_bound.")
+
+    def bound(self, lower_bound: float = -np.inf, upper_bound: float = np.inf):
+        self._validate_bounds(lower_bound, upper_bound)
 
         if self.value < lower_bound or self.value > upper_bound:
             raise ValueError(
@@ -382,12 +341,12 @@ class Parameter(Node):
 
     @property
     def owner(self):
-        if self._owner_ref is None:
+        if self._owner is None:
             return None
-        return self._owner_ref()
+        return self._owner()
 
     @property
-    def full_name(self):
+    def full_name(self) -> str:
         owner = self.owner
 
         if owner is not None:
@@ -398,7 +357,7 @@ class Parameter(Node):
 
         return self.name or "<parameter>"
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         status = "V" if self.is_variable else "F"
         return f"{self.full_name}={self.value:.4g}[{status}]"
 
@@ -414,11 +373,11 @@ class Symbol(Node):
             raise TypeError("Symbol key must be hashable.") from None
 
         self._key = key
-        self._default = default
+        self._default_value = default
 
     def set_default(self, value):
         """Set the optional fallback value and return this Symbol."""
-        self._default = value
+        self._default_value = value
         return self
 
     @property
@@ -428,17 +387,15 @@ class Symbol(Node):
     @property
     def default(self):
         """The optional default value, or None when no default was provided."""
-        if not self.has_default:
-            return None
-        return self._default
+        return self._default_value
 
     @property
     def has_default(self):
-        """Whether a default was supplied, including an explicit None."""
-        return self._default is not None
+        """Whether a non-None default is available."""
+        return self._default_value is not None
 
     @property
-    def is_variable(self):
+    def is_variable(self) -> bool:
         return False
 
     @property
@@ -448,7 +405,7 @@ class Symbol(Node):
             "Symbols are resolved from compile-time context or runtime bindings."
         )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Symbol({self.key!r})"
 
 
