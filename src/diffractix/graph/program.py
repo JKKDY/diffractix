@@ -64,13 +64,14 @@ class Program:
     Inputs contain numerical variables followed by runtime symbols.
     Instructions operate on these inputs and produce an output vector.
     """
+    # TODO rename to parameters
     variables: dict[int, int]       # id(Parameter) -> theta index
     runtime_symbols: dict[Hashable, int]     # symbol key -> symbol index
 
     _instructions: tuple[Instruction, ...]
     _outputs: tuple[Operand, ...]
     _register_count: int
-
+        
 
 
     def evaluate(self, theta: Sequence, bindings: Mapping = {}) -> tuple:
@@ -90,6 +91,7 @@ class Program:
         tuple
             Computed outputs in their compiled order.
         """
+        # TODO: this should maybe be removed because our program may only access a subset of actual theta parameters 
         if len(theta) != len(self.variables):
             raise ValueError(
                 f"Expected {len(self.variables)} variable values, got {len(theta)}."
@@ -106,7 +108,7 @@ class Program:
                 return inputs[operand.index]
             if isinstance(operand, Register):
                 return registers[operand.index]
-            if isinstance(operand, Immediate):
+            if isinstance(operand, Constant):
                 return operand.value
             raise TypeError(f"Unknown operand: {type(operand).__name__}")
 
@@ -132,7 +134,7 @@ class Program:
                 return f"r{operand.index}"
             if isinstance(operand, Input):
                 return f"i{operand.index}"
-            if isinstance(operand, Immediate):
+            if isinstance(operand, Constant):
                 return repr(operand.value)
             raise TypeError(f"Unknown operand: {type(operand).__name__}")
 

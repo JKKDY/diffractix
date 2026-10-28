@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence, Hashable
 from dataclasses import dataclass
 from enum import Enum, auto
 
 import numpy as np
 from diffractix.backend import xp
+
 
 from .node import (
     Node,
@@ -14,615 +15,344 @@ from .node import (
     Symbol,
     InputNode,
     BinaryOp,
-    UnaryOp,
+    UnaryOp
 )
+
+from .program import (
+    Input, 
+    Register, 
+    Constant, 
+    Operand,
+    UnaryInstruction, 
+    BinaryInstruction, 
+    Program
+)
+
+from .errors import UnresolvedInputError, UnsupportedNodeError
+from .graph_utils import walk_ast
+
 from .ops import Op
-from .utils import (
-    ASTContext,
-    ParameterSnapshot,
-    ASTCycleError,
-    UnresolvedInputError,
-    UnsupportedNodeError,
-    collect_variables,
-    describe_node,
-    parameter_state,
-)
 
 
-class Opcode(Enum):
-    CONST = auto()
-    VARIABLE = auto()
-    SYMBOL = auto()
-    BINARY = auto()
-    UNARY = auto()
 
+def compile_graph(roots: Sequence[Node], bindings: Mapping = {}) -> Program:
+    """Compile expression graphs into an optimized executable program."""
+    return optimize(precompile_graph(roots, bindings))
 
-# --------------------
-# PROGRAM INSTRUCTIONS
-# --------------------
-
-@dataclass(frozen=True)
-class ConstInstruction:
-    value: float                  # compiled constant value
-    opcode = Opcode.CONST
-
-
-@dataclass(frozen=True)
-class VariableInstruction:
-    index: int                    # index into supplied variable values
-    opcode = Opcode.VARIABLE
-
-
-@dataclass(frozen=True)
-class SymbolInstruction:
-    index: int                    # index into supplied symbol values
-    opcode = Opcode.SYMBOL
-
-
-@dataclass(frozen=True)
-class BinaryInstruction:
-    op: Op                        # semantic operation
-    func: Callable                # pre-bound numerical implementation
-    left_index: int               # index of left input value
-    right_index: int              # index of right input value
-    opcode = Opcode.BINARY
-
-
-@dataclass(frozen=True)
-class UnaryInstruction:
-    op: Op                        # semantic operation
-    func: Callable                # pre-bound numerical implementation
-    operand_index: int            # index of input value
-    opcode = Opcode.UNARY
-
-
-Instruction = (
-    ConstInstruction
-    | VariableInstruction
-    | SymbolInstruction
-    | BinaryInstruction
-    | UnaryInstruction
-)
-
-
-@dataclass(eq=False, frozen=True)
-class ASTProgram:
-    """
-    Numerical program generated from an AST.
-
-    Each instruction produces exactly one value. The index of the instruction
-    is also the index of its result in the evaluation value array.
-    """
-    instructions: tuple[Instruction, ...]  # ordered numerical instructions
-    root_indices: tuple[int, ...]          # value indices returned as outputs
-
-
-@dataclass(frozen=True)
-class CompiledAST:
-    """Optimized, executable representation of an AST."""
-
-    program: ASTProgram                  # optimized numerical program
-    variables: tuple[Parameter, ...]     # ordered variable Parameters
-    symbols: tuple[Symbol, ...]          # ordered unresolved Symbols
-    initial_values: np.ndarray           # initial variable values
-
-    def evaluate(
-        self,
-        variable_values: np.ndarray,
-        bindings: Mapping | None = None,
-    ) -> np.ndarray:
-        """Evaluate the AST with variable values and runtime Symbol bindings."""
-        return xp.array(self._evaluate_roots(variable_values, bindings))
-
-    def _evaluate_sequence(self, variable_values, bindings=None):
-        """Consume scalar float64 roots without a packed array and its adjoints.
-
-        Other dtypes/shapes retain array coercion, including common-dtype
-        promotion and ragged-array validation. Tracers stay in their active graph.
-        """
-        roots = self._evaluate_roots(variable_values, bindings)
-        if all(
-            isinstance(value, float)
-            or (
-                getattr(value, "dtype", None) == np.dtype("float64")
-                and getattr(value, "ndim", None) == 0
-                and not isinstance(value, np.ndarray)
-            )
-            for value in roots
-        ):
-            # Python float's weak scalar promotion differs from a packed
-            # float64 entry when propagating e.g. float32 ray bundles.
-            # Scalar-shaped traced roots must also retain array-shaped
-            # cotangents when differentiated through nested stack/index ops.
-            return tuple(
-                np.float64(value) if isinstance(value, float) else xp.reshape(value, ())
-                for value in roots
-            )
-        return tuple(xp.array(roots))
-
-
-    def _evaluate_roots(self, variable_values, bindings=None):
-        """Execute the program once, preserving root order and tracer values."""
-        if len(variable_values) != len(self.variables):
-            raise ValueError(
-                f"Expected {len(self.variables)} variable values, "
-                f"got {len(variable_values)}."
-            )
-
-        bindings = {} if bindings is None else bindings
-        symbol_values = []
-
-        for symbol in self.symbols:
-            try:
-                symbol_values.append(bindings[symbol.key])
-            except KeyError:
-                raise KeyError(
-                    f"Missing runtime binding for Symbol key {symbol.key!r}."
-                ) from None
-
-        values = []
-
-        for instruction in self.program.instructions:
-            if instruction.opcode is Opcode.CONST:
-                values.append(instruction.value)
-
-            elif instruction.opcode is Opcode.VARIABLE:
-                values.append(variable_values[instruction.index])
-
-            elif instruction.opcode is Opcode.SYMBOL:
-                values.append(symbol_values[instruction.index])
-
-            elif instruction.opcode is Opcode.BINARY:
-                left = values[instruction.left_index]
-                right = values[instruction.right_index]
-                values.append(instruction.func(left, right))
-
-            elif instruction.opcode is Opcode.UNARY:
-                operand = values[instruction.operand_index]
-                values.append(instruction.func(operand))
-
-        return tuple(
-            values[index]
-            for index in self.program.root_indices
-        )
-
-    def __call__(
-        self,
-        variable_values: np.ndarray,
-        bindings: Mapping | None = None,
-    ) -> np.ndarray:
-        return self.evaluate(variable_values, bindings=bindings)
-
-
-# --------------------
-# PROGRAM OPTIMIZATION
-# --------------------
-
-def constant_key(value) -> tuple:
-    """
-    Return a stable key for constant deduplication.
-
-    float.hex() preserves distinctions such as +0.0 and -0.0.
-    """
-    if hasattr(value, "item"):
-        value = value.item()
-
-    if isinstance(value, float):
-        return float, value.hex()
-
-    if isinstance(value, complex):
-        return complex, value.real.hex(), value.imag.hex()
-
-    return type(value), value
-
-
-def scalar_value(value):
-    """Convert NumPy scalar results from constant folding to Python scalars."""
-    return value.item() if hasattr(value, "item") else value
-
-
-def optimize_program(program: ASTProgram) -> ASTProgram:
-    """
-    Optimize a compiled numerical program without changing its semantics.
-
-    The current passes perform constant folding, common-subexpression
-    elimination, and removal of values that no longer contribute to an output.
-    """
-    program = fold_constants_and_cse(program)
-    program = eliminate_dead_code(program)
+def optimize(program: Program) -> Program:
+    """Apply graph optimizations without reusing registers."""
+    program = _fold_constants_and_cse(program)
+    program = _eliminate_dead_code(program)
+    program = _allocate_registers(program)
     return program
 
+def precompile(roots: Sequence[Node], bindings: Mapping = {}) -> Program:
+    """Translate expression graphs into an unoptimized program."""
+    variables = {}
+    runtime_symbols = {}
+    instructions = []
+    compiled: dict[int, Operand] = {} # cache for each compiled node
 
-def fold_constants_and_cse(program: ASTProgram) -> ASTProgram:
-    """
-    Fold constant expressions and merge equivalent compiled instructions.
+    for node in walk_ast(roots, bindings):
+        if isinstance(node, Parameter) and node.is_variable:
+            if id(node) not in variables:
+                variables[id(node)] = len(variables)
 
-    CSE happens here rather than during AST construction. Distinct Parameter
-    objects therefore remain independent even if their metadata is identical.
-    """
-    optimized: list[Instruction] = []
+        elif isinstance(node, Symbol) and node.key not in bindings:
+            if node.key not in runtime_symbols:
+                runtime_symbols[node.key] = len(runtime_symbols)
 
-    # Map each value produced by the original program to its corresponding
-    # value index in the optimized program.
-    old_to_new_index: dict[int, int] = {}
-
-    # Maps an instruction's semantic identity to an existing result value.
-    canonical_indices: dict[tuple, int] = {}
-
-    # Known compile-time values, indexed by optimized value index.
-    constant_values: dict[int, float] = {}
-
-    def intern(instruction: Instruction, key: tuple) -> int:
-        """Reuse an equivalent instruction or append a new one."""
-        if key in canonical_indices:
-            return canonical_indices[key]
-
-        value_index = len(optimized)
-        optimized.append(instruction)
-        canonical_indices[key] = value_index
-
-        if instruction.opcode is Opcode.CONST:
-            constant_values[value_index] = instruction.value
-
-        return value_index
-
-    for old_index, instruction in enumerate(program.instructions):
-        if instruction.opcode is Opcode.CONST:
-            instruction = ConstInstruction(instruction.value)
-            key = (
-                Opcode.CONST,
-                constant_key(instruction.value),
-            )
-
-        elif instruction.opcode is Opcode.VARIABLE:
-            key = (
-                Opcode.VARIABLE,
-                instruction.index,
-            )
-
-        elif instruction.opcode is Opcode.SYMBOL:
-            key = (
-                Opcode.SYMBOL,
-                instruction.index,
-            )
-
-        elif instruction.opcode is Opcode.UNARY:
-            operand_index = old_to_new_index[instruction.operand_index]
-
-            if operand_index in constant_values:
-                value = scalar_value(
-                    instruction.func(
-                        constant_values[operand_index]
-                    )
-                )
-
-                instruction = ConstInstruction(value)
-                key = (
-                    Opcode.CONST,
-                    constant_key(value),
-                )
-
-            else:
-                instruction = UnaryInstruction(
-                    op=instruction.op,
-                    func=instruction.func,
-                    operand_index=operand_index,
-                )
-
-                key = (
-                    Opcode.UNARY,
-                    instruction.op,
-                    operand_index,
-                )
-
-        elif instruction.opcode is Opcode.BINARY:
-            left_index = old_to_new_index[instruction.left_index]
-            right_index = old_to_new_index[instruction.right_index]
-
-            if (
-                left_index in constant_values
-                and right_index in constant_values
-            ):
-                value = scalar_value(
-                    instruction.func(
-                        constant_values[left_index],
-                        constant_values[right_index],
-                    )
-                )
-
-                instruction = ConstInstruction(value)
-                key = (
-                    Opcode.CONST,
-                    constant_key(value),
-                )
-
-            else:
-                instruction = BinaryInstruction(
-                    op=instruction.op,
-                    func=instruction.func,
-                    left_index=left_index,
-                    right_index=right_index,
-                )
-
-                key = (
-                    Opcode.BINARY,
-                    instruction.op,
-                    left_index,
-                    right_index,
-                )
-
-        else:
-            raise RuntimeError(
-                f"Unknown instruction type: {type(instruction).__name__}"
-            )
-
-        old_to_new_index[old_index] = intern(instruction, key)
-
-    root_indices = tuple(
-        old_to_new_index[index]
-        for index in program.root_indices
-    )
-
-    return ASTProgram(
-        instructions=tuple(optimized),
-        root_indices=root_indices,
-    )
-
-
-def instruction_dependencies(
-    instruction: Instruction,
-) -> tuple[int, ...]:
-    """Return the value indices required by an instruction."""
-    if instruction.opcode is Opcode.BINARY:
-        return (
-            instruction.left_index,
-            instruction.right_index,
-        )
-
-    if instruction.opcode is Opcode.UNARY:
-        return (instruction.operand_index,)
-
-    return ()
-
-
-def remap_instruction(instruction: Instruction, index_map: dict[int, int]) -> Instruction:
-    """Rewrite an instruction to reference a new value-index layout."""
-    if instruction.opcode is Opcode.BINARY:
-        return BinaryInstruction(
-            op=instruction.op,
-            func=instruction.func,
-            left_index=index_map[instruction.left_index],
-            right_index=index_map[instruction.right_index],
-        )
-
-    if instruction.opcode is Opcode.UNARY:
-        return UnaryInstruction(
-            op=instruction.op,
-            func=instruction.func,
-            operand_index=index_map[instruction.operand_index],
-        )
-
-    return instruction
-
-
-def eliminate_dead_code(program: ASTProgram) -> ASTProgram:
-    """
-    Remove instructions that do not contribute to any requested root.
-
-    Constant folding can make previously required intermediate values
-    unreachable, so this pass also compacts the value indices afterwards.
-    """
-    live_indices = set(program.root_indices)
-    pending = list(program.root_indices)
-
-    # Walk backwards from outputs to determine which values are still needed.
-    while pending:
-        value_index = pending.pop()
-        instruction = program.instructions[value_index]
-
-        for dependency_index in instruction_dependencies(instruction):
-            if dependency_index not in live_indices:
-                live_indices.add(dependency_index)
-                pending.append(dependency_index)
-
-    ordered_indices = sorted(live_indices)
-
-    index_map = {
-        old_index: new_index
-        for new_index, old_index in enumerate(ordered_indices)
-    }
-
-    instructions = tuple(
-        remap_instruction(
-            program.instructions[old_index],
-            index_map,
-        )
-        for old_index in ordered_indices
-    )
-
-    root_indices = tuple(
-        index_map[index]
-        for index in program.root_indices
-    )
-
-    return ASTProgram(
-        instructions=instructions,
-        root_indices=root_indices,
-    )
-
-
-# -----------
-# COMPILATION
-# -----------
-def compile_ast(
-    roots: Sequence[Node],
-    context: ASTContext | None = None,
-    parameter_snapshot: ParameterSnapshot | None = None,
-) -> CompiledAST:
-    """
-    Compile an AST into an optimized differentiable numerical program.
-
-    Snapshot metadata is authoritative for Parameters it contains. Other
-    Parameters use their current value and variable state. Unbound Symbols
-    remain indexed runtime inputs.
-    """
-    roots = tuple(roots)
-    context = dict(context or {})
-
-    variables = collect_variables(
-        roots,
-        context,
-        parameter_snapshot=parameter_snapshot,
-    )
-    variable_indices = {
-        id(parameter): index
-        for index, parameter in enumerate(variables)
-    }
-
-    initial_values = np.array(
-        [
-            parameter_state(parameter, parameter_snapshot)[0]
-            for parameter in variables
-        ],
-        dtype=float,
-    )
-    initial_values.setflags(write=False)
-
-    symbols: list[Symbol] = []
-    symbol_indices: dict[object, int] = {}
-
-    # Each AST node identity maps to the index of the value produced for that node.
-    value_indices: dict[int, int] = {}
-
-    # Tracks the current recursion path by node identity so cycles can be detected explicitly.
-    active: set[int] = set()
-
-    instructions: list[Instruction] = []
-
-    def emit(instruction: Instruction) -> int:
-        """Append an instruction and return the index of its result value."""
-        value_index = len(instructions)
-        instructions.append(instruction)
-        return value_index
-
-    def compile_node(node: Node) -> int:
-        """Compile a node and return the index of its resulting value."""
+    def compile_node(node: Node) -> Operand:
         node_id = id(node)
 
-        if node_id in active:
-            raise ASTCycleError(
-                f"Cycle detected at {describe_node(node)}."
-            )
-
-        # Explicitly shared AST nodes reuse the same compiled value.
-        if node_id in value_indices:
-            return value_indices[node_id]
-
-        active.add(node_id)
+        if node_id in compiled:
+            return compiled[node_id]
 
         if isinstance(node, Literal):
-            value_index = emit(
-                ConstInstruction(node.value)
-            )
+            operand = Constant(node.value)
 
         elif isinstance(node, Parameter):
-            parameter_value, is_variable = parameter_state(
-                node,
-                parameter_snapshot,
-            )
+            operand = Input(variables[node_id]) if node.is_variable else Constant(node.value)
 
-            if is_variable:
-                value_index = emit(
-                    VariableInstruction(
-                        variable_indices[node_id]
-                    )
-                )
+        elif isinstance(node, Symbol):
+            if node.key in bindings:
+                value = bindings[node.key]
+                operand = compile_node(value) if isinstance(value, Node) else Constant(value)
             else:
-                value_index = emit(
-                    ConstInstruction(parameter_value)
-                )
-
-        elif isinstance(node, BinaryOp):
-            left_index = compile_node(node.left)
-            right_index = compile_node(node.right)
-
-            value_index = emit(
-                BinaryInstruction(
-                    op=node.op,
-                    func=node.op.func,
-                    left_index=left_index,
-                    right_index=right_index,
-                )
-            )
-
-        elif isinstance(node, UnaryOp):
-            operand_index = compile_node(node.operand)
-
-            value_index = emit(
-                UnaryInstruction(
-                    op=node.op,
-                    func=node.op.func,
-                    operand_index=operand_index,
-                )
-            )
+                index = len(variables) + runtime_symbols[node.key]
+                operand = Input(index)
 
         elif isinstance(node, InputNode):
             if node.node is None:
-                raise UnresolvedInputError(
-                    "Encountered an empty InputNode."
-                )
+                raise UnresolvedInputError("Encountered an empty InputNode.")
+            operand = compile_node(node.node)
 
-            # InputNodes are compile-time indirections and produce no
-            # instruction of their own.
-            value_index = compile_node(node.node)
+        elif isinstance(node, UnaryOp):
+            src = compile_node(node.operand)
+            dst = len(instructions)
+            instructions.append(UnaryInstruction(node.op, dst, src))
+            operand = Register(dst)
 
-        elif isinstance(node, Symbol):
-            if node.key in context:
-                value = context[node.key]
-
-                # Compile-time bindings disappear after being resolved.
-                if isinstance(value, Node):
-                    value_index = compile_node(value)
-                else:
-                    value_index = emit(
-                        ConstInstruction(value)
-                    )
-            else:
-                if node.key not in symbol_indices:
-                    symbol_indices[node.key] = len(symbols)
-                    symbols.append(node)
-
-                value_index = emit(
-                    SymbolInstruction(symbol_indices[node.key])
-                )
+        elif isinstance(node, BinaryOp):
+            left = compile_node(node.left)
+            right = compile_node(node.right)
+            dst = len(instructions)
+            instructions.append(BinaryInstruction(node.op, dst, left, right))
+            operand = Register(dst)
 
         else:
-            raise UnsupportedNodeError(
-                f"Unsupported AST node type: {type(node).__name__}"
-            )
+            raise UnsupportedNodeError(f"Unsupported AST node type: {type(node).__name__}")
 
-        active.remove(node_id)
-        value_indices[node_id] = value_index
+        compiled[node_id] = operand
+        return operand
+    
+    outputs = tuple(compile_node(root) for root in roots)
 
-        return value_index
-
-    root_indices = tuple(
-        compile_node(root)
-        for root in roots
-    )
-
-    raw_program = ASTProgram(
-        instructions=tuple(instructions),
-        root_indices=root_indices,
-    )
-
-    optimized_program = optimize_program(raw_program)
-
-    return CompiledAST(
-        program=optimized_program,
+    return Program(
         variables=variables,
-        symbols=tuple(symbols),
-        initial_values=initial_values,
+        runtime_symbols=runtime_symbols,
+        _instructions=tuple(instructions),
+        _outputs=outputs,
+        _register_count=len(instructions),
+    )
+    
+
+def fuse(*programs: Program) -> Program:
+    """Concatenate multiple independent programs into one program.
+
+    Assumes all programs use the same input convention for theta and runtime
+    symbol bindings.
+
+    The fused program returns the concatenated outputs of all input programs,
+    in the same order the programs were passed in.
+    """
+    if not programs:
+        raise ValueError("Expected at least one program.")
+
+    # TODO all programs must expect the same exact symbol and parameter mapping. Otherwise we cant fuse
+
+    variables = {}
+    runtime_symbols = {}
+    instructions = []
+    outputs = []
+
+    register_offset = 0
+
+    def remap_operand(operand: Operand, offset: int) -> Operand:
+        if isinstance(operand, Register):
+            return Register(operand.index + offset)
+        if isinstance(operand, Input):
+            return operand
+        if isinstance(operand, Constant):
+            return operand
+        raise TypeError(f"Unknown operand: {type(operand).__name__}")
+
+    for program in programs:
+        variables.update(program.variables)
+        runtime_symbols.update(program.runtime_symbols)
+
+        for instruction in program._instructions:
+            if isinstance(instruction, UnaryInstruction):
+                instructions.append(
+                    UnaryInstruction(
+                        op=instruction.op,
+                        dst=instruction.dst + register_offset,
+                        src=remap_operand(instruction.src, register_offset),
+                    )
+                )
+            elif isinstance(instruction, BinaryInstruction):
+                instructions.append(
+                    BinaryInstruction(
+                        op=instruction.op,
+                        dst=instruction.dst + register_offset,
+                        left=remap_operand(instruction.left, register_offset),
+                        right=remap_operand(instruction.right, register_offset),
+                    )
+                )
+            else:
+                raise TypeError(f"Unknown instruction: {type(instruction).__name__}")
+
+        outputs.extend(remap_operand(operand, register_offset) for operand in program._outputs)
+        register_offset += program._register_count
+
+    return Program(
+        variables=variables,
+        runtime_symbols=runtime_symbols,
+        _instructions=tuple(instructions),
+        _outputs=tuple(outputs),
+        _register_count=register_offset,
     )
 
 
+#############################
+# OPTIMIZATION IMPLEMENTATION
+#############################
+
+def _replace_operand(operand, replacements):
+    if isinstance(operand, Register):
+        return replacements[operand.index]
+    return operand
+
+def _sources(instruction):
+    """Return instruction operands in evaluation order."""
+    if isinstance(instruction, UnaryInstruction):
+        return (instruction.src,)
+    if isinstance(instruction, BinaryInstruction):
+        return instruction.left, instruction.right
+    raise TypeError(f"Unknown instruction: {type(instruction).__name__}")
+
+def _operand_key(operand: Operand):
+    """Return a key for CSE, or None if the operand cannot be compared safely."""
+    if isinstance(operand, (Input, Register)):
+        return type(operand), operand.index
+
+    value = operand.value
+
+    if type(value) not in (bool, int, float, complex):
+        return None
+    if isinstance(value, (float, complex)) and not np.isfinite(value):
+        return None
+
+    return Constant, type(value), repr(value)
+
+def _rewrite_instruction(instruction, destination, operands):
+    if isinstance(instruction, UnaryInstruction):
+        return UnaryInstruction(instruction.op, destination, operands[0])
+    return BinaryInstruction(instruction.op, destination, operands[0], operands[1])
+
+def _fold_constants_and_cse(program: Program) -> Program:
+    """Fold constant expressions and merge equivalent instructions."""
+    instructions = []
+    replacements = {}
+    computations = {}
+
+    for instruction in program._instructions:
+        operands = tuple(
+            _replace_operand(operand, replacements) for operand in _sources(instruction)
+        )
+        keys = tuple(_operand_key(operand) for operand in operands)
+        comparable = all(key is not None for key in keys)
+
+        # fold constants
+        if comparable and all(isinstance(operand, Constant) for operand in operands):
+            try:
+                value = instruction.op.func(*(operand.value for operand in operands))
+                constant = Constant(value)
+
+                if _operand_key(constant) is not None:
+                    replacements[instruction.dst] = constant
+                    continue
+
+            except (ArithmeticError, TypeError, ValueError):
+                # Leave operations that cannot be folded for runtime evaluation.
+                pass
+        
+        # common subexpression elimination
+        key = (type(instruction), instruction.op, keys)
+        if comparable and key in computations:
+            replacements[instruction.dst] = computations[key]
+            continue
+
+        destination = len(instructions)
+        instructions.append(_rewrite_instruction(instruction, destination, operands))
+        replacement = Register(destination)
+        replacements[instruction.dst] = replacement
+        if comparable:
+            computations[key] = replacement
+
+    outputs = tuple(_replace_operand(output, replacements) for output in program._outputs)
+    return Program(
+        variables=dict(program.variables),
+        runtime_symbols=dict(program.runtime_symbols),
+        _instructions=tuple(instructions),
+        _outputs=outputs,
+        _register_count=len(instructions),
+    )
+
+
+def _eliminate_dead_code(program: Program) -> Program:
+    """Remove instructions that do not contribute to an output."""
+    live = set()
+    for output in program._outputs:
+        if isinstance(output, Register):
+            live.add(output.index)
+
+    retained = []
+    for instruction in reversed(program._instructions):
+        if instruction.dst not in live:
+            continue
+        retained.append(instruction)
+        for operand in _sources(instruction):
+            if isinstance(operand, Register):
+                live.add(operand.index)
+
+    instructions = []
+    replacements = {}
+    for instruction in reversed(retained):
+        operands = tuple(
+            _replace_operand(operand, replacements)
+            for operand in _sources(instruction)
+        )
+        destination = len(instructions)
+        instructions.append(_rewrite_instruction(instruction, destination, operands))
+        replacements[instruction.dst] = Register(destination)
+
+    outputs = tuple(_replace_operand(output, replacements) for output in program._outputs)
+    return Program(
+        variables=dict(program.variables),
+        runtime_symbols=dict(program.runtime_symbols),
+        _instructions=tuple(instructions),
+        _outputs=outputs,
+        _register_count=len(instructions),
+    )
+
+
+def _allocate_registers(program: Program) -> Program:
+    """Reuse registers after their final use."""
+    last_use = {}
+    for index, instruction in enumerate(program._instructions):
+        for operand in _sources(instruction):
+            if isinstance(operand, Register):
+                last_use[operand.index] = index
+
+    for output in program._outputs:
+        if isinstance(output, Register):
+            last_use[output.index] = len(program._instructions)
+
+    instructions = []
+    replacements = {}
+    available = []
+    register_count = 0
+
+    for index, instruction in enumerate(program._instructions):
+        sources = _sources(instruction)
+        operands = tuple(_replace_operand(source, replacements) for source in sources)
+
+        released = set()
+        for source in sources:
+            if not isinstance(source, Register) or source.index in released:
+                continue
+            if last_use[source.index] == index:
+                available.append(replacements[source.index].index)
+                released.add(source.index)
+
+        # Evaluation reads all sources before writing the destination.
+        if available:
+            destination = available.pop()
+        else:
+            destination = register_count
+            register_count += 1
+
+        instructions.append(_rewrite_instruction(instruction, destination, operands))
+        replacements[instruction.dst] = Register(destination)
+        if instruction.dst not in last_use:
+            available.append(destination)
+
+    outputs = tuple(_replace_operand(output, replacements) for output in program._outputs)
+    return Program(
+        variables=dict(program.variables),
+        runtime_symbols=dict(program.runtime_symbols),
+        _instructions=tuple(instructions),
+        _outputs=outputs,
+        _register_count=register_count,
+    )
