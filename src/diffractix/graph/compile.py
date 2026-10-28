@@ -88,7 +88,7 @@ Instruction = (
 @dataclass(eq=False, frozen=True)
 class ASTProgram:
     """
-    Linear numerical program generated from an AST.
+    Numerical program generated from an AST.
 
     Each instruction produces exactly one value. The index of the instruction
     is also the index of its result in the evaluation value array.

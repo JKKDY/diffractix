@@ -24,7 +24,7 @@ class Comparison:
 
     def __bool__(self):
         raise SymbolicControlFlowError(
-            "Symbolic comparisons cannot be used as Python booleans."
+"Symbolic comparisons cannot be used as Python booleans."
         )
 
     def __repr__(self):
