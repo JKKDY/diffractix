@@ -1,20 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import field, fields, is_dataclass
+from dataclasses import fields, is_dataclass
 from numbers import Real
 from typing import ClassVar, get_args, get_type_hints
 
 from diffractix.graph import InputNode, Node, Parameter
-
-
-def annotation_contains_node(annotation) -> bool:
-    """Return whether a type annotation contains Node or a Node subclass."""
-    if isinstance(annotation, type):
-        try:
-            return issubclass(annotation, Node)
-        except TypeError:
-            return False
-    return any(annotation_contains_node(arg) for arg in get_args(annotation))
 
 
 _GRAPH_PARAMETER = object()
@@ -26,35 +16,36 @@ def parameter(default=None):
 
 
 class OpticalBase:
-    """Base class providing common graph-backed parameter behavior."""
+    """Base class for optical objects with optional graph-backed parameters.
+
+    Dataclass subclasses discover parameters from Node annotations or fields
+    declared with parameter(). Non-dataclass subclasses can declare them as
+    ``parameter_fields = ("name", ...)``.
+    """
 
     _parameter_names: ClassVar[tuple[str, ...] | None] = None
-
-
-    # --------------------
-    # CLASS INITIALIZATION
-    # --------------------
-    def __init_subclass__(cls, **kwargs):
-        super().__init_subclass__(**kwargs)
-        cls._parameter_names = None
+    parameter_fields: ClassVar[tuple[str, ...] | None] = None
+    
+    def __new__(cls, *args, **kwargs):
+        # use __new__ instead of __init__ so subclasses to have to call super().__init__ explicitely 
+        instance = super().__new__(cls)
+        instance._requirements = []
+        return instance
 
 
     # -------------------
     # PARAMETER DISCOVERY
     # -------------------
-    @classmethod
-    def _get_parameter_names(cls) -> tuple[str, ...]:
-        cached = cls.__dict__.get("_parameter_names")
-        if cached is not None:
-            return cached
+    @staticmethod
+    def _annotation_contains_node(annotation) -> bool:
+        """Return whether an annotation contains Node or a Node subclass."""
+        if isinstance(annotation, type):
+            try:
+                return issubclass(annotation, Node)
+            except TypeError:
+                return False
+        return any(OpticalBase._annotation_contains_node(arg) for arg in get_args(annotation))
 
-        type_hints = get_type_hints(cls)
-        cls._parameter_names = tuple(
-            item.name for item in fields(cls)
-            if item.metadata.get(_GRAPH_PARAMETER, False)
-            or annotation_contains_node(type_hints.get(item.name))
-        ) if is_dataclass(cls) else ()
-        return cls._parameter_names
 
     @property
     def refractive_index(self):
@@ -67,7 +58,30 @@ class OpticalBase:
 
     @property
     def parameter_names(self) -> tuple[str, ...]:
-        return type(self)._get_parameter_names()
+        """Names of graph-backed fields declared explicitly or by dataclass metadata."""
+        cls = type(self)
+        cached = cls.__dict__.get("_parameter_names")
+
+        if cached is not None:
+            return cached
+
+        explicit_names = getattr(cls, "parameter_fields", None)
+        if explicit_names is not None:
+            cls._parameter_names = tuple(explicit_names)
+            return cls._parameter_names
+
+        if is_dataclass(cls):
+            type_hints = get_type_hints(cls)
+            cls._parameter_names = tuple(
+                item.name
+                for item in fields(cls)
+                if item.metadata.get(_GRAPH_PARAMETER, False)
+                or cls._annotation_contains_node(type_hints.get(item.name))
+            )
+        else:
+            cls._parameter_names = ()
+
+        return cls._parameter_names
 
     @property
     def parameters(self) -> tuple[InputNode, ...]:
@@ -75,7 +89,7 @@ class OpticalBase:
 
     @property
     def values(self) -> tuple[float | None, ...]:
-        """Current values of parameters when they can be evaluated directly."""
+        """Return current parameter values, or None if unavailable."""
         values = []
         for handle in self.parameters:
             try:
@@ -90,13 +104,11 @@ class OpticalBase:
     # ------------
     @property
     def requirements(self) -> tuple:
-        """Persistent requirements attached to this optical object."""
-        return tuple(getattr(self, "_requirements", ()))
+        """Requirements attached to this optical object."""
+        return tuple(self._requirements)
 
     def require(self, *requirements):
-        """Attach persistent requirements to this optical object."""
-        if not hasattr(self, "_requirements"):
-            self._requirements = []
+        """Attach requirements to this optical object."""
         self._requirements.extend(requirements)
         return self
 
@@ -105,42 +117,36 @@ class OpticalBase:
     # PARAMETER ASSIGNMENT
     # --------------------
     def __setattr__(self, name, value):
+        def convert_value_to_node(name: str) -> Node | None:
+            if isinstance(value, Node):
+                return value
+            if isinstance(value, Real) and not isinstance(value, bool):
+                return Parameter(value=value, name=name, owner=self)
+            if value is None:
+                return None
+            raise TypeError(
+                f"Parameter {self._get_parameter_label(name)!r} must be a Node, numeric scalar, or None; "
+                f"got {type(value).__name__}."
+            )
+
         if name in self.parameter_names:
             handle = self.__dict__.get(name)
             if isinstance(handle, InputNode):
-                handle.node = self._convert_to_node(name, value)
+                handle.node = convert_value_to_node(name)
                 return
-            value = InputNode(self._convert_to_node(name, value))
+            value = InputNode(convert_value_to_node(name,))
         object.__setattr__(self, name, value)
 
-    def _convert_to_node(self, name: str, value: Node | Real | None) -> Node | None:
-        if isinstance(value, Node):
-            return value
-        if isinstance(value, Real) and not isinstance(value, bool):
-            return Parameter(
-                value=value,
-                name=name,
-                owner=self,
-            )
-        if value is None:
-            return None
-        raise TypeError(
-            f"Parameter {self._parameter_label(name)!r} must be a Node, numeric scalar, or None; "
-            f"got {type(value).__name__}."
-        )
-
-    def _parameter_label(self, name: str) -> str:
+    def _get_parameter_label(self, name: str) -> str:
         label = getattr(self, "label", None)
         if label is not None:
             return f"{label}.{name}"
         return f"{type(self).__name__}.{name}"
 
-    def _get_direct_parameter(self, name: str) -> Parameter | None:
+    def _get_parameter_node(self, name: str) -> Parameter | None:
         handle = getattr(self, name)
         if not isinstance(handle, InputNode):
-            raise TypeError(
-                f"Parameter {self._parameter_label(name)!r} is not an InputNode."
-            )
+            raise TypeError( f"Parameter {self._get_parameter_label(name)!r} is not an InputNode.")
         if isinstance(handle.node, Parameter):
             return handle.node
         return None
@@ -149,39 +155,39 @@ class OpticalBase:
     # -----------
     # VARIABILITY
     # -----------
-    def _select_parameter_names(self, names: tuple[str, ...]) -> tuple[str, ...]:
+    def _validate_parameter_names(self, names: tuple[str, ...]) -> tuple[str, ...]:
         if not names:
             return self.parameter_names
-        unknown = [
-            name
-            for name in names
-            if name not in self.parameter_names
-        ]
+
+        unknown = [name for name in names if name not in self.parameter_names]
         if unknown:
             raise ValueError(
                 f"Unknown parameter(s) {unknown} for {type(self).__name__}. "
                 f"Available: {self.parameter_names}"
             )
+
         return names
 
-    def variable(self, *names: str):
+    def variable(self, *parameter_names: str):
         """
         Mark directly stored Parameters as optimization variables.
 
         With no names, every parameter directly containing a
         Parameter is marked variable. Derived parameters are skipped.
         """
-        selected = self._select_parameter_names(names)
-        strict = bool(names)
-        for name in selected:
-            parameter = self._get_direct_parameter(name)
+        strict = bool(parameter_names)
+        names = self._validate_parameter_names(parameter_names)
+
+        for name in names:
+            parameter = self._get_parameter_node(name)
             if parameter is not None:
                 parameter.variable()
             elif strict:
                 raise TypeError(
-                    f"Parameter {self._parameter_label(name)!r} does not directly contain "
+                    f"Parameter {self._get_parameter_label(name)!r} does not directly contain "
                     "a Parameter and cannot itself be marked variable."
                 )
+
         return self
 
     def fixed(self, *names: str):
@@ -190,16 +196,18 @@ class OpticalBase:
 
         With no names, every parameter directly containing a
         Parameter is marked fixed. Derived parameters are skipped.
-        """
-        selected = self._select_parameter_names(names)
-        strict = bool(names)
-        for name in selected:
-            parameter = self._get_direct_parameter(name)
+        """        
+        strict = bool(parameter_names)
+        names = self._validate_parameter_names(parameter_names)
+
+        for name in names:
+            parameter = self._get_parameter_node(name)
             if parameter is not None:
                 parameter.fixed()
             elif strict:
                 raise TypeError(
-                    f"Parameter {self._parameter_label(name)!r} does not directly contain "
+                    f"Parameter {self._get_parameter_label(name)!r} does not directly contain "
                     "a Parameter and cannot itself be marked fixed."
                 )
+
         return self

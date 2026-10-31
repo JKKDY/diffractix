@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from numbers import Number, Real
-from typing import Any, ClassVar
+from typing import ClassVar
 
 from ..core.base import OpticalBase, parameter
 from ..graph import InputNode, Node, Parameter, walk_ast
@@ -21,7 +21,6 @@ class OpticalElement(OpticalBase, ABC):
 
     label: str | None = None
     _source_info: dict = field(default_factory=dict, init=False, repr=False)
-    _requirements: list[Any] = field(default_factory=list, init=False, repr=False)
 
     # Static members
     _instance_counts: ClassVar[dict[type, int]] = {}

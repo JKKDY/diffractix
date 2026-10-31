@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Sequence
 from typing import get_type_hints
 
-from diffractix.core.base import OpticalBase, annotation_contains_node
+from diffractix.core.base import OpticalBase
 from diffractix.elements.element import OpticalElement
 
 
@@ -23,6 +23,7 @@ class CompositeElement(OpticalBase, Sequence):
     # INITIALIZATION
     # --------------
     def __init__(self):
+        super().__init__()
         names, elements = [], []
         for name, value in vars(self).items():
             if not name.startswith("_") and self._is_element(value):
@@ -34,8 +35,9 @@ class CompositeElement(OpticalBase, Sequence):
     # -------------------
     # PARAMETER DISCOVERY
     # -------------------
-    @classmethod
-    def _get_parameter_names(cls) -> tuple[str, ...]:
+    @property
+    def parameter_names(self) -> tuple[str, ...]:
+        cls = type(self)
         cached = cls.__dict__.get("_parameter_names")
         if cached is not None:
             return cached
@@ -47,7 +49,7 @@ class CompositeElement(OpticalBase, Sequence):
                 annotation = type_hints.get(name)
                 if (
                     annotation is not None
-                    and annotation_contains_node(annotation)
+                    and cls._annotation_contains_node(annotation)
                     and name not in parameter_names
                 ):
                     parameter_names.append(name)

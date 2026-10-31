@@ -19,7 +19,7 @@ def _numerical_type(input_type):
             "__module__": input_type.__module__,
             "_is_numerical": True,
             "__setattr__": object.__setattr__,
-            "_get_parameter_names": classmethod(lambda cls: ()),
+            "parameter_names": property(lambda self: ()),
         },
     )
 
