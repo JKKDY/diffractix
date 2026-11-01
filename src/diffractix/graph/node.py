@@ -1,6 +1,7 @@
 from __future__ import annotations
 import math
 import weakref
+from collections.abc import Hashable, Mapping
 from numbers import Complex as Scalar, Real
 import numpy as np
 
@@ -19,6 +20,13 @@ class Node:
 
     def __bool__(self):
         raise SymbolicControlFlowError("Symbolic values cannot be used as Python booleans.")
+
+    def evaluate(self, bindings: Mapping[Hashable, object] = {},
+        *, parameter_values: Mapping[int, object] | None = None,
+    ):
+        """Evaluate this graph with optional symbol and parameter values."""
+        from .graph_utils import evaluate_ast
+        return evaluate_ast(self, bindings=bindings, parameter_values=parameter_values)
 
     @staticmethod
     def _make_literal(value: Scalar) -> Literal:

@@ -1,15 +1,14 @@
 """Declarative optical inputs and their numerical counterparts."""
 
-from dataclasses import fields
+from dataclasses import dataclass, fields
 from functools import cache
 
-from ..core import OpticalBase
-from ..graph import compile_ast
+from diffractix.core import OpticalBase
 
 
 @cache
 def _numerical_type(input_type):
-    """Reuse one subclass whose constructors store numerical values directly."""
+    """create subclass without parameter wrapping"""
     if input_type.__dict__.get("_is_numerical", False):
         return input_type
     return type(
@@ -24,6 +23,7 @@ def _numerical_type(input_type):
     )
 
 
+@dataclass(eq=False, kw_only=True)
 class OpticalInput(OpticalBase):
     """Declarative optical input with graph-backed real scalar dataclass fields.
 
@@ -32,7 +32,10 @@ class OpticalInput(OpticalBase):
 
     Numerical subclasses inherit the dataclass constructor and __post_init__.
     Custom propagation should construct type(self) to retain the numerical type.
+    Subclasses with additional dataclass fields must also use @dataclass.
     """
+
+    label: str | None = None
 
     @classmethod
     def numerical_type(cls):
@@ -42,7 +45,7 @@ class OpticalInput(OpticalBase):
         """
         return _numerical_type(cls)
 
-    def numeric(self, bindings=None):
+    def numeric(self, bindings={}):
         """Evaluate current graph fields in a new numerical dataclass instance.
 
         Explicit numerical Symbol bindings take precedence over Symbol defaults.
@@ -50,32 +53,17 @@ class OpticalInput(OpticalBase):
         Custom constructors must accept the dataclass init fields as keywords.
         Derived init=False fields are rebuilt by the numerical constructor.
         """
-        input_fields = tuple(item for item in fields(self) if item.init)
-        parameters = {
-            item.name: getattr(self, item.name) for item in input_fields
-            if item.name in self.parameter_names
-        }
-        roots = {
-            name: handle for name, handle in parameters.items()
-            if handle.node is not None
-        }
+        # get all fields (including purely numeric ones)
+        constructor_fields = tuple(item for item in fields(self) if item.init)
+        constructor_names = {field.name for field in constructor_fields}
+        parameters = { name: getattr(self, name) for name in self.parameter_names if name in constructor_names}
 
-        graph = compile_ast(tuple(roots.values()))
-        
-        resolved_bindings = {} if bindings is None else dict(bindings)
-        for symbol in graph.symbols:
-            if symbol.key not in resolved_bindings and symbol.has_default:
-                resolved_bindings[symbol.key] = symbol.default
-                
-        values = dict.fromkeys(parameters)
-        values.update(zip(
-            roots,
-            graph._evaluate_sequence(graph.initial_values,bindings=resolved_bindings)
-        ))
-        
-        numerical = self.numerical_type()(**{
-            item.name: values.get(item.name, getattr(self, item.name))
-            for item in input_fields
-        })
+        values = {}
+        for item in constructor_fields:
+            if item.name in parameters:
+                handle = parameters[item.name]
+                values[item.name] = None if handle.node is None else handle.evaluate(bindings)
+            else:
+                values[item.name] = getattr(self, item.name)
 
-        return numerical
+        return self.numerical_type()(**values)

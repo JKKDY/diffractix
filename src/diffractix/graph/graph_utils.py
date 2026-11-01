@@ -24,7 +24,8 @@ def evaluate_ast(root: Node, bindings: Mapping = {}, parameter_values: Mapping |
 
     When parameter_values is supplied, it must contain every Parameter in the
     graph, keyed by its identity. Otherwise current Parameter values are used.
-    Symbol bindings may contain numerical values or other Nodes.
+    Symbol bindings may contain numerical values or other Nodes. A Symbol's
+    default is used when its key is absent from bindings.
     """
     active = set()
     values = {}
@@ -40,29 +41,36 @@ def evaluate_ast(root: Node, bindings: Mapping = {}, parameter_values: Mapping |
         try:
             if isinstance(node, Literal):
                 value = node.value
+            
             elif isinstance(node, Parameter):
                 if parameter_values is None:
                     value = node.value
+                elif node_id in parameter_values:
+                    value = parameter_values[node_id]
                 else:
-                    try:
-                        value = parameter_values[node_id]
-                    except KeyError:
-                        raise KeyError(f"Missing value for Parameter {node!r} (id {node_id}).") from None
+                    raise KeyError(f"Missing value for Parameter {node!r} (id {node_id}).") from None
+            
             elif isinstance(node, Symbol):
-                try:
+                if node.key in bindings:
                     value = bindings[node.key]
-                except KeyError:
+                elif node.has_default:
+                    value = node.default
+                else:
                     raise KeyError(f"Missing binding for Symbol key {node.key!r}.") from None
                 if isinstance(value, Node):
                     value = evaluate(value)
+            
             elif isinstance(node, InputNode):
                 if node.node is None:
                     raise UnresolvedInputError("Encountered an empty InputNode.")
                 value = evaluate(node.node)
+            
             elif isinstance(node, UnaryOp):
                 value = node.op.func(evaluate(node.operand))
+            
             elif isinstance(node, BinaryOp):
                 value = node.op.func(evaluate(node.left), evaluate(node.right))
+            
             else:
                 raise UnsupportedNodeError(f"Unsupported AST node type: {type(node).__name__}")
         finally:
