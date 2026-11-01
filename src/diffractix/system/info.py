@@ -7,7 +7,7 @@ from diffractix.core import OpticalBase
 
 @dataclass(frozen=True)
 class ElementInfo:
-    """Inspection metadata for one resolved optical element."""
+    """Snapshot of an element's identity and parameters for inspection."""
 
     type_name: str
     label: str | None
@@ -18,9 +18,8 @@ class ElementInfo:
 
 @dataclass(eq=False, frozen=True)
 class CallSite:
-    """Location in user code where an element was added to the system."""
+    """Location in user code where an element was added, used in error messages."""
 
-    # currently only in use for error messages
     file: str
     line: int
     call_index: int
@@ -33,7 +32,7 @@ class CallSite:
 
 @dataclass(frozen=True)
 class ParameterInfo:
-    """Descriptor for a simulation parameter."""
+    """Snapshot of a parameter's value, bounds, and optimization index."""
 
     parameter_id: int
     name: str | None
@@ -52,42 +51,29 @@ class ParameterInfo:
 
 @dataclass(frozen=True)
 class Placement:
-    """A single occurrence of an element in the optical path."""
+    """An element added to a system, including its requested position and call site."""
 
     element: OpticalBase
     z: Node | Real | None = None
     call_site: CallSite | None = None
-    path: str | None = None
+    path: str | None = None # identifies location within a composite element
 
     def describe(self, index: int | None = None) -> str:
-        """Return a human-readable description of this placement."""
         element_type = type(self.element).__name__
         label = getattr(self.element, "label", None)
 
-        if index is None:
-            description = "Placement"
-        else:
-            description = f"Placement #{index}"
+        index_part = f" #{index}" if index is not None else ""
+        label_part = f" '{label}'" if label else ""
+        site_part = f" added at {self.call_site.file}:{self.call_site.line}" if self.call_site else ""
 
-        if label:
-            description += f" ({element_type} '{label}')"
-        else:
-            description += f" ({element_type})"
-
-        if self.call_site is not None:
-            description += (
-                f" added at {self.call_site.file}:"
-                f"{self.call_site.line}"
-            )
-
-        return description
+        return f"Placement{index_part} ({element_type}{label_part}){site_part}"
 
 
 
 
 @dataclass(frozen=True)
 class ResolvedPlacement:
-    """A sequential optical element with its resolved propagation medium."""
+    """A placement with its propagation medium resolved."""
 
     placement: Placement
     refractive_index: Node
