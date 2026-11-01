@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from numbers import Number, Real
 from typing import ClassVar
 
@@ -11,24 +11,16 @@ from ..graph import InputNode, Node, Parameter, walk_ast
 @dataclass(eq=False, kw_only=True)
 class OpticalElement(OpticalBase, ABC):
     """
-    Base class for declarative optical elements.
+    Base class for optical elements.
 
-    Graph-valued fields are declared either by annotating them with Node or
-    explicitly using parameter(...). They are exposed through stable InputNode
-    handles, allowing the graph behind an element parameter to be replaced
-    without invalidating expressions that already reference the handle.
+    Dataclass subclasses inherit the label constructor argument. Subclasses
+    overriding __post_init__ should call super().__post_init__().
     """
 
     label: str | None = None
-    _source_info: dict = field(default_factory=dict, init=False, repr=False)
 
     # Static members
     _instance_counts: ClassVar[dict[type, int]] = {}
-    validate_graph_inputs: ClassVar[bool] = True
-
-    def __init_subclass__(cls, *, validate_graph_inputs: bool = True, **kwargs):
-        super().__init_subclass__(**kwargs)
-        cls.validate_graph_inputs = validate_graph_inputs
 
     def __post_init__(self):
         # Create a label if not explicitly set
@@ -68,9 +60,6 @@ class OpticalElement(OpticalBase, ABC):
     # ----------
     def _validate_for_build(self):
         """Validate this element's ABCD representation before system compilation."""
-        if not type(self).validate_graph_inputs:
-            return
-
         matrix = self.matrix
         length = self.element_length
         refractive_index = self.refractive_index
@@ -109,8 +98,7 @@ class OpticalElement(OpticalBase, ABC):
             isinstance(length, bool) or not isinstance(length, Real)
         ):
             raise TypeError(
-                "element_length must be a Node or real numeric scalar, "
-                f"got {type(length).__name__}."
+                "element_length must be a Node or real numeric scalar, got {type(length).__name__}."
             )
 
         # Validate refractive index.

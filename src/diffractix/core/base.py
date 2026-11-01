@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import fields, is_dataclass
+from dataclasses import field, fields, is_dataclass
 from numbers import Real
-from typing import ClassVar, get_args, get_type_hints
+from typing import ClassVar, get_args, get_origin, get_type_hints
 
 from diffractix.graph import InputNode, Node, Parameter
 
@@ -18,18 +18,17 @@ def parameter(default=None):
 class OpticalBase:
     """Base class for optical objects with optional graph-backed parameters.
 
-    Dataclass subclasses discover parameters from Node annotations or fields
-    declared with parameter(). Non-dataclass subclasses can declare them as
-    ``parameter_fields = ("name", ...)``.
+    Parameters are discovered from Node annotations and dataclass fields
+    declared with parameter().
     """
 
     _parameter_names: ClassVar[tuple[str, ...] | None] = None
-    parameter_fields: ClassVar[tuple[str, ...] | None] = None
     
     def __new__(cls, *args, **kwargs):
         # use __new__ instead of __init__ so subclasses to have to call super().__init__ explicitely 
         instance = super().__new__(cls)
-        instance._requirements = []
+        object.__setattr__(instance, "_requirements", [])
+        object.__setattr__(instance, "label", None)
         return instance
 
 
@@ -58,29 +57,36 @@ class OpticalBase:
 
     @property
     def parameter_names(self) -> tuple[str, ...]:
-        """Names of graph-backed fields declared explicitly or by dataclass metadata."""
+        """Names of graph-backed parameters, in declaration order."""
         cls = type(self)
         cached = cls.__dict__.get("_parameter_names")
 
         if cached is not None:
             return cached
 
-        explicit_names = getattr(cls, "parameter_fields", None)
-        if explicit_names is not None:
-            cls._parameter_names = tuple(explicit_names)
-            return cls._parameter_names
-
+        # find all fields explicitely marked with parameter() (e.g.  f: float = parameter(0.2))
+        explicitly_marked_parameters = set()
         if is_dataclass(cls):
-            type_hints = get_type_hints(cls)
-            cls._parameter_names = tuple(
-                item.name
-                for item in fields(cls)
-                if item.metadata.get(_GRAPH_PARAMETER, False)
-                or cls._annotation_contains_node(type_hints.get(item.name))
-            )
-        else:
-            cls._parameter_names = ()
+            for item in fields(cls):
+                if item.metadata.get(_GRAPH_PARAMETER, False):
+                    explicitly_marked_parameters.add(item.name)
 
+        # get parameter names in base classes 
+        # traverse in method resolution order (e.g. object -> OpticalBase -> OpticalElement -> ThinLens)
+        # we dont use fields() because base classes needn't be dataclasses
+        names = []
+        type_hints = get_type_hints(cls)
+
+        for base in reversed(cls.mro()):
+            for name in base.__dict__.get("__annotations__", {}):
+                annotation = type_hints.get(name)
+                if name in names or get_origin(annotation) is ClassVar:
+                    continue
+
+                if name in explicitly_marked_parameters or cls._annotation_contains_node(annotation):
+                    names.append(name)
+
+        cls._parameter_names = tuple(names)
         return cls._parameter_names
 
     @property
@@ -190,7 +196,7 @@ class OpticalBase:
 
         return self
 
-    def fixed(self, *names: str):
+    def fixed(self, *parameter_names: str):
         """
         Mark directly stored Parameters as fixed.
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
-from typing import get_type_hints
 
 from diffractix.core.base import OpticalBase
 from diffractix.elements.element import OpticalElement
@@ -24,46 +23,20 @@ class CompositeElement(OpticalBase, Sequence):
     # --------------
     def __init__(self):
         super().__init__()
+
+        # gather constituent elements 
         names, elements = [], []
         for name, value in vars(self).items():
-            if not name.startswith("_") and self._is_element(value):
+            if not name.startswith("_") and isinstance(value, (OpticalElement, CompositeElement)):
                 names.append(name)
                 elements.append(value)
+
         self._element_names = tuple(names)
         self._elements = tuple(elements)
-
-    # -------------------
-    # PARAMETER DISCOVERY
-    # -------------------
-    @property
-    def parameter_names(self) -> tuple[str, ...]:
-        cls = type(self)
-        cached = cls.__dict__.get("_parameter_names")
-        if cached is not None:
-            return cached
-        type_hints = get_type_hints(cls)
-        parameter_names = []
-
-        for base in reversed(cls.mro()): # Method Resolution Order
-            for name in getattr(base, "__annotations__", {}):
-                annotation = type_hints.get(name)
-                if (
-                    annotation is not None
-                    and cls._annotation_contains_node(annotation)
-                    and name not in parameter_names
-                ):
-                    parameter_names.append(name)
-
-        cls._parameter_names = tuple(parameter_names)
-        return cls._parameter_names
 
     # --------------
     # ELEMENT ACCESS
     # --------------
-    @staticmethod
-    def _is_element(value) -> bool:
-        return isinstance(value, (OpticalElement, CompositeElement))
-
     @property
     def elements(self) -> tuple[OpticalElement | CompositeElement, ...]:
         """Direct child elements in propagation order."""
@@ -84,7 +57,7 @@ class CompositeElement(OpticalBase, Sequence):
     # -----------------
     def walk(self, prefix: str = "") -> Iterator[tuple[str, OpticalElement]]:
         """
-        Recursively yield concrete optical elements as (path, element).
+        Recursively yield optical elements as (path:str, element).
 
         Nested composite names are joined with dots, for example:
         "relay.first_lens".

@@ -217,27 +217,6 @@ def test_optical_element_requires_element_length():
 # BUILD REPRESENTATION
 # ----------------------
 
-def test_builtin_element_graph_validation_defaults_to_enabled():
-    assert OpticalElement.validate_graph_inputs is True
-    assert DummyElement.validate_graph_inputs is True
-
-
-def test_graph_validation_can_be_disabled_per_subclass():
-    @dataclass(kw_only=True)
-    class UnvalidatedElement(ValidationElement, validate_graph_inputs=False):
-        pass
-
-    invalid = UnvalidatedElement(
-        matrix_value=((True,),),
-        length_value="invalid",
-        refractive_index_value=False,
-    )
-
-    assert not UnvalidatedElement.validate_graph_inputs
-    assert DummyElement.validate_graph_inputs
-    invalid._validate_for_build()
-
-
 @pytest.mark.parametrize(
     ("matrix", "error", "message"),
     (
