@@ -234,7 +234,7 @@ def test_build_validation_rejects_invalid_matrix_structure(matrix, error, messag
     element = ValidationElement(matrix_value=matrix)
 
     with pytest.raises(error, match=message):
-        element._validate_for_build()
+        element.validate()
 
 
 @pytest.mark.parametrize("length", (True, 1j, "0.1"))
@@ -242,7 +242,7 @@ def test_build_validation_rejects_invalid_element_length(length):
     element = ValidationElement(length_value=length)
 
     with pytest.raises(TypeError, match="element_length"):
-        element._validate_for_build()
+        element.validate()
 
 
 @pytest.mark.parametrize("index", (True, 1j, "1.5"))
@@ -250,7 +250,7 @@ def test_build_validation_rejects_invalid_refractive_index(index):
     element = ValidationElement(refractive_index_value=index)
 
     with pytest.raises(TypeError, match="refractive_index"):
-        element._validate_for_build()
+        element.validate()
 
 
 def test_build_validation_accepts_numeric_scalars_nodes_and_optional_index():
@@ -260,20 +260,20 @@ def test_build_validation_accepts_numeric_scalars_nodes_and_optional_index():
         refractive_index_value=None,
     )
 
-    element._validate_for_build()
+    element.validate()
 
 
 def test_build_validation_rejects_empty_input_nodes():
     element = ValidationElement(matrix_value=((InputNode(None), 0.0), (0.0, 1.0)))
 
     with pytest.raises(UnresolvedInputError, match="empty InputNode"):
-        element._validate_for_build()
+        element.validate()
 
 
 def test_build_validation_allows_empty_optional_refractive_index_handle():
     element = ValidationElement(refractive_index_value=InputNode(None))
 
-    element._validate_for_build()
+    element.validate()
 
 
 def test_build_validation_rejects_graph_cycles():
@@ -282,7 +282,7 @@ def test_build_validation_rejects_graph_cycles():
     element = ValidationElement(matrix_value=((cyclic, 0.0), (0.0, 1.0)))
 
     with pytest.raises(ASTCycleError, match="Cycle detected"):
-        element._validate_for_build()
+        element.validate()
 
 
 def test_build_validation_rejects_unsupported_node_types():
@@ -291,7 +291,7 @@ def test_build_validation_rejects_unsupported_node_types():
     )
 
     with pytest.raises(UnsupportedNodeError, match="Unsupported AST node type"):
-        element._validate_for_build()
+        element.validate()
 
 
 # -------

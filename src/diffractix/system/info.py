@@ -17,10 +17,10 @@ class ElementInfo:
 
 
 @dataclass(eq=False, frozen=True)
-class SourceInfo:
+class CallSite:
     """Location in user code where an element was added to the system."""
 
-    # currently in use for error messages
+    # currently only in use for error messages
     file: str
     line: int
     call_index: int
@@ -56,7 +56,7 @@ class Placement:
 
     element: OpticalBase
     z: Node | Real | None = None
-    source_info: SourceInfo | None = None
+    call_site: CallSite | None = None
     path: str | None = None
 
     def describe(self, index: int | None = None) -> str:
@@ -74,10 +74,10 @@ class Placement:
         else:
             description += f" ({element_type})"
 
-        if self.source_info is not None:
+        if self.call_site is not None:
             description += (
-                f" added at {self.source_info.file}:"
-                f"{self.source_info.line}"
+                f" added at {self.call_site.file}:"
+                f"{self.call_site.line}"
             )
 
         return description
@@ -86,7 +86,7 @@ class Placement:
 
 
 @dataclass(frozen=True)
-class SystemPlacement:
+class ResolvedPlacement:
     """A sequential optical element with its resolved propagation medium."""
 
     placement: Placement

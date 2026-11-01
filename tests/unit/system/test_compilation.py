@@ -7,7 +7,7 @@ from diffractix.composites import CompositeElement, Slab
 from diffractix.elements import Interface, Space, ThinLens
 from diffractix.graph import Parameter
 from diffractix import Ray
-from diffractix.system.system import ParameterInfo, Placement, SourceInfo, System, SystemPlacement
+from diffractix.system.system import ParameterInfo, Placement, CallSite, System, ResolvedPlacement
 
 
 class NestedComposite(CompositeElement):
@@ -94,15 +94,15 @@ def test_resolve_elements_preserves_absolute_position_node():
     assert resolved[0].z is z
 
 
-def test_resolve_elements_preserves_source_info():
+def test_resolve_elements_preserves_call_site():
     system = System()
     slab = Slab(d=0.01, n=1.5)
     system.add(slab)
 
-    source_info = system.placements[0].source_info
+    call_site = system.placements[0].call_site
     resolved = system._resolve_elements()
 
-    assert all(placement.source_info is source_info for placement in resolved)
+    assert all(placement.call_site is call_site for placement in resolved)
 
 
 def test_resolve_elements_records_composite_paths():
@@ -288,16 +288,16 @@ def test_resolve_layout_removes_absolute_position_from_output():
     assert all(placement.z is None for placement in resolved)
 
 
-def test_resolve_layout_preserves_source_info():
+def test_resolve_layout_preserves_call_site():
     system = System()
     lens = ThinLens(f=0.1)
     system.add(lens, z=0.5)
 
-    source_info = system.placements[0].source_info
+    call_site = system.placements[0].call_site
     resolved = system._resolve_layout(system._resolve_elements())
 
-    assert resolved[0].source_info is source_info
-    assert resolved[1].source_info is source_info
+    assert resolved[0].call_site is call_site
+    assert resolved[1].call_site is call_site
 
 
 def test_resolve_layout_preserves_path():
@@ -332,7 +332,7 @@ def test_resolve_refractive_indices_returns_system_placements():
     resolved, continuity = system._resolve_refractive_indices((placement,))
 
     assert len(resolved) == 1
-    assert isinstance(resolved[0], SystemPlacement)
+    assert isinstance(resolved[0], ResolvedPlacement)
     assert resolved[0].placement is placement
     assert continuity == ()
 
@@ -519,18 +519,18 @@ def test_resolve_refractive_indices_preserves_explicit_index_graph():
 def test_resolve_refractive_indices_preserves_placement_identity():
     system = System(ambient_n=1.0)
     lens = ThinLens(f=0.1)
-    source_info = SourceInfo(file="example.py", line=10, call_index=0)
+    call_site = CallSite(file="example.py", line=10, call_index=0)
 
     placement = Placement(
         element=lens,
-        source_info=source_info,
+        call_site=call_site,
         path="lens",
     )
 
     resolved, continuity = system._resolve_refractive_indices((placement,))
 
     assert resolved[0].placement is placement
-    assert resolved[0].placement.source_info is source_info
+    assert resolved[0].placement.call_site is call_site
     assert resolved[0].placement.path == "lens"
     assert continuity == ()
 

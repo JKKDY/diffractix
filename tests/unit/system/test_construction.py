@@ -10,7 +10,7 @@ from diffractix.system import AMBIENT_N
 from diffractix.elements import OpticalElement, Space, ThinLens
 from diffractix.graph import Node, Parameter
 from diffractix.graph import Symbol
-from diffractix.system.system import System, Placement, SourceInfo
+from diffractix.system.system import System, Placement, CallSite
 from diffractix.system.errors import SystemValidationError
 from diffractix.system.symbols import make_symbol
 
@@ -27,7 +27,7 @@ class FailingElement(OpticalElement):
     def element_length(self):
         return 0.0
 
-    def _validate_for_build(self):
+    def validate(self):
         raise ValueError("intentional validation failure")
 
 
@@ -65,8 +65,8 @@ def make_beam():
     )
 
 
-def test_source_info_string():
-    info = SourceInfo(
+def test_call_site_string():
+    info = CallSite(
         file="example.py",
         line=42,
         call_index=0,
@@ -80,7 +80,7 @@ def test_placement_description():
     placement = Placement(
         element=lens,
         z=0.5,
-        source_info=SourceInfo(
+        call_site=CallSite(
             file="example.py",
             line=42,
             call_index=0,
@@ -105,7 +105,7 @@ def test_add_tracks_repeated_source_line_execution():
     for _ in range(3):
         system.add(ThinLens(f=0.1))
 
-    assert [placement.source_info.call_index for placement in system.placements] == [
+    assert [placement.call_site.call_index for placement in system.placements] == [
         0,
         1,
         2,
@@ -137,7 +137,7 @@ def test_add_indexed_elements_preserves_order_and_python_insertion(index, count)
     assert system.add(*additions, index=index) is system
     assert len(system.elements) == len(expected)
     assert all(a is b for a, b in zip(system.elements, expected))
-    assert all(placement.source_info is not None for placement in system.placements)
+    assert all(placement.call_site is not None for placement in system.placements)
 
 
 def test_add_variadic_append_and_indexed_nested_iterable():
@@ -342,17 +342,17 @@ def test_add_supports_chaining():
     )
 
 
-def test_add_records_source_information():
+def test_add_records_call_sitermation():
     system = System()
     lens = ThinLens(f=0.1)
 
     system.add(lens)
 
-    info = system.placements[0].source_info
+    info = system.placements[0].call_site
 
     assert info is not None
     # Shared bytecode caches can retain another platform's source filename.
-    assert info.file == test_add_records_source_information.__code__.co_filename
+    assert info.file == test_add_records_call_sitermation.__code__.co_filename
     assert info.line > 0
     assert info.call_index == 0
 

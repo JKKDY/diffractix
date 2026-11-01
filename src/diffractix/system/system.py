@@ -19,7 +19,7 @@ from diffractix.simulation.simulation import Simulation, SimulationStep, Simulat
 
 from .errors import SystemValidationError
 from .symbols import AMBIENT_N
-from .info import ElementInfo, ParameterInfo, Placement, SourceInfo, SystemPlacement
+from .info import ElementInfo, ParameterInfo, Placement, CallSite, ResolvedPlacement
 
 _UNSET = object()
 
@@ -133,7 +133,7 @@ class System:
             placement = Placement(
                 element=element,
                 z=z,
-                source_info=self._capture_source_info(),
+                call_site=self._capture_call_site(),
             )
             if index is None:
                 self._placements.append(placement)
@@ -162,7 +162,7 @@ class System:
         )
 
 
-    def _capture_source_info(self) -> SourceInfo:
+    def _capture_call_site(self) -> CallSite:
         """Capture where an element was added in user code."""
         #Note: currently not in use, may be used later for GUI <-> code reflection  
         frame = inspect.currentframe().f_back.f_back
@@ -173,7 +173,7 @@ class System:
         call_index = self._execution_counts.get(key, 0)
         self._execution_counts[key] = call_index + 1
 
-        return SourceInfo(
+        return CallSite(
             file=filename,
             line=lineno,
             call_index=call_index,
@@ -320,7 +320,7 @@ class System:
             if isinstance(element, CompositeElement):
                 for path, leaf in element.walk():
                     try:
-                        leaf._validate_for_build()
+                        leaf.validate()
                     except Exception as exc:
                         errors.append(
                             f"{location_str}, child {path!r} "
@@ -328,7 +328,7 @@ class System:
                         )
             elif isinstance(element, OpticalElement):
                 try:
-                    element._validate_for_build()
+                    element.validate()
                 except Exception as exc:
                     errors.append(f"{location_str}: {exc}")
 
@@ -356,7 +356,7 @@ class System:
                         Placement(
                             element=leaf,
                             z=placement.z if i == 0 else None,
-                            source_info=placement.source_info,
+                            call_site=placement.call_site,
                             path=path,
                         )
                     )
@@ -406,7 +406,7 @@ class System:
                 resolved.append(
                     Placement(
                         element=spacer,
-                        source_info=placement.source_info,
+                        call_site=placement.call_site,
                         path=placement.path,
                     )
                 )
@@ -416,7 +416,7 @@ class System:
             resolved.append(
                 Placement(
                     element=element,
-                    source_info=placement.source_info,
+                    call_site=placement.call_site,
                     path=placement.path,
                 )
             )
@@ -472,7 +472,7 @@ class System:
                 current_n = index_handle
 
             resolved.append(
-                SystemPlacement(
+                ResolvedPlacement(
                     placement=placement,
                     refractive_index=current_n,
                 )

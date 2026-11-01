@@ -27,8 +27,8 @@ class Mirror(OpticalElement):
 
     R: Node = np.inf
 
-    def _validate_for_build(self):
-        super()._validate_for_build()
+    def validate(self):
+        super().validate()
         try:
             radius = self.R.value
         except (AttributeError, RuntimeError):

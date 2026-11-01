@@ -98,12 +98,12 @@ def test_thin_lens_matrix_tracks_input_handle():
 
 @pytest.mark.parametrize("focal_length", (-0.5, 0.1, np.inf))
 def test_thin_lens_build_validation_accepts_nonzero_focal_length(focal_length):
-    ThinLens(f=focal_length)._validate_for_build()
+    ThinLens(f=focal_length).validate()
 
 
 def test_thin_lens_build_validation_rejects_zero_focal_length():
     with pytest.raises(ValueError, match="focal length.*zero"):
-        ThinLens(f=0.0)._validate_for_build()
+        ThinLens(f=0.0).validate()
 
 
 # -----
@@ -197,12 +197,12 @@ def test_mirror_matrix():
 
 @pytest.mark.parametrize("radius", (0.5, -0.5, np.inf, -np.inf))
 def test_mirror_build_validation_accepts_nonzero_radius(radius):
-    Mirror(R=radius)._validate_for_build()
+    Mirror(R=radius).validate()
 
 
 def test_mirror_build_validation_rejects_zero_radius():
     with pytest.raises(ValueError, match="radius R.*zero"):
-        Mirror(R=0.0)._validate_for_build()
+        Mirror(R=0.0).validate()
 
 
 def test_mirror_has_no_local_solver_requirement():
@@ -304,12 +304,12 @@ def test_curved_interface_retains_radius_derivatives(radius):
 
 @pytest.mark.parametrize("radius", (0.5, -0.5, np.inf, -np.inf))
 def test_interface_build_validation_accepts_nonzero_radius(radius):
-    Interface(n1=1.0, n2=1.5, R=radius)._validate_for_build()
+    Interface(n1=1.0, n2=1.5, R=radius).validate()
 
 
 def test_interface_build_validation_rejects_zero_radius():
     with pytest.raises(ValueError, match="radius R.*zero"):
-        Interface(n1=1.0, n2=1.5, R=0.0)._validate_for_build()
+        Interface(n1=1.0, n2=1.5, R=0.0).validate()
 
 
 def test_interface_requires_positive_refractive_indices():

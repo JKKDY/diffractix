@@ -58,7 +58,7 @@ class OpticalElement(OpticalBase, ABC):
     # ----------
     # VALIDATION
     # ----------
-    def _validate_for_build(self):
+    def validate(self):
         """Validate this element's ABCD representation before system compilation."""
         matrix = self.matrix
         length = self.element_length
