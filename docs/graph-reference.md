@@ -28,6 +28,8 @@ Optical objects declare graph-backed fields with a `Node` annotation or, for dat
 
 Comparisons such as `parameter >= 0` create a `Comparison`, containing a `Relation` and two nodes. Converting a symbolic comparison or a node to a Python boolean raises `SymbolicControlFlowError`; Python `if` cannot directly choose a branch from a symbolic value.
 
+`node.is_variable` checks the graph as written; Symbols report `False`. To include node-valued Symbol bindings, use `node.has_variable_parameters(bindings)`. It follows explicit compile-time bindings and raises `KeyError` for an unbound Symbol, even if that Symbol has a default. It reports the current state of reachable Parameters, not frozen Simulation metadata or whether runtime numerical values depend on theta.
+
 ## Compilation and evaluation
 
 ```python

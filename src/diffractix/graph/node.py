@@ -28,6 +28,22 @@ class Node:
         from .graph_utils import evaluate_ast
         return evaluate_ast(self, bindings=bindings, parameter_values=parameter_values)
 
+    def has_variable_parameters(self, bindings: Mapping[Hashable, object] = {}) -> bool:
+        """Check for variable Parameters after resolving Symbol bindings.
+
+        Every Symbol must have an explicit binding, as required to establish
+        whether its compile-time binding contains variable Parameters.
+        """
+        from .graph_utils import walk_ast
+
+        has_variable = False
+        for node in walk_ast((self,), bindings):
+            if isinstance(node, Symbol) and node.key not in bindings:
+                raise KeyError(f"Missing binding for Symbol key {node.key!r}.")
+            if isinstance(node, Parameter) and node.is_variable:
+                has_variable = True
+        return has_variable
+
     @staticmethod
     def _make_literal(value: Scalar) -> Literal:
         # Normalize concrete NumPy/backend scalar constants at graph construction.

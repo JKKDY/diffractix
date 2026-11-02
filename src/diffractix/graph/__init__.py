@@ -1,4 +1,4 @@
-from .node import Node, Literal, Parameter, Symbol, InputNode, UnaryOp, BinaryOp
+from .node import Node, Literal, Parameter, Symbol, InputNode, UnaryOp, BinaryOp, Scalar
 from .compile import compile_graph, precompile, optimize, fuse
 from .program import Program, Input, Register, Constant, UnaryInstruction, BinaryInstruction
 from .graph_utils import evaluate_ast, walk_ast
@@ -7,6 +7,7 @@ from .relations import Comparison, Relation, SymbolicControlFlowError
 
 __all__ = [
     "Node",
+    "Scalar",
     "Literal",
     "Parameter",
     "Symbol",
