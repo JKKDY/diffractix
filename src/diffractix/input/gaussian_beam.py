@@ -77,10 +77,8 @@ class GaussianBeam(ParaxialState):
         return self.n
 
     @property
-    def execution_context(self):
-        return {
-            WAVELENGTH.key: self.wavelength,
-        }
+    def bindings(self):
+        return { WAVELENGTH.key: self.wavelength }
 
     @property
     def w(self) -> float:

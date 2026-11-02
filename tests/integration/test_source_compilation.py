@@ -442,7 +442,7 @@ def test_runtime_array_source_bindings_remain_supported_and_owned():
         coefficient: np.ndarray
 
         @property
-        def execution_context(self):
+        def bindings(self):
             return {"coefficient": self.coefficient}
 
         def propagate(self, A, B, C, D, n):

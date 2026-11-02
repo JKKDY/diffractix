@@ -132,7 +132,7 @@ def test_simulation_compiles_fixed_beam_bindings_into_the_model():
     assert simulation.execution_context == {}
     assert simulation.graph.symbols == ()
     assert simulation.compile_context["wavelength"].value == beam.wavelength
-    assert not hasattr(result, "execution_context")
+    assert not hasattr(result, "bindings")
     numpy.testing.assert_allclose(result.wavelength, [beam.wavelength] * 2)
     assert result.final.q == pytest.approx(expected_q)
 

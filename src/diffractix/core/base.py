@@ -35,6 +35,11 @@ class OpticalBase:
     # -------------------
     # PARAMETER DISCOVERY
     # -------------------
+    @property
+    def bindings(self):
+        """Symbol bindings this optical object contributes to a system."""
+        return {}
+
     @staticmethod
     def _annotation_contains_node(annotation) -> bool:
         """Return whether an annotation contains Node or a Node subclass."""

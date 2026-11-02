@@ -246,7 +246,7 @@ def _result_type_for(state_type: type[ParaxialState]) -> type[SimulationResult]:
             if not name.startswith("_") and isinstance(value, property)
         )
 
-    names.discard("execution_context")
+    names.discard("bindings")
 
     collisions = names.intersection(dir(SimulationResult))
 
