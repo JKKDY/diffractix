@@ -78,6 +78,7 @@ class ResolvedPlacement:
     placement: Placement
     refractive_index: Node
 
+    # TODO make sure  ResolvedPlacement.element is used and not ResolvedPlacement.placement.element
     @property
     def element(self) -> OpticalElement:
         return self.placement.element

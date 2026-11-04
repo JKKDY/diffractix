@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from collections.abc import Mapping, Sequence
 
 import numpy as np
@@ -38,6 +36,7 @@ def optimize(program: Program) -> Program:
     program = _eliminate_dead_code(program)
     program = _allocate_registers(program)
     return program
+
 
 def precompile(roots: Sequence[Node], bindings: Mapping = {}) -> Program:
     """Translate expression graphs into an unoptimized program."""
@@ -110,79 +109,11 @@ def precompile(roots: Sequence[Node], bindings: Mapping = {}) -> Program:
     )
     
 
-def fuse(*programs: Program) -> Program:
-    """Concatenate multiple independent programs into one program.
-
-    Assumes all programs use the same input convention for theta and runtime
-    symbol bindings.
-
-    The fused program returns the concatenated outputs of all input programs,
-    in the same order the programs were passed in.
-    """
-    if not programs:
-        raise ValueError("Expected at least one program.")
-
-    for program in programs[1:]:
-        if (program.variables != programs[0].variables
-                or program.runtime_symbols != programs[0].runtime_symbols):
-            raise ValueError("Programs must have identical variable and symbol mappings to fuse.")
-
-    variables = {}
-    runtime_symbols = {}
-    instructions = []
-    outputs = []
-
-    register_offset = 0
-
-    def remap_operand(operand: Operand, offset: int) -> Operand:
-        if isinstance(operand, Register):
-            return Register(operand.index + offset)
-        if isinstance(operand, Input):
-            return operand
-        if isinstance(operand, Constant):
-            return operand
-        raise TypeError(f"Unknown operand: {type(operand).__name__}")
-
-    for program in programs:
-        variables.update(program.variables)
-        runtime_symbols.update(program.runtime_symbols)
-
-        for instruction in program._instructions:
-            if isinstance(instruction, UnaryInstruction):
-                instructions.append(
-                    UnaryInstruction(
-                        op=instruction.op,
-                        dst=instruction.dst + register_offset,
-                        src=remap_operand(instruction.src, register_offset),
-                    )
-                )
-            elif isinstance(instruction, BinaryInstruction):
-                instructions.append(
-                    BinaryInstruction(
-                        op=instruction.op,
-                        dst=instruction.dst + register_offset,
-                        left=remap_operand(instruction.left, register_offset),
-                        right=remap_operand(instruction.right, register_offset),
-                    )
-                )
-            else:
-                raise TypeError(f"Unknown instruction: {type(instruction).__name__}")
-
-        outputs.extend(remap_operand(operand, register_offset) for operand in program._outputs)
-        register_offset += program._register_count
-
-    return Program(
-        variables=variables,
-        runtime_symbols=runtime_symbols,
-        _instructions=tuple(instructions),
-        _outputs=tuple(outputs),
-        _register_count=register_offset,
-    )
 
 
-#############################
+#----------------------------
 # OPTIMIZATION IMPLEMENTATION
-#############################
+#----------------------------
 
 def _replace_operand(operand, replacements):
     if isinstance(operand, Register):

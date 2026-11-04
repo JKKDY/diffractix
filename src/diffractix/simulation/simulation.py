@@ -17,33 +17,7 @@ from diffractix.simulation.result import SimulationResult, result_type_for
 from diffractix.system.info import ElementInfo
 
 
-@dataclass(frozen=True)
-class SimulationStep:
-    """Numerical lookup information for one propagation step."""
 
-    matrix_indices: tuple[tuple[int, int], tuple[int, int]]
-    length_index: int
-    refractive_index_index: int
-
-
-@dataclass(frozen=True)
-class SimulationSource:
-    """Numerical constructor data, indexed by graph outputs rather than theta."""
-
-    numerical_type: type[ParaxialState]
-    fixed_fields: tuple[tuple[str, object], ...]
-    field_indices: tuple[tuple[str, int], ...]
-
-    def __post_init__(self):
-        object.__setattr__(self, "fixed_fields", deepcopy(self.fixed_fields))
-
-    def construct(self, values):
-        kwargs = deepcopy(dict(self.fixed_fields))
-        kwargs.update(
-            (name, values[index])
-            for name, index in self.field_indices
-        )
-        return self.numerical_type(**kwargs)
 
 
 class Simulation:

@@ -49,7 +49,7 @@ class Program:
     Instructions operate on these inputs and produce an output vector.
     """
     # TODO rename to parameters
-    variables: dict[int, int]       # id(Parameter) -> theta index
+    parameter_indices: dict[int, int]       # id(Parameter) -> theta index
     runtime_symbols: dict[Hashable, int]     # symbol key -> symbol index
 
     _instructions: tuple[Instruction, ...]
@@ -76,9 +76,9 @@ class Program:
             Computed outputs in their compiled order.
         """
         # TODO: this should maybe be removed because our program may only access a subset of actual theta parameters 
-        if len(theta) != len(self.variables):
+        if len(theta) != len(self.parameter_indices):
             raise ValueError(
-                f"Expected {len(self.variables)} variable values, got {len(theta)}."
+                f"Expected {len(self.parameter_indices)} variable values, got {len(theta)}."
             )
         
         sorted_symbols = sorted(self.runtime_symbols.items(), key=lambda item: item[1])
@@ -123,14 +123,14 @@ class Program:
             raise TypeError(f"Unknown operand: {type(operand).__name__}")
 
         lines = ["INPUTS"]
-        sorted_variables = sorted(self.variables.items(), key=lambda item: item[1])
+        sorted_variables = sorted(self.parameter_indices.items(), key=lambda item: item[1])
         sorted_symbols = sorted(self.runtime_symbols.items(), key=lambda item: item[1])
 
         for parameter_id, index in sorted_variables:
             lines.append(f"  i{index}\ttheta[{index}]\t# Parameter id {parameter_id}")
 
         for key, index in sorted_symbols:
-            lines.append(f"  i{len(self.variables) + index}\tsymbol[{key!r}]")
+            lines.append(f"  i{len(self.parameter_indices) + index}\tsymbol[{key!r}]")
 
         lines.extend((
                 f"\nREGISTERS  {self._register_count}",

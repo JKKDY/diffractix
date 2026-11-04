@@ -32,6 +32,7 @@ class GaussianAperture(OpticalElement):
         """Unit-index matrix; System compilation supplies the local medium."""
         return self._matrix_in_medium(1.0)
 
+    # todo: get rid of this function. We can for sure use some clever symbol binding trick. E.g. auto generated per element key
     def _matrix_in_medium(self, n):
         """Use the resolved local index with the physical-angle ABCD convention."""
         return (
