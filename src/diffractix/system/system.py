@@ -5,21 +5,24 @@ import inspect
 import operator
 import numpy as np
 from collections.abc import Iterable, Hashable
-from dataclasses import dataclass, fields
 from numbers import Real
 from typing import Any
+from types import MappingProxyType
 
 from diffractix.input.paraxial_input import ParaxialState
 from diffractix.composites import CompositeElement
-from diffractix.elements import OpticalElement, Interface, Space, ABCD, GaussianAperture
+from diffractix.elements import OpticalElement, Interface, Space, GaussianAperture
 from diffractix.core import OpticalBase
-from diffractix.graph import Node, Parameter, Literal, InputNode, Symbol, compile_ast, collect_parameters
-from diffractix.graph.utils import ASTCycleError
-from diffractix.simulation.simulation import Simulation, SimulationStep, SimulationSource
+from diffractix.graph import (
+    Node, Parameter, Literal, InputNode, Symbol, compile_graph, precompile,
+    walk_ast, evaluate_ast, Scalar,
+)
+from diffractix.simulation.simulation import Simulation
+from diffractix.simulation.info import SimulationStep, SimulationInput
 
 from .errors import SystemValidationError
 from .symbols import AMBIENT_N
-from .info import ElementInfo, ParameterInfo, Placement, CallSite, ResolvedPlacement
+from .info import ElementData, ParameterData, ConstraintData, Placement, CallSite, ResolvedPlacement
 
 _UNSET = object()
 
@@ -28,138 +31,30 @@ class System:
     """
     Declarative description of an optical system.
 
-    System contains the user-defined optical path, input state, system context,
-    and requirements. build() resolves and compiles this description without
-    mutating the System, its elements, or the parameter graph.
+    System contains the user-defined optical path, optical input, system context,
+    and design constraints. build() resolves and compiles this description into a simulation object
     """
 
-    def __init__(self, *elements, input=None, ambient_n=_UNSET, ambient_n_variable=_UNSET):
-        # Retain the original positional ambient-index constructor.
-        if elements and isinstance(elements[0], Real):
-            if len(elements) > 2:
-                raise TypeError("Expected at most two positional ambient-index arguments.")
-            if ambient_n is not _UNSET:
-                raise TypeError("ambient_n supplied more than once.")
-            ambient_n = elements[0]
-            if len(elements) == 2:
-                if ambient_n_variable is not _UNSET:
-                    raise TypeError("ambient_n_variable supplied more than once.")
-                ambient_n_variable = elements[1]
-            elements = ()
-        ambient_n = 1.0 if ambient_n is _UNSET else ambient_n
-        ambient_n_variable = False if ambient_n_variable is _UNSET else ambient_n_variable
-        self.ambient_n = Parameter(value=ambient_n, name="ambient_n")
-
-        if ambient_n_variable:
-            self.ambient_n.variable()
-
-        self.compile_context = {
-            AMBIENT_N.key: self.ambient_n,
-        }
-
-        self.beam: ParaxialState | None = None
+    def __init__(
+        self,
+        *elements,
+        optical_input: ParaxialState | None = None,
+        ambient_n: Scalar | Parameter = 1.0,
+    ):
         self._placements: list[Placement] = []
-        self._requirements: list[Any] = []
+        self._constraints: list[Any] = []
+        self._index_continuity_constraints: list[Any] = []
         self._execution_counts: dict[tuple[str, int], int] = {}
-        if elements:
-            self.add(elements)
-        if input is not None:
-            self.add_input_beam(input)
+        self._bindings = {}
 
+       
+        self._ambient_n = None
+        self.set_ambient_n(ambient_n)
+        
+        self._inputs = []
 
-    # --------
-    # ELEMENTS
-    # --------
-    @property
-    def placements(self) -> tuple[Placement, ...]:
-        return tuple(self._placements)
-
-    @property
-    def elements(self) -> tuple[OpticalBase, ...]:
-        return tuple(placement.element for placement in self._placements)
-
-
-    def add(self, element: OpticalBase | Iterable[OpticalBase], *elements, z=_UNSET, index: int | None = None):
-        """
-        Add an element or sequence of elements to the optical path.
-
-        Parameters
-        ----------
-        element:
-            Element or sequence of elements to add. Composite elements are added
-            as single declarative elements and expanded during System.build().
-        z:
-            Optional absolute position of the element along the optical path.
-            May be a numerical scalar or graph expression. A variable Parameter
-            makes the absolute position an independent optimization variable.
-            If None, the element is placed directly after the preceding element.
-
-        Returns
-        -------
-        System
-            This system, allowing chained calls.
-        """
-
-        # A non-element second argument retains the legacy positional z form.
-        if len(elements) == 1 and isinstance(element, (OpticalElement, CompositeElement)) and not (
-            isinstance(elements[0], (OpticalElement, CompositeElement))
-            or isinstance(elements[0], Iterable) and not isinstance(elements[0], (str, bytes))
-        ):
-            if z is not _UNSET:
-                raise TypeError("z supplied more than once.")
-            z, elements = elements[0], ()
-        z = None if z is _UNSET else z
-        if index is not None:
-            index = operator.index(index)
-            index = min(len(self._placements), max(0, index if index >= 0 else len(self._placements) + index))
-        if elements:
-            return self.add((element, *elements), z=z, index=index)
-
-        if isinstance(element, (OpticalElement, CompositeElement)):
-            dataclass_params = getattr(type(element), "__dataclass_params__", None)
-
-            # validity checks
-            if dataclass_params is not None and dataclass_params.eq:
-                raise TypeError(
-                    f"{type(element).__name__} must use @dataclass(eq=False). "
-                    "Optical elements use object identity, not structural equality."
-                )
-            if z is not None and not isinstance(z, (Node, Real)):
-                raise TypeError(f"z must be a Node, numeric scalar, or None; got {type(z).__name__}.")
-            if isinstance(z, bool):
-                raise TypeError("z must be a Node, numeric scalar, or None.")
-
-            # add element
-            placement = Placement(
-                element=element,
-                z=z,
-                call_site=self._capture_call_site(),
-            )
-            if index is None:
-                self._placements.append(placement)
-            else:
-                self._placements.insert(index, placement)
-
-            return self
-
-        if isinstance(element, Iterable) and not isinstance(element, (str, bytes)):
-            if z is not None:
-                raise ValueError(
-                    "An absolute position cannot be applied to an element sequence. "
-                    "Add the positioned element individually."
-                )
-
-            for child in element:
-                previous_size = len(self._placements)
-                self.add(child, index=index)
-                if index is not None:
-                    index += len(self._placements) - previous_size
-
-            return self
-
-        raise TypeError(
-            f"Expected an OpticalElement, CompositeElement, or iterable of elements, got {type(element).__name__}."
-        )
+        if elements: self.add(*elements)
+        if optical_input: self.add_input(optical_input)
 
 
     def _capture_call_site(self) -> CallSite:
@@ -179,8 +74,124 @@ class System:
             call_index=call_index,
         )
 
+    def set_ambient_n(self, ambient_n: Real | Parameter):
+        """Set the ambient refractive index and update its symbol binding."""
+        if not isinstance(ambient_n, Parameter):
+            ambient_n = Parameter(value=ambient_n, name="ambient_n")
 
-    def add_context(self, key: Hashable, value: Node | Real):
+        value = ambient_n.value
+
+        if not isinstance(value, Real) or isinstance(value, bool) or not np.isfinite(value) or value <= 0:
+            raise ValueError(f"Ambient refractive index must be finite and positive, got {value!r}.")
+
+        self._ambient_n = ambient_n
+        self.bind(AMBIENT_N.key, ambient_n)
+        return self
+
+    @property
+    def ambient_n(self) -> Parameter:
+        return self._ambient_n
+
+
+    # ------------
+    # ADD ELEMENTS
+    # ------------
+    @property
+    def placements(self) -> tuple[Placement, ...]:
+        return tuple(self._placements)
+
+    @property
+    def elements(self) -> tuple[OpticalBase, ...]:
+        return tuple(placement.element for placement in self._placements)
+    
+
+    def add(
+        self,
+        *elements: OpticalBase | Iterable[OpticalBase],
+        z: Node | Real | None = None,
+        index: int | None = None,
+    ):
+        def flatten(items):
+            for element in items:
+                if isinstance(element, (OpticalElement, CompositeElement)):
+                    yield element
+                elif isinstance(element, Iterable) and not isinstance(element, (str, bytes)):
+                    yield from flatten(element)
+                else:
+                    raise TypeError(
+                        "Expected an OpticalElement, CompositeElement, or iterable of elements, "
+                        f"got {type(element).__name__}."
+                    )
+
+        elements = tuple(flatten(elements))
+
+        if not elements:
+            raise ValueError("At least one element is required.")
+        if len(elements) > 1 and z is not None:
+            raise ValueError("An absolute position can only be set for one element.")
+        if index is not None:
+            if isinstance(index, (bool, np.bool_)):
+                raise TypeError("index must be an integer.")
+            try:
+                index = operator.index(index)
+            except TypeError:
+                raise TypeError("index must be an integer.") from None
+            if index < 0 or index > len(self._placements):
+                raise ValueError("Insertion index out of range.")
+        if z is not None:
+            if not isinstance(z, (Node, Real)) or isinstance(z, bool):
+                raise TypeError(f"z must be a Node, Real, or None; got {type(z).__name__}.")
+
+            if isinstance(z, Real):
+                if not np.isfinite(z):
+                    raise ValueError(f"Absolute position z must be finite, got {z!r}.")
+                if z < 0:
+                    raise ValueError(f"Absolute position z cannot be negative, got {z!r}.")
+
+        for element in elements:
+            dataclass_params = getattr(type(element), "__dataclass_params__", None)
+            if dataclass_params is not None and dataclass_params.eq:
+                raise TypeError(f"{type(element).__name__} must use @dataclass(eq=False).")
+
+        call_site = self._capture_call_site()
+        for element in elements:
+            placement = Placement(element=element, z=z, call_site=call_site)
+
+            if index is None:
+                self._placements.append(placement)
+            else:
+                self._placements.insert(index, placement)
+                index += 1
+
+        return self
+
+    def add_input(self, *inputs: ParaxialState | Iterable[ParaxialState]):
+        """Set the optical input for the system."""
+
+        if len(inputs) == 1 and not isinstance(inputs[0], ParaxialState) and isinstance(inputs[0], Iterable):
+            inputs = tuple(inputs[0])
+
+        if not inputs:
+            raise ValueError("At least one input is required.")
+
+        if len(inputs) + len(self._inputs) > 1:
+            raise ValueError("Multiple optical inputs are not yet supported.")
+
+        for input in inputs:
+            if not isinstance(input, ParaxialState):
+                raise TypeError(f"Expected a ParaxialState, got {type(input).__name__}.")
+
+        self._inputs.extend(inputs)
+        return self
+
+    # --------
+    # BINDINGS
+    # --------
+    @property
+    def bindings(self):
+        return MappingProxyType(self._bindings)
+
+    def bind(self, key: Hashable, value: Node | Scalar):
         try:
             hash(key)
         except TypeError:
@@ -189,66 +200,60 @@ class System:
                 f"got {type(key).__name__}."
             ) from None
 
-        if not isinstance(value, (Node, Real)) or isinstance(value, bool):
+        if not isinstance(value, (Node, Scalar)) or isinstance(value, bool):
             raise TypeError(
                 "Compile context value must be a Node or numeric scalar, "
                 f"got {type(value).__name__}."
             )
 
         if not isinstance(value, Node):
-            value = Parameter(
-                value=value,
-                name=key if isinstance(key, str) else None,
-            )
+            if isinstance(value, Real):
+                value = Parameter(value, name=key if isinstance(key, str) else None)
+            elif isinstance(value, Scalar):
+                value = Literal(value)
 
-        self.compile_context[key] = value
+        self._bindings[key] = value
         return self
 
-
-    # ----
-    # BEAM
-    # ----
-    def add_input_beam(self, beam: ParaxialState):
-        """Set the input beam or ray state for the system."""
-        self.beam = beam
-        return self
 
 
     # ------------
-    # REQUIREMENTS
+    # CONSTRAINTS
     # ------------
     @property
-    def requirements(self) -> tuple[Any, ...]:
-        return tuple(self._requirements)
+    def system_constraints(self) -> tuple:
+        """Constraints added directly to the system."""
+        return tuple(self._constraints)
 
-    def require(self, *requirements):
-        self._requirements.extend(requirements)
-        return self
+    @property
+    def constraints(self) -> tuple:
+        return self._collect_constraints()
 
-    def _collect_element_requirements(self):
-        requirements = []
+    def _collect_constraints(self, placements=()) -> tuple:
+        """Collect declared and generated constraints once per optical object."""
+        constraints = list(self._constraints)
         seen = set()
 
         def visit(element):
-            element_id = id(element)
-            if element_id in seen:
+            if id(element) in seen:
                 return
-            seen.add(element_id)
-
-            requirements.extend(element.requirements)
+            seen.add(id(element))
+            constraints.extend(element.constraints)
             if isinstance(element, CompositeElement):
                 for child in element.elements:
                     visit(child)
 
+        for optical_input in self._inputs or ():
+            visit(optical_input)
         for element in self.elements:
             visit(element)
+        for placement in placements:
+            visit(placement.element)
+        return tuple(constraints)
 
-        return tuple(requirements)
-
-    def _normalize_requirements(self):
-        from diffractix.solver.constraint import normalize_to_constraint
-        reqs = self.requirements + self.beam.requirements + self._collect_element_requirements()
-        return tuple(normalize_to_constraint(requirement) for requirement in reqs)
+    def require(self, *constraints):
+        self._constraints.extend(constraints)
+        return self
 
 
     # ----------
@@ -258,219 +263,174 @@ class System:
         """Validate the declarative system before resolution."""
         errors = []
 
-        # BEAM
-        if self.beam is None:
-            errors.append("No input beam has been set. Use system.add_input_beam(beam) before build().")
-
-        elif not isinstance(self.beam, ParaxialState):
-            errors.append(f"Input beam must be a ParaxialState, got {type(self.beam).__name__}.")
-
-       # validate compile context
-        for key, value in self.compile_context.items():
-            try:
-                hash(key)
-            except TypeError:
-                errors.append(f"Compile context key {key!r} must be hashable.")
-
-            if not isinstance(value, (Node, Real)) or isinstance(value, bool):
-                errors.append(
-                    f"Compile context value {key!r} must be a Node or numeric scalar, "
-                    f"got {type(value).__name__}."
-                )
-
-        # validate refractive index
-        try:
-            ambient_n = self.ambient_n.value
-
-            if not np.isfinite(ambient_n) or ambient_n <= 0:
-                errors.append(f"Ambient refractive index must be finite and positive, got {ambient_n!r}.")
-
-        except Exception as exc:
-            errors.append(
-                f"Ambient refractive index could not be evaluated: {exc}"
-            )
+        if not self._inputs:
+            errors.append("No input beam has been set. Use system.add_input(input) before build().")
 
         # validate placements (monotonically increasing placement)
         for i, placement in enumerate(self._placements):
-            location_str = placement.describe(i)
 
-            if not isinstance(placement.element, (OpticalElement, CompositeElement)):
-                errors.append(
-                    f"{location_str}: expected OpticalElement or CompositeElement, got "
-                    f"{type(placement.element).__name__}."
-                )
-                continue
-
-            if placement.z is not None:
-                if not isinstance(placement.z, (Node, Real)) or isinstance(placement.z, bool):
-                    errors.append(
-                        f"{location_str}: absolute position z must be a Node, numeric scalar, "
-                        f"or None; got {type(placement.z).__name__}."
-                    )
-
-                elif isinstance(placement.z, Real):
-                    if not np.isfinite(placement.z):
-                        errors.append(f"{location_str}: absolute position z must be finite, got {placement.z!r}.")
-
-                    elif placement.z < 0:
-                        errors.append(f"{location_str}: absolute position z cannot be negative, got {placement.z!r}.")
-
-            element = placement.element
-
-            if isinstance(element, CompositeElement):
-                for path, leaf in element.walk():
+            if isinstance(placement.element, CompositeElement):
+                for path, leaf in placement.element.walk():
                     try:
                         leaf.validate()
                     except Exception as exc:
                         errors.append(
-                            f"{location_str}, child {path!r} "
+                            f"{placement.describe(i)}, child {path!r} "
                             f"({type(leaf).__name__} '{leaf.label}'): {exc}"
                         )
-            elif isinstance(element, OpticalElement):
+            elif isinstance(placement.element, OpticalElement):
                 try:
-                    element.validate()
+                    placement.element.validate()
                 except Exception as exc:
-                    errors.append(f"{location_str}: {exc}")
+                    errors.append(f"{placement.describe(i)}: {exc}")
 
         if errors:
             raise SystemValidationError(errors)
 
+    def _collect_bindings(self):
+        """Collect bindings from the input, elements, and system."""
+        bindings = {}
+        seen = set()
+        #? cant isntances of the same element have different bindings? maybe we should reject any form of duplciation directly 
+        def add_binding(source):
+            for key, value in source.items():
+                if key in bindings:
+                    raise ValueError(f"Duplicate symbol binding for {key!r}.")
+                bindings[key] = value
+
+        for optical_input in self._inputs:
+            add_binding(optical_input.bindings)
+
+        for element in self.elements:
+            if id(element) in seen:
+                continue
+            seen.add(id(element))
+            add_binding(element.bindings)
+
+        add_binding(self._bindings)
+        return bindings
 
     # ----------
     # RESOLUTION
     # ----------
     def _resolve_elements(self):
-        """Expand composite placements into concrete optical element placements."""
+        """Expand composite placements into optical element placements."""
         resolved = []
 
         for placement in self._placements:
-            element = placement.element
 
-            if isinstance(element, OpticalElement):
+            if isinstance(placement.element, OpticalElement):
                 resolved.append(placement)
-                continue
 
-            if isinstance(element, CompositeElement):
-                for i, (path, leaf) in enumerate(element.walk()):
-                    resolved.append(
-                        Placement(
-                            element=leaf,
-                            z=placement.z if i == 0 else None,
-                            call_site=placement.call_site,
-                            path=path,
-                        )
-                    )
-                continue
-
-            raise TypeError(
-                f"{placement.describe()}: expected OpticalElement or CompositeElement, "
-                f"got {type(element).__name__}."
-            )
+            elif isinstance(placement.element, CompositeElement):
+                for i, (path, leaf) in enumerate(placement.element.walk()):
+                    resolved.append(Placement(
+                        element=leaf,
+                        z=placement.z if i == 0 else None,
+                        call_site=placement.call_site,
+                        path=path,
+                    ))
+            else:
+                raise TypeError(
+                    f"{placement.describe()}: expected OpticalElement or CompositeElement, "
+                    f"got {type(placement.element).__name__}."
+                )
 
         return tuple(resolved)
 
-    def _resolve_layout(self, placements):
-        """
-        Resolve relative and absolute placements into a sequential optical path.
-
-        Absolute positions are converted into generated Space elements whose
-        lengths depend on the accumulated upstream optical length. Relative
-        placements are preserved directly.
-
-        Parameters
-        ----------
-        placements:
-            Sequence of flattened optical element placements.
-
-        Returns
-        -------
-        tuple[Placement, ...]
-            Sequential placements with all absolute positions resolved into
-            generated spaces.
-        """
+    def _resolve_layout(self, placements, bindings):
         resolved = []
-        current_z = Literal(0.0)
+        element_data = []
+        current_z = 0.0
+
+        def append(element, placement):
+            resolved.append(Placement(
+                element=element,
+                call_site=placement.call_site,
+                path=placement.path,
+            ))
+
+            roots = (handle for handle in element.parameters if handle.node is not None)
+            parameter_ids = frozenset(
+                id(node) for node in walk_ast(roots, bindings)
+                if isinstance(node, Parameter) and node.is_variable
+            )
+
+            element_data.append(ElementData(
+                element_id=id(element),
+                position=len(resolved) - 1,
+                type_name=type(element).__name__,
+                label=element.label,
+                path=placement.path,
+                variable_parameter_ids=parameter_ids,
+            ))
 
         for placement in placements:
             element = placement.element
 
             if placement.z is not None:
-                target_z = placement.z
+                gap = placement.z - current_z
+                spacer = Space(d=gap, label=f"AutoSpace_to_{element.label}")
 
-                if not isinstance(target_z, Node):
-                    target_z = Literal(target_z)
-
-                gap = target_z - current_z
-                spacer = Space(d=gap,label=f"AutoSpace_to_{element.label}",)
-
-                resolved.append(
-                    Placement(
-                        element=spacer,
-                        call_site=placement.call_site,
-                        path=placement.path,
-                    )
-                )
-
+                append(spacer, placement)
                 current_z = current_z + spacer.element_length
 
-            resolved.append(
-                Placement(
-                    element=element,
-                    call_site=placement.call_site,
-                    path=placement.path,
-                )
-            )
-
+            append(element, placement)
             current_z = current_z + element.element_length
 
-        return tuple(resolved)
+        return tuple(resolved), tuple(element_data),
 
 
-    def _resolve_refractive_indices(self, placements):
+    def _resolve_refractive_indices(self, placements, bindings):
+        """Resolve the refractive index at each element and enforce continuity."""
+        from diffractix.solver.constraint import Constraint
+
         resolved = []
-        continuity = []
+        constraints = []
+        current_n = self._inputs[0].refractive_index
 
-        current_n = self.ambient_n
+        if isinstance(current_n, InputNode):
+            current_n = current_n.node
+        if current_n is None:
+            current_n = self.ambient_n
+        elif not isinstance(current_n, Node):
+            current_n = Literal(current_n)
 
         for placement in placements:
             element = placement.element
-            index_handle = element.refractive_index
+            index = element.refractive_index
 
-            if isinstance(index_handle, InputNode):
-                index_node = index_handle.node
-            else:
-                index_node = index_handle
+            if isinstance(index, InputNode):
+                index = index.node
 
+            # todo: document that Interface is special compared to other elements
+            #? maybe we can find a better unified framework later? where elements can can define "specialities" 
             if isinstance(element, Interface):
-                continuity.append(
-                    (
-                        placement,
-                        current_n,
-                        element.n1,
-                        current_n - element.n1,
-                    )
-                )
-
-                current_n = element.n2
-
-            elif isinstance(element, ABCD) and index_node is not None:
-                current_n = index_handle
-
-            elif index_node is None:
-                pass
-
+                required_n = element.n1
+                next_n = element.n2
+            elif index is None:
+                required_n = None
+                next_n = current_n
             else:
-                continuity.append(
-                    (
-                        placement,
-                        current_n,
-                        index_handle,
-                        current_n - index_handle,
+                required_n = index
+                next_n = index if isinstance(index, Node) else Literal(index)
+
+            if required_n is not None:
+                residual = current_n - required_n
+
+                if residual.has_variable_parameters(bindings):
+                    constraints.append(
+                        Constraint(
+                            residual,
+                            lower_bound=0.0,
+                            upper_bound=0.0,
+                            label=f"Refractive index continuity at {placement.describe()}",
+                        )
                     )
-                )
+                elif not np.isclose(evaluate_ast(residual, bindings), 0.0):
+                    raise ValueError(f"Refractive index mismatch at {placement.describe()}.")
 
-                current_n = index_handle
-
+            current_n = next_n
             resolved.append(
                 ResolvedPlacement(
                     placement=placement,
@@ -478,338 +438,178 @@ class System:
                 )
             )
 
-        return tuple(resolved), tuple(continuity)
+        return tuple(resolved), tuple(constraints)
 
 
-    @staticmethod
-    def _resolve_binding(value, context):
-        """Follow handles and context aliases, without simplifying expressions."""
-        seen = set()
-        while isinstance(value, (InputNode, Symbol)):
-            if id(value) in seen:
-                raise ASTCycleError("Cycle in source/context binding.")
-            seen.add(id(value))
-            if isinstance(value, InputNode):
-                value = value.node
-            elif value.key in context:
-                value = context[value.key]
-            else:
-                break
-        return value
-
-    def _source_context(self):
-        """Compile source bindings; retain arrays as explicit runtime inputs."""
-        context = dict(self.compile_context)
-        execution_context = {}
-        for key, value in self.beam.execution_context.items():
-            value = self._resolve_binding(value, context)
-            if key in context:
-                existing = self._resolve_binding(context[key], context)
-                same_binding = value is existing or (
-                    isinstance(value, Real) and isinstance(existing, Real) and value == existing
-                )
-                if not same_binding:
-                    raise ValueError(f"Conflicting source and system binding for {key!r}.")
-            elif not isinstance(value, Node) and np.ndim(value):
-                # Array-valued graph constants are unsupported; Symbol inputs
-                # still support these legitimate vectorized runtime bindings.
-                execution_context[key] = copy.deepcopy(value)
-            else:
-                context[key] = value if isinstance(value, Node) else Node._make_literal(value)
-        return context, execution_context
-
-    def _source_continuity(self, context):
-        index = self.beam.refractive_index
-        if index is None:
-            return ()
-        index = index if isinstance(index, Node) else Node._make_literal(index)
-        source_index = self._resolve_binding(index, context)
-        ambient_index = self._resolve_binding(self.ambient_n, context)
-        if source_index is ambient_index:
-            return ()
-        if isinstance(source_index, Literal) or isinstance(source_index, Parameter) and not source_index.is_variable:
-            source_index = source_index.value
-        if isinstance(ambient_index, Parameter) and not ambient_index.is_variable:
-            ambient_index = ambient_index.value
-        if isinstance(source_index, Real) and isinstance(ambient_index, Real) and source_index == ambient_index:
-            return ()
-        return ((Placement(element=self.beam), index, self.ambient_n, index - self.ambient_n),)
-
-    def _validate_refractive_index_continuity(self, continuity, context=None, bindings=None):
-        if not continuity:
-            return
-
-        roots = []
-
-        for _, actual, required, residual in continuity:
-            roots.extend((
-                actual,
-                required,
-                residual,
-            ))
-
-        graph = compile_ast(
-            roots,
-            context=self.compile_context if context is None else context,
-        )
-
-        values = graph.evaluate(graph.initial_values, bindings=bindings)
-
-        for i, (placement, _, _, _) in enumerate(continuity):
-            actual = values[3 * i]
-            required = values[3 * i + 1]
-            residual = values[3 * i + 2]
-
-            if not np.isclose(residual, 0.0):
-                raise ValueError(
-                    f"Refractive index mismatch at {placement.describe()}.\n"
-                    f"Upstream medium: n={actual:.4f}\n"
-                    f"Element requires: n={required:.4f}\n"
-                    "Insert an Interface before this element."
-                )
-  
     # -----------
     # COMPILATION
     # -----------
-    def _compile_source(self, roots, parameter_roots):
-        """Register constructor graph fields and snapshot the fixed input data."""
-        parameters = dict(zip(self.beam.parameter_names, self.beam.parameters))
-        fixed_fields = {}
-        field_indices = []
-        for item in fields(self.beam):
-            if not item.init:
-                continue
-            handle = parameters.get(item.name)
-            if handle is not None and handle.node is not None:
-                field_indices.append((item.name, len(roots)))
-                roots.append(handle)
-                parameter_roots.append(handle)
-            else:
-                fixed_fields[item.name] = None if handle is not None else getattr(self.beam, item.name)
-        return SimulationSource(
-            numerical_type=self.beam.numerical_type(),
-            fixed_fields=tuple(fixed_fields.items()),
-            field_indices=tuple(field_indices),
-        )
+    def _compile_optics(self, placements, optical_inputs, bindings, continuity_constraints=()):
+        """Compile optics and register variable dependencies of generated continuity.
 
-    def _compile(self, elements, additional_roots=(), *, context=None):
-        """
-        Compile resolved elements and source fields into one parameter program.
-
-        Parameters
-        ----------
-        elements:
-            Sequential system placements with resolved refractive indices.
-
-        Returns
-        -------
-        tuple
-            Propagation graph, simulation steps, canonical parameter metadata,
-            location metadata, inspection metadata, and source construction data.
+        Theta follows first occurrence in optical roots, then additional
+        continuity dependencies. ParameterData is returned in theta order.
         """
         roots = []
         steps = []
-        location_map = {}
-        parameter_roots = []
-        element_info = []
-        context = self.compile_context if context is None else context
+        inputs = []
+        
+          # compile elements
+        for placement in placements:
+            element = placement.element
+            n = placement.refractive_index
 
-        def as_node(value):
-            return value if isinstance(value, Node) else Node._make_literal(value)
-
-        for system_placement in elements:
-            element = system_placement.element
+            # TODO get rid of this differentiation
             matrix = (
-                element._matrix_in_medium(system_placement.refractive_index)
+                element._matrix_in_medium(n)
                 if isinstance(element, GaussianAperture)
                 else element.matrix
             )
+
             start = len(roots)
-            step_index = len(steps)
-
-            parameter_names = []
-            parameter_indices = []
-
-            for name, handle in zip(element.parameter_names, element.parameters):
-                if handle.node is None:
-                    continue
-
-                parameter_names.append(name)
-                parameter_indices.append(len(parameter_roots))
-                parameter_roots.append(handle)
-
-            element_info.append(
-                ElementInfo(
-                    type_name=type(element).__name__,
-                    label=element.label,
-                    path=system_placement.placement.path,
-                    parameter_names=tuple(parameter_names),
-                    parameter_indices=tuple(parameter_indices),
-                )
-            )
-
             roots.extend((
-                as_node(matrix[0][0]),
-                as_node(matrix[0][1]),
-                as_node(matrix[1][0]),
-                as_node(matrix[1][1]),
-                as_node(element.element_length),
-                as_node(system_placement.refractive_index),
+                matrix[0][0], matrix[0][1],
+                matrix[1][0], matrix[1][1],
+                element.element_length, n,
             ))
 
-            steps.append(
-                SimulationStep(
-                    matrix_indices=(
-                        (start, start + 1),
-                        (start + 2, start + 3),
-                    ),
-                    length_index=start + 4,
-                    refractive_index_index=start + 5,
-                )
-            )
+            steps.append(SimulationStep(
+                matrix_indices=((start, start + 1), (start + 2, start + 3)),
+                length_index=start + 4,
+                refractive_index_index=start + 5,
+            ))
 
-            element_id = id(element)
+        # compile inputs
+        for optical_input in optical_inputs:
+            field_indices = []
 
-            if element_id not in location_map:
-                location_map[element_id] = []
+            for name, handle in zip(optical_input.parameter_names, optical_input.parameters):
+                if handle.node is not None:
+                    field_indices.append((name, len(roots)))
+                    roots.append(handle)
 
-            location_map[element_id].append(
-                (step_index, step_index + 1)
-            )
+            inputs.append(SimulationInput(
+                initial_state=copy.deepcopy(optical_input.numeric(bindings)),
+                field_indices=tuple(field_indices),
+            ))
 
-        source_spec = self._compile_source(roots, parameter_roots)
-
-        roots.extend(additional_roots)
-        graph = compile_ast(roots, context=context)
-        parameter_graph = compile_ast(
-            parameter_roots,
-            context=context,
-        )
-
-        parameters = collect_parameters(roots, context=context)
-
-        variable_indices = { 
-            id(parameter): index 
-            for index, parameter in enumerate(graph.variables)
+        # some entries e.g. in matrix may be numbers -> convert to literals
+        roots = [root if isinstance(root, Node) else Node._make_literal(root) for root in roots]
+        parameters = {
+            id(node): node for node in walk_ast(roots, bindings)
+            if isinstance(node, Parameter) and node.is_variable
         }
 
-        parameter_info = {}
+        continuity_roots = (requirement.evaluate for requirement in continuity_constraints)
+        for node in walk_ast(continuity_roots, bindings):
+            if isinstance(node, Parameter) and node.is_variable and id(node) not in parameters:
+                parameters[id(node)] = node
+                roots.append(node)
 
-        for parameter in parameters:
-            parameter_id = id(parameter)
-            owner = parameter.owner
+        program = compile_graph(roots, bindings)
+        if program.runtime_symbols:
+            raise ValueError(f"Unresolved optical Symbol bindings: {tuple(program.runtime_symbols)!r}.")
 
-            parameter_info[parameter_id] = ParameterInfo(
-                parameter_id=parameter_id,
+        parameter_data = tuple(
+            ParameterData(
+                parameter_id=pid,
                 name=parameter.name,
                 value=parameter.value,
-                parameter_index=variable_indices.get(parameter_id),
                 lower_bound=parameter.lower_bound,
                 upper_bound=parameter.upper_bound,
-                owner_type=type(owner).__name__ if owner is not None else None,
-                owner_label=getattr(owner, "label", None) if owner is not None else None,
+                parameter_index=program.parameter_indices[pid],
             )
-
-        location_map = {
-            element_id: tuple(locations)
-            for element_id, locations in location_map.items()
-        }
-
-        return (
-            graph,
-            tuple(steps),
-            parameter_info,
-            location_map,
-            parameter_graph,
-            tuple(element_info),
-            source_spec,
+            for pid, parameter in sorted(
+                parameters.items(),
+                key=lambda item: program.parameter_indices[item[0]],
+            )
         )
 
+        # theta = parameters in [roots] graph
+        return program, steps, inputs, parameter_data
 
-    def _build_simulation(self, compiled, requirements, context, execution_context):
-        """
-        Construct the executable Simulation from the compiled system.
 
-        Parameters
-        ----------
-        compiled:
-            Propagation graph, numerical steps, and both propagation and
-            inspection metadata.
+    def _compile_constraints(self, constraints, bindings, parameter_indices):
+        from diffractix.solver.constraint import normalize_to_constraint
 
-        Returns
-        -------
-        Simulation
-            Executable simulation for the configured input beam.
-        """
-        (
-            graph,
-            steps,
-            parameter_info,
-            location_map,
-            parameter_graph,
-            element_info,
-            source_spec,
-        ) = compiled
+        roots = []
+        constraint_descriptors = []
+        callable_constraints = []
+
+        for position, requirement in enumerate(constraints):
+            constraint = normalize_to_constraint(requirement)
+            expression = constraint.evaluate
+
+            if not isinstance(expression, Node):
+                callable_constraints.append((position, constraint))
+                continue
+
+            has_variables = False
+            for node in walk_ast((expression,), bindings):
+                if isinstance(node, Symbol) and node.key not in bindings:
+                    raise ValueError(f"Constraint {position} has an unresolved Symbol binding: {node.key!r}.")
+                if isinstance(node, Parameter) and node.is_variable:
+                    if id(node) not in parameter_indices:
+                        raise ValueError(
+                            f"Constraint {position} references variable Parameter {node!r} "
+                            "outside the optical model."
+                        )
+                    has_variables = True
+
+            if not has_variables:
+                value = np.asarray(expression.evaluate(bindings))
+                description = constraint.label or f"Constraint {position}"
+                if not np.all(np.isfinite(value)):
+                    raise ValueError(f"{description} has a non-finite constant value.")
+
+                if not np.all((value >= constraint.lower_bound) & (value <= constraint.upper_bound)):
+                    raise ValueError(
+                        f"{description} is an unsatisfiable constant constraint: "
+                        f"value {value} lies outside "
+                        f"[{constraint.lower_bound}, {constraint.upper_bound}]."
+                    )
+                continue
+
+            roots.append(expression)
+            constraint_descriptors.append(ConstraintData(
+                position=position,
+                lower_bound=constraint.lower_bound,
+                upper_bound=constraint.upper_bound,
+                label=constraint.label,
+                description=str(constraint),
+            ))
+
+        constraint_program = precompile(roots, bindings)
+
+        return constraint_program, constraint_descriptors, callable_constraints
+     
+
+
+    def build(self):
+        """Resolve and compile the optical system into a simulation."""
+        self._validate()
+        bindings = self._collect_bindings()
+
+        placements = self._resolve_elements()
+        placements, element_data = self._resolve_layout(placements, bindings)
+        placements, index_continuity = self._resolve_refractive_indices(placements, bindings)
+
+        constraints = self._collect_constraints(placements)
+        optics_program, stages, inputs, parameters_data = self._compile_optics(
+            placements, self._inputs, bindings, continuity_constraints=index_continuity)
+        constraint_program, constraint_descriptors, callable_constraints = self._compile_constraints(
+            (*constraints, *index_continuity), bindings, optics_program.parameter_indices)
 
         return Simulation(
-            source_spec=source_spec,
-            graph=graph,
-            steps=steps,
-            parameter_info=parameter_info,
-            location_map=location_map,
-            requirements=requirements,
-            compile_context=context,
-            execution_context=execution_context,
-            parameter_graph=parameter_graph,
-            element_info=element_info,
+            element_data = element_data, 
+            parameter_data=parameters_data,
+            callable_constraints = callable_constraints, 
+            constraint_descriptors = constraint_descriptors,
+            constraint_program = constraint_program, 
+            optics_program = optics_program,
+            optical_stages = stages, 
+            optical_inputs = inputs
         )
-
-
-    # -----
-    # BUILD
-    # -----
-    def build(self):
-        self._validate()
-
-        requirements = self._normalize_requirements()
-        context, execution_context = self._source_context()
-
-        elements = self._resolve_elements()
-        declared_element_ids = {id(placement.element) for placement in elements}
-        elements = self._resolve_layout(elements)
-
-        from diffractix.solver.constraint import Constraint, normalize_to_constraint
-        requirements += tuple(
-            normalize_to_constraint(requirement)
-            for placement in elements
-            if id(placement.element) not in declared_element_ids
-            for requirement in placement.element.requirements
-        )
-
-        elements, continuity = self._resolve_refractive_indices(elements)
-        continuity = self._source_continuity(context) + continuity
-
-        self._validate_refractive_index_continuity(continuity, context, execution_context)
-
-        continuity_residuals = tuple(residual for _, _, _, residual in continuity)
-        continuity_requirements = tuple(
-            Constraint(
-                residual,
-                lower_bound=0.0,
-                upper_bound=0.0,
-                label=(
-                    "Refractive index continuity at "
-                    f"{placement.describe(index)}"
-                ),
-            )
-            for index, (placement, _, _, residual) in enumerate(continuity)
-        )
-        requirements = (*requirements, *continuity_requirements)
-
-        compiled = self._compile(elements, additional_roots=continuity_residuals, context=context)
-
-        return self._build_simulation(compiled, requirements, context, execution_context)
-
 
 
     # ------
@@ -817,10 +617,10 @@ class System:
     # ------
     def __str__(self) -> str:
         def format_node(val):
-            if val is None:
-                return "-"
             if isinstance(val, InputNode):
                 val = val.node
+            if val is None:
+                return "-"
             if isinstance(val, (Parameter, Literal)):
                 return f"{val.value:.4g}"
             return f"{val:.4g}" if isinstance(val, Real) else str(val)
@@ -838,12 +638,12 @@ class System:
                     parts.append(f"{name}={node} [EXPR]")
             return ", ".join(parts) or "-"
 
-        def format_requirement(req):
-            if label := getattr(req, "label", None):
+        def format_constraint(constraint):
+            if label := getattr(constraint, "label", None):
                 return label
-            if callable(req):
-                return getattr(req, "__name__", None) or type(req).__name__
-            return str(req)
+            if callable(constraint):
+                return getattr(constraint, "__name__", None) or type(constraint).__name__
+            return str(constraint)
 
         rows = [
             (
@@ -862,11 +662,14 @@ class System:
             for c, h in enumerate(headers)
         ]
 
-        col_gap = 4  # Adjust column spacing here
-        format_row = lambda r: (" " * col_gap).join(val.ljust(w) for val, w in zip(r, widths))
+        col_gap = 4
+
+        def format_row(row):
+            return (" " * col_gap).join(value.ljust(width) for value, width in zip(row, widths))
+
         divider = "-" * (sum(widths) + col_gap * (len(widths) - 1))
-        source = type(self.beam).__name__ if self.beam is not None else "-"
-        reqs = self.requirements + self._collect_element_requirements()
+        sources = ", ".join(type(source).__name__ for source in self._inputs) or "-"
+        constraints = self.constraints
 
         lines = [
             "Optical System",
@@ -876,17 +679,17 @@ class System:
             *(format_row(r) for r in rows),
             divider,
             "",
-            f"Source: {source}",
+            f"Source: {sources}",
             f"Ambient n: {self.ambient_n.value:.4g}",
-            f"Requirements: {len(reqs)}",
+            f"Constraints: {len(constraints)}",
         ]
 
-        if reqs:
+        if constraints:
             lines.extend([
                 "",
-                "Requirements",
+                "Constraints",
                 "",
-                *(f"{i}  {format_requirement(r)}" for i, r in enumerate(reqs)),
+                *(f"{i}  {format_constraint(constraint)}" for i, constraint in enumerate(constraints)),
             ])
 
         return "\n".join(lines)
