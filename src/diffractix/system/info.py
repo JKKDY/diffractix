@@ -3,17 +3,15 @@ from dataclasses import dataclass
 from numbers import Real
 
 from diffractix.core import OpticalBase
-
+from diffractix.graph import Node
 
 @dataclass(frozen=True)
-class ElementInfo:
-    """Snapshot of an element's identity and parameters for inspection."""
-
-    type_name: str
+class ConstraintData:
+    position: int
+    lower_bound: float
+    upper_bound: float
     label: str | None
-    path: str | None
-    parameter_names: tuple[str, ...]
-    parameter_indices: tuple[int, ...]
+    description: str
 
 
 @dataclass(eq=False, frozen=True)
@@ -28,24 +26,24 @@ class CallSite:
         return f"{self.file}:{self.line}"
 
 
+@dataclass(frozen=True)
+class ElementData:
+    element_id: int
+    position: int
+    type_name: str
+    label: str | None
+    path: str | None
+    variable_parameter_ids: frozenset[int]
 
 
 @dataclass(frozen=True)
-class ParameterInfo:
-    """Snapshot of a parameter's value, bounds, and optimization index."""
-
+class ParameterData:
     parameter_id: int
     name: str | None
     value: float
-    parameter_index: int | None
     lower_bound: float
     upper_bound: float
-    owner_type: str | None = None
-    owner_label: str | None = None
-
-    @property
-    def is_variable(self) -> bool:
-        return self.parameter_index is not None
+    parameter_index: int | None
 
 
 
@@ -67,8 +65,6 @@ class Placement:
         site_part = f" added at {self.call_site.file}:{self.call_site.line}" if self.call_site else ""
 
         return f"Placement{index_part} ({element_type}{label_part}){site_part}"
-
-
 
 
 @dataclass(frozen=True)

@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-from copy import deepcopy
 from types import MappingProxyType
 
 import numpy as np
 from diffractix.backend import xp
 
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 
-from diffractix.input.paraxial_input import ParaxialState
 from diffractix.graph import CompiledAST, Node
 from diffractix.graph.utils import clone_ast
 from diffractix.simulation.result import SimulationResult, result_type_for
@@ -28,7 +26,7 @@ class Simulation:
     evaluate an optical system. Running a simulation does not mutate the source
     System, its elements, or parameter graph.
 
-    Retained ASTs are detached from declarative handles. Callable requirements
+    Retained ASTs are detached from declarative handles. Callable constraints
     retain normal Python closure semantics.
     """
 
@@ -41,7 +39,7 @@ class Simulation:
         compile_context: Mapping,
         execution_context: Mapping,
         location_map: Mapping,
-        requirements: Sequence[Callable | Node],
+        constraints: Sequence[Callable | Node],
         parameter_graph: CompiledAST,
         element_info: Sequence[ElementInfo],
     ):
@@ -50,7 +48,7 @@ class Simulation:
         self.steps = tuple(steps)
         self.parameter_info = MappingProxyType(dict(parameter_info))
         self.location_map = MappingProxyType(dict(location_map))
-        self.requirements, context = self._snapshot_expressions(requirements, compile_context)
+        self.constraints, context = self._snapshot_expressions(constraints, compile_context)
         self.compile_context = MappingProxyType(context)
         self.parameter_graph = parameter_graph
         self.element_info = tuple(element_info)
@@ -64,21 +62,21 @@ class Simulation:
     def initial_values(self):
         return self.graph.initial_values
 
-    def _snapshot_expressions(self, requirements, context):
+    def _snapshot_expressions(self, constraints, context):
         """Detach retained ASTs from live handles, preserving canonical leaves."""
-        requirements = tuple(requirements)
-        roots = [c.evaluate for c in requirements if isinstance(c.evaluate, Node)]
+        constraints = tuple(constraints)
+        roots = [c.evaluate for c in constraints if isinstance(c.evaluate, Node)]
         roots.extend(value for value in context.values() if isinstance(value, Node))
         copies = iter(clone_ast(roots, preserve_parameter_ids=self.parameter_info))
-        requirements = tuple(
+        constraints = tuple(
             replace(c, evaluate=next(copies)) if isinstance(c.evaluate, Node) else c
-            for c in requirements
+            for c in constraints
         )
         context = {
             key: next(copies) if isinstance(value, Node) else value
             for key, value in context.items()
         }
-        return requirements, context
+        return constraints, context
 
     def _evaluate_graph(self, theta):
         values = self.graph._evaluate_roots(variable_values=theta, bindings=self.execution_context)
@@ -89,14 +87,14 @@ class Simulation:
             for value in values
         )
 
-    def require(self, *requirements):
+    def require(self, *constraints):
         """Append normalized constraints and return this simulation for chaining."""
         from diffractix.solver.constraint import normalize_to_constraint
 
-        requirements, _ = self._snapshot_expressions(
-            tuple(map(normalize_to_constraint, requirements)), {}
+        constraints, _ = self._snapshot_expressions(
+            tuple(map(normalize_to_constraint, constraints)), {}
         )
-        self.requirements += requirements
+        self.constraints += constraints
         return self
 
     def run(self, theta=None) -> SimulationResult:
@@ -235,7 +233,7 @@ class Simulation:
             f"Source: {type(self.source).__name__}",
             f"Total length: {format_value(z)} m",
             f"Variables: {len(variables)}",
-            f"Requirements: {len(self.requirements)}",
+            f"Constraints: {len(self.constraints)}",
         ]
 
         if variables:
@@ -258,12 +256,12 @@ class Simulation:
                 *render_table(var_headers, var_rows),
             ])
 
-        if self.requirements:
+        if self.constraints:
             lines.extend([
                 "",
-                "Requirements",
+                "Constraints",
                 "",
-                *(f"{i}  {req}" for i, req in enumerate(self.requirements)),
+                *(f"{i}  {req}" for i, req in enumerate(self.constraints)),
             ])
 
         return "\n".join(lines)

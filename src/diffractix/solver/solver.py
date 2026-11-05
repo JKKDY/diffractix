@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from enum import Enum, auto
+from enum import Enum
 from math import isfinite
 from numbers import Real
 from dataclasses import dataclass
@@ -11,7 +11,6 @@ from diffractix.backend import xp, grad, hessian, jacobian, jit
 
 from diffractix.graph import (
     Node,
-    Symbol,
     SymbolicControlFlowError,
     compile_ast,
     evaluate_ast,
@@ -72,7 +71,7 @@ class _SolverCache:
 class Solver:
     """Solve one fixed optimization model; create a new Solver to change it.
 
-    Objectives and requirements are frozen when callbacks are first prepared.
+    Objectives and constraints are frozen when callbacks are first prepared.
     Do not mutate their ASTs or Python callable captures afterward.
     """
 
@@ -429,7 +428,7 @@ class Solver:
         options = {} if options is None else dict(options)
         n = len(self.simulation.initial_values)
 
-        raw_constraints = (*self.simulation.requirements, *self.constraints)
+        raw_constraints = (*self.simulation.constraints, *self.constraints)
         raw_objectives = self.objectives
 
         if isinstance(feasibility_tolerance, bool) or not isinstance(feasibility_tolerance, Real):

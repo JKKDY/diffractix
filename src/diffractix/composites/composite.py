@@ -52,6 +52,21 @@ class CompositeElement(OpticalBase, Sequence):
         """Direct child elements paired with their attribute names."""
         return tuple(zip(self.element_names, self.elements))
 
+    @property
+    def bindings(self):
+        """Collect child bindings recursively, rejecting duplicate keys."""
+        bindings = dict(super().bindings)
+        seen = set()
+        for element in self.elements:
+            if id(element) in seen:
+                continue
+            seen.add(id(element))
+            for key, value in element.bindings.items():
+                if key in bindings:
+                    raise ValueError(f"Duplicate symbol binding for {key!r}.")
+                bindings[key] = value
+        return bindings
+
     # -----------------
     # NESTED COMPOSITES
     # -----------------

@@ -40,15 +40,15 @@ def optimize(program: Program) -> Program:
 
 def precompile(roots: Sequence[Node], bindings: Mapping = {}) -> Program:
     """Translate expression graphs into an unoptimized program."""
-    variables = {}
+    parameter_indices = {}
     runtime_symbols = {}
     instructions = []
     compiled: dict[int, Operand] = {} # cache for each compiled node
 
     for node in walk_ast(roots, bindings):
         if isinstance(node, Parameter) and node.is_variable:
-            if id(node) not in variables:
-                variables[id(node)] = len(variables)
+            if id(node) not in parameter_indices:
+                parameter_indices[id(node)] = len(parameter_indices)
 
         elif isinstance(node, Symbol) and node.key not in bindings:
             if node.key not in runtime_symbols:
@@ -64,14 +64,14 @@ def precompile(roots: Sequence[Node], bindings: Mapping = {}) -> Program:
             operand = Constant(node.value)
 
         elif isinstance(node, Parameter):
-            operand = Input(variables[node_id]) if node.is_variable else Constant(node.value)
+            operand = Input(parameter_indices[node_id]) if node.is_variable else Constant(node.value)
 
         elif isinstance(node, Symbol):
             if node.key in bindings:
                 value = bindings[node.key]
                 operand = compile_node(value) if isinstance(value, Node) else Constant(value)
             else:
-                index = len(variables) + runtime_symbols[node.key]
+                index = len(parameter_indices) + runtime_symbols[node.key]
                 operand = Input(index)
 
         elif isinstance(node, InputNode):
@@ -101,7 +101,7 @@ def precompile(roots: Sequence[Node], bindings: Mapping = {}) -> Program:
     outputs = tuple(compile_node(root) for root in roots)
 
     return Program(
-        variables=variables,
+        parameter_indices=parameter_indices,
         runtime_symbols=runtime_symbols,
         _instructions=tuple(instructions),
         _outputs=outputs,
@@ -189,7 +189,7 @@ def _fold_constants_and_cse(program: Program) -> Program:
 
     outputs = tuple(_replace_operand(output, replacements) for output in program._outputs)
     return Program(
-        variables=dict(program.variables),
+        parameter_indices=dict(program.parameter_indices),
         runtime_symbols=dict(program.runtime_symbols),
         _instructions=tuple(instructions),
         _outputs=outputs,
@@ -226,7 +226,7 @@ def _eliminate_dead_code(program: Program) -> Program:
 
     outputs = tuple(_replace_operand(output, replacements) for output in program._outputs)
     return Program(
-        variables=dict(program.variables),
+        parameter_indices=dict(program.parameter_indices),
         runtime_symbols=dict(program.runtime_symbols),
         _instructions=tuple(instructions),
         _outputs=outputs,
@@ -277,7 +277,7 @@ def _allocate_registers(program: Program) -> Program:
 
     outputs = tuple(_replace_operand(output, replacements) for output in program._outputs)
     return Program(
-        variables=dict(program.variables),
+        parameter_indices=dict(program.parameter_indices),
         runtime_symbols=dict(program.runtime_symbols),
         _instructions=tuple(instructions),
         _outputs=outputs,

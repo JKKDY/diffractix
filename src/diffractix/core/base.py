@@ -27,7 +27,7 @@ class OpticalBase:
     def __new__(cls, *args, **kwargs):
         # use __new__ instead of __init__ so subclasses to have to call super().__init__ explicitely 
         instance = super().__new__(cls)
-        object.__setattr__(instance, "_requirements", [])
+        object.__setattr__(instance, "_constraints", [])
         object.__setattr__(instance, "label", None)
         return instance
 
@@ -111,16 +111,16 @@ class OpticalBase:
 
 
     # ------------
-    # REQUIREMENTS
+    # CONSTRAINTS
     # ------------
     @property
-    def requirements(self) -> tuple:
-        """Requirements attached to this optical object."""
-        return tuple(self._requirements)
+    def constraints(self) -> tuple:
+        """Constraints attached to this optical object."""
+        return tuple(self._constraints)
 
-    def require(self, *requirements):
-        """Attach requirements to this optical object."""
-        self._requirements.extend(requirements)
+    def require(self, *constraints):
+        """Attach constraints to this optical object."""
+        self._constraints.extend(constraints)
         return self
 
 
