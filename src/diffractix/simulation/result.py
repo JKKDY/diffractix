@@ -1,54 +1,90 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import fields, is_dataclass
-from functools import cache
+from collections.abc import Sequence
 from numbers import Integral, Real
+from typing import TYPE_CHECKING
 
 import numpy as np
 from diffractix.backend import xp
 
-from diffractix.core import OpticalBase
 from diffractix.input.paraxial_input import ParaxialState
-from diffractix.input.input import OpticalInput
-from diffractix.system.info import ElementInfo
+if TYPE_CHECKING:
+    from diffractix.system.info import ElementData, ParameterData
+    from .info import SimulationStep
 
 
 class SimulationResult:
     """Numerical result produced by a Simulation."""
 
+    class Stage:
+        """Boundary states and positions for one resolved optical element."""
+
+        def __init__(self, result: SimulationResult, index: int):
+            self._result = result
+            self._index = index
+
+        @property
+        def before(self) -> ParaxialState:
+            return self._result.states[self._index]
+
+        @property
+        def after(self) -> ParaxialState:
+            return self._result.states[self._index + 1]
+
+        @property
+        def z_start(self):
+            return self._result.z[self._index]
+
+        @property
+        def z_end(self):
+            return self._result.z[self._index + 1]
+
     def __init__(
         self,
-        source: ParaxialState,
+        *,
+        theta: np.ndarray,
+        parameter_data: Sequence[ParameterData],
+        element_data: Sequence[ElementData],
+        optical_stages: Sequence[SimulationStep],
+        optical_values: Sequence,
         z: np.ndarray,
         states: Sequence[ParaxialState],
-        location_map: Mapping[int, tuple[tuple[int, int], ...]],
-        element_info: Sequence[ElementInfo],
-        probe: Callable[[float], ParaxialState] | None = None,
     ):
+        self.theta = xp.array(theta)
+        self.parameter_data = tuple(parameter_data)
+        self.element_data = tuple(element_data)
+        self.optical_stages = tuple(optical_stages)
+        self.optical_values = tuple(optical_values)
+        self.z = z
+        self.states = tuple(states)
+
         if len(z) != len(states):
             raise ValueError(
                 f"z and states must have the same length, got {len(z)} and {len(states)}."
             )
-        if not states:
+        if not self.states:
             raise ValueError("SimulationResult requires at least one state.")
-        if len(states) != len(element_info) + 1:
+        if len(self.states) != len(self.element_data) + 1:
             raise ValueError(
                 "states must contain exactly one input state plus one state "
-                f"per element_info entry, got {len(states)} states and "
-                f"{len(element_info)} element_info entries."
+                f"per element_data entry, got {len(self.states)} states and "
+                f"{len(self.element_data)} element_data entries."
             )
-        self._source = source
-        self.z = z
-        self.states = tuple(states)
-        self._location_map = dict(location_map)
-        self.element_info = tuple(element_info)
-        self._probe = probe
+        if len(self.optical_stages) != len(self.element_data):
+            raise ValueError("optical_stages and element_data must have the same length.")
+        if len(self.theta) != len(self.parameter_data):
+            raise ValueError("theta and parameter_data must have the same length.")
+
+        self._element_positions = {}
+        for index, element in enumerate(self.element_data):
+            if element.element_id not in self._element_positions:
+                self._element_positions[element.element_id] = []
+            self._element_positions[element.element_id].append(index)
 
     @property
     def source(self) -> ParaxialState:
         """Input optical state used to create this simulation result."""
-        return self._source
+        return self.states[0]
 
     @property
     def initial(self) -> ParaxialState:
@@ -60,9 +96,27 @@ class SimulationResult:
         """Optical state at the end of the simulation."""
         return self.states[-1]
 
+    @property
+    def stages(self) -> tuple[Stage, ...]:
+        """Stage views in propagation order."""
+        return tuple(self.Stage(self, index) for index in range(len(self.element_data)))
+
+    def stage(self, element, occurrence=None) -> Stage:
+        """Return a stage view, selecting an occurrence for repeated elements."""
+        before, _ = self._resolve_location(element, occurrence)
+        return self.Stage(self, before)
+
+    def __getitem__(self, key) -> Stage:
+        if isinstance(key, tuple):
+            if len(key) != 2:
+                raise TypeError("Expected result[element] or result[element, occurrence].")
+            element, occurrence = key
+            return self.stage(element, occurrence=occurrence)
+        return self.stage(key)
+
     def _resolve_location(self, element, occurrence=None):
         try:
-            locations = self._location_map[id(element)]
+            locations = self._element_positions[id(element)]
         except KeyError:
             raise KeyError(
                 f"Element {element!r} is not part of this simulation."
@@ -73,7 +127,8 @@ class SimulationResult:
                     f"Element {element!r} occurs {len(locations)} times in this simulation. "
                     "Specify occurrence= to select one."
                 )
-            return locations[0]
+            index = locations[0]
+            return index, index + 1
         if isinstance(occurrence, bool) or not isinstance(occurrence, Integral):
             raise TypeError(
                 f"occurrence must be an integer, got {type(occurrence).__name__}."
@@ -83,7 +138,8 @@ class SimulationResult:
                 f"Element {element!r} has {len(locations)} occurrence(s); "
                 f"occurrence {occurrence} is out of range."
             )
-        return locations[occurrence]
+        index = locations[occurrence]
+        return index, index + 1
 
     def at(self, location, occurrence=None) -> ParaxialState:
         """
@@ -153,116 +209,41 @@ class SimulationResult:
         return plot(self, ax=ax, show_elements=show_elements, show_axis=show_axis)
 
     def __str__(self) -> str:
-        def fmt_val(v):
-            if  np.ndim(v) == 0:
-                return f"{float(v):.4g}"
-            else:
-                return np.array2string(np.asarray(v), precision=4, separator=", ")
-
-        def fmt_loc(info):
-            return info.label or info.path or info.type_name
+        def format_value(value):
+            if np.ndim(value) == 0:
+                return f"{value:.4g}"
+            return np.array2string(np.asarray(value), precision=4, separator=", ")
 
         state_type = type(self.source)
         cols = state_type.result_columns
         headers = ("#", "z", "Location", *cols)
 
-        # Consolidate row generation across input (0) and subsequent elements
-        data_items = [(0, self.z[0], self.states[0], "Input")] + [
-            (i, z, state, fmt_loc(info))
-            for i, (z, state, info) in enumerate(zip(self.z[1:], self.states[1:], self.element_info), start=1)
-        ]
-        rows = [
-            (str(i), fmt_val(z), loc, *(fmt_val(getattr(state, c)) for c in cols))
-            for i, z, state, loc in data_items
-        ]
+        rows = []
+        for index, (z, state) in enumerate(zip(self.z, self.states)):
+            if index == 0:
+                location = "Input"
+            else:
+                element = self.element_data[index - 1]
+                location = element.label or element.path or element.type_name
+            rows.append((
+                str(index), format_value(z), location,
+                *(format_value(getattr(state, column)) for column in cols),
+            ))
 
         widths = [max(len(header), *(len(r[i]) for r in rows)) for i, header in enumerate(headers)]
-        fmt_row = lambda r: "    ".join(val.ljust(w) for val, w in zip(r, widths))
+        def format_row(row):
+            return "    ".join(value.ljust(width) for value, width in zip(row, widths))
+
         divider = "-" * (sum(widths) + 4 * (len(widths) - 1))
 
         return "\n".join([
             f"{state_type.__name__} Simulation Result",
             "",
-            fmt_row(headers),
+            format_row(headers),
             divider,
-            *(fmt_row(r) for r in rows),
+            *(format_row(row) for row in rows),
             divider,
             "",
-            f"Final z: {fmt_val(self.z[-1])}",
+            f"Final z: {format_value(self.z[-1])}",
             f"States: {len(self.states)}",
         ])
-
-
-def _state_property(name):
-    """Create a result property that stacks one state attribute over the trace."""
-
-    def getter(self):
-        return xp.stack([
-            getattr(state, name)
-            for state in self.states
-        ])
-
-    getter.__name__ = name
-    getter.__doc__ = (
-        f"Values of `{name}` for every propagated optical state."
-    )
-
-    return property(getter)
-
-
-
-def result_type_for(source: ParaxialState) -> type[SimulationResult]:
-    """
-    Return the generated SimulationResult type for an optical state.
-
-    Public dataclass fields and properties of the state become stacked
-    properties on the generated result type, excluding execution metadata.
-    """
-    return _result_type_for(type(source))
-
-
-
-@cache
-def _result_type_for(state_type: type[ParaxialState]) -> type[SimulationResult]:
-    """Generate and cache a SimulationResult type for a ParaxialState type."""
-
-    if not is_dataclass(state_type):
-        raise TypeError(
-            f"{state_type.__name__} must be a dataclass to generate a simulation result type."
-        )
-
-    names = {
-        field.name
-        for field in fields(state_type)
-        if not field.name.startswith("_")
-    }
-
-    for cls in state_type.__mro__:
-        if cls in (OpticalBase, OpticalInput):
-            continue
-        names.update(
-            name
-            for name, value in vars(cls).items()
-            if not name.startswith("_") and isinstance(value, property)
-        )
-
-    names.discard("bindings")
-
-    collisions = names.intersection(dir(SimulationResult))
-
-    if collisions:
-        raise TypeError(
-            f"{state_type.__name__} exposes result properties that conflict with "
-            f"SimulationResult: {', '.join(sorted(collisions))}."
-        )
-
-    properties = {
-        name: _state_property(name)
-        for name in names
-    }
-
-    return type(
-        f"{state_type.__name__}SimulationResult",
-        (SimulationResult,),
-        properties,
-    )

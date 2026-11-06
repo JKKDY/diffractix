@@ -25,8 +25,6 @@ from .errors import SystemValidationError
 from .symbols import AMBIENT_N
 from .info import ElementData, ParameterData, ConstraintData, Placement, CallSite, ResolvedPlacement
 
-_UNSET = object()
-
 
 class System:
     """
@@ -358,7 +356,7 @@ class System:
             )
 
             parameter_ids = frozenset(
-                id(node) for node in walk_ast((handle for _, handle in parameters)), bindings)
+                id(node) for node in walk_ast((handle for _, handle in parameters), bindings)
                 if isinstance(node, Parameter) and node.is_variable
             )
 
