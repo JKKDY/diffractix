@@ -1,5 +1,7 @@
 # Graph module: working reference
 
+For the full optical workflow, see [System, Simulation and Result](system-simulation-result.md).
+
 This document records the graph module as it exists during the compiler migration. It is a reference for future documentation, not a promise that the surrounding System and Solver APIs have already been migrated.
 
 ## Structure
