@@ -10,8 +10,8 @@ from numbers import Real
 
 from scipy.optimize import linprog
 
-from collections.abc import Callable
-from dataclasses import dataclass, field
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field, replace
 import numpy as np
 
 from diffractix.graph import (
@@ -20,6 +20,7 @@ from diffractix.graph import (
     Literal,
     Node,
     Parameter,
+    Program,
     Relation,
     Symbol,
     SymbolicControlFlowError,
@@ -29,6 +30,7 @@ from diffractix.graph import (
 
 from diffractix.graph.node import BinaryOp, UnaryOp
 from diffractix.graph.ops import Op
+from diffractix.graph.program import Input, Register, Constant, UnaryInstruction
 
 from .utils import callable_arity
 
@@ -202,14 +204,14 @@ def normalize_to_constraint(value) -> Constraint:
     return Constraint(result, value.lower_bound, value.upper_bound, value.label)
 
 
-def prepare_constraints(constraints, *, tracer, bindings, parameter_indices, start_position=0):
+def prepare_constraints(constraints, *, tracer, bindings):
     """Trace and precompile constraints, retaining dynamic callables."""
     from diffractix.simulation.result import ResultSymbolKey
 
     roots = []
     descriptors = []
     callables = []
-    for position, requirement in enumerate(constraints, start_position):
+    for position, requirement in enumerate(constraints):
         constraint = normalize_to_constraint(requirement)
         expression = constraint.evaluate
         if not isinstance(expression, Node):
@@ -231,8 +233,6 @@ def prepare_constraints(constraints, *, tracer, bindings, parameter_indices, sta
                     raise ValueError(f"Constraint {position} has an unresolved Symbol binding: {node.key!r}.")
                 has_inputs = True
             if isinstance(node, Parameter) and node.is_variable:
-                if id(node) not in parameter_indices:
-                    raise ValueError(f"Constraint {position} references variable Parameter {node!r} outside the optical model.")
                 has_inputs = True
 
         if not has_inputs:
@@ -250,400 +250,429 @@ def prepare_constraints(constraints, *, tracer, bindings, parameter_indices, sta
     return precompile(roots, bindings), tuple(descriptors), tuple(callables)
 
 
+def reduce_constraints(
+    program: Program,
+    descriptors: Sequence[ConstraintDescriptor],
+    *,
+    parameter_lower: Sequence[float],
+    parameter_upper: Sequence[float],
+) -> tuple[tuple[int, ...], tuple[ConstraintDescriptor, ...]]:
+    """Select program outputs and effective bounds for the current solve.
+
+    Each returned descriptor describes the corresponding selected output.
+    Descriptor positions retain their original declaration positions.
+    The full program and original descriptors are preserved for reuse.
+    """
+    if len(descriptors) != len(program._outputs):
+        raise ValueError("Expected one descriptor per constraint program output.")
+    parameter_lower = np.asarray(parameter_lower, dtype=float)
+    parameter_upper = np.asarray(parameter_upper, dtype=float)
+    expected_shape = (len(program.parameter_indices),)
+    if parameter_lower.shape != expected_shape or parameter_upper.shape != expected_shape:
+        raise ValueError(f"Parameter bounds must have shape {expected_shape}.")
+    if (
+        np.any(np.isnan(parameter_lower)) or np.any(np.isnan(parameter_upper))
+        or np.any(parameter_lower > parameter_upper)
+        or np.any(parameter_lower == np.inf) or np.any(parameter_upper == -np.inf)
+    ):
+        raise ValueError("Invalid parameter bounds.")
+    for descriptor in descriptors:
+        if (
+            math.isnan(descriptor.lower_bound) or math.isnan(descriptor.upper_bound)
+            or descriptor.lower_bound > descriptor.upper_bound
+        ):
+            raise ValueError("Invalid constraint bounds.")
+
+    output_indices = tuple(range(len(descriptors)))
+    active_descriptors = tuple(descriptors)
+
+    output_indices, active_descriptors = _reduce_duplicate_outputs(
+        program, output_indices, active_descriptors,
+    )
+    output_indices, active_descriptors = _reduce_box_constraints(
+        program, output_indices, active_descriptors,
+        parameter_lower, parameter_upper,
+    )
+    output_indices, active_descriptors = _reduce_interval_constraints(
+        program, output_indices, active_descriptors,
+        parameter_lower, parameter_upper,
+    )
+    output_indices, active_descriptors = _reduce_equalities(
+        program, output_indices, active_descriptors,
+    )
+    output_indices, active_descriptors = _reduce_affine_constraints(
+        program, output_indices, active_descriptors,
+        parameter_lower, parameter_upper,
+    )
+    return output_indices, active_descriptors
 
 
+def _reduce_duplicate_outputs(program, output_indices, descriptors):
+    """Combine bounds on structurally identical computations."""
+    values = {}
+    registers = {}
 
-
-
-
-
-#--------------------------------------
-def _direct_parameter(node):
-    """Resolve InputNode indirection to a direct Parameter."""
-    seen = set()
-
-    while isinstance(node, InputNode):
-        if id(node) in seen or node.node is None:
-            return None
-
-        seen.add(id(node))
-        node = node.node
-
-    return node if isinstance(node, Parameter) else None
-
-
-
-def remove_bound_redundant_constraints(constraints, *, parameter_info, parameter_lower, parameter_upper):
-    """Remove constraints implied by the canonical parameter bounds."""
-    if len(parameter_lower) != len(parameter_upper):
-        raise ValueError("Parameter bounds must have matching lengths.")
-
-    reduced = []
-
-    for constraint in constraints:
-        parameter = _direct_parameter(constraint.evaluate)
-
-        if parameter is None:
-            reduced.append(constraint)
-            continue
-
-        info = parameter_info.get(id(parameter))
-
-        if info is None:
-            reduced.append(constraint)
-            continue
-
-        if info.parameter_index is None:
-            domain_lower = domain_upper = info.value
+    def identify(operand):
+        if isinstance(operand, Register):
+            return registers[operand.index]
+        if isinstance(operand, Input):
+            key = (Input, operand.index)
         else:
-            index = info.parameter_index
+            value = operand.value
+            if type(value) in (bool, int) or (type(value) in (float, complex) and np.isfinite(value)):
+                key = (Constant, type(value), repr(value))
+            elif isinstance(value, np.generic) and value.dtype.kind in "biufc" and np.isfinite(value):
+                key = (Constant, value.dtype.str, value.tobytes())
+            else:
+                key = object()
+        return number(key)
 
-            if not 0 <= index < len(parameter_lower):
-                raise ValueError("Invalid parameter index.")
+    def number(key):
+        if key not in values:
+            values[key] = len(values)
+        return values[key]
 
-            domain_lower = parameter_lower[index]
-            domain_upper = parameter_upper[index]
+    for instruction in program._instructions:
+        if isinstance(instruction, UnaryInstruction):
+            key = (instruction.op, identify(instruction.src))
+        else:
+            key = (instruction.op, identify(instruction.left), identify(instruction.right))
+        registers[instruction.dst] = number(key)
+    output_keys = tuple(identify(output) for output in program._outputs)
 
-        lower_redundant = domain_lower >= constraint.lower_bound
-        upper_redundant = domain_upper <= constraint.upper_bound
-
-        # Entire constraint is implied by the parameter domain.
-        if lower_redundant and upper_redundant:
+    retained_indices = []
+    retained = []
+    representatives = {}
+    for output_index, descriptor in zip(output_indices, descriptors):
+        if descriptor.lower_bound == -np.inf and descriptor.upper_bound == np.inf:
             continue
-
-        # Preserve equality constraints unless fully redundant.
-        if constraint.lower_bound == constraint.upper_bound:
-            reduced.append(constraint)
+        key = output_keys[output_index]
+        if key not in representatives:
+            representatives[key] = len(retained)
+            retained_indices.append(output_index)
+            retained.append(descriptor)
             continue
-
-        lower = -np.inf if lower_redundant else constraint.lower_bound
-        upper = np.inf if upper_redundant else constraint.upper_bound
-
-        if lower == constraint.lower_bound and upper == constraint.upper_bound:
-            reduced.append(constraint)
-            continue
-
-        reduced.append(
-            Constraint(
-                evaluate=constraint.evaluate,
-                lower_bound=lower,
-                upper_bound=upper,
-                label=constraint.label,
-            )
-        )
-
-    return tuple(reduced)
+        index = representatives[key]
+        previous = retained[index]
+        lower = max(previous.lower_bound, descriptor.lower_bound)
+        upper = min(previous.upper_bound, descriptor.upper_bound)
+        if lower > upper:
+            raise ValueError(f"Conflicting bounds on duplicate constraints {previous.position} and {descriptor.position}.")
+        if lower != previous.lower_bound or upper != previous.upper_bound:
+            retained[index] = replace(previous, lower_bound=lower, upper_bound=upper)
+    return tuple(retained_indices), tuple(retained)
 
 
+def _program_affine_forms(program):
+    """Interpret program outputs as rational affine forms, or None if unknown."""
+    size = len(program.parameter_indices)
+    zero = (Fraction(0),) * size
+    registers = {}
 
-def _rational(value):
-    """Exact rational representation of a finite numeric scalar, or None."""
-    try:
-        return Fraction(value)
-    except (TypeError, ValueError, OverflowError, ZeroDivisionError):
-        return None
+    def read(operand):
+        if isinstance(operand, Register):
+            return registers[operand.index]
+        if isinstance(operand, Input):
+            if operand.index >= size:
+                return None
+            coefficients = list(zero)
+            coefficients[operand.index] = Fraction(1)
+            return tuple(coefficients), Fraction(0)
+        value = _rational(operand.value)
+        return None if value is None else (zero, value)
 
-
-def _affine_form(node, parameter_info, n, compile_context=None):
-    """Return (coefficients, offset) as Fractions, or None if not provably affine."""
-    zero = (Fraction(0),) * n
-    visiting, memo = set(), {}
-
-    def visit(current):
-        key = id(current)
-        if key in memo:
-            return memo[key]
-        if key in visiting:
-            return None
-
-        visiting.add(key)
+    for instruction in program._instructions:
         result = None
-        try:
-            if isinstance(current, InputNode):
-                if current.node is not None:
-                    result = visit(current.node)
-
-            elif isinstance(current, Literal):
-                if (value := _rational(current.value)) is not None:
-                    result = (zero, value)
-
-            elif isinstance(current, Symbol):
-                if compile_context is not None and current.key in compile_context:
-                    binding = compile_context[current.key]
-                    if isinstance(binding, Node):
-                        result = visit(binding)
-                    elif isinstance(binding, Real) and not isinstance(binding, bool):
-                        if (value := _rational(binding)) is not None:
-                            result = (zero, value)
-
-            elif isinstance(current, Parameter):
-                info = parameter_info.get(id(current))
-                if info is not None:
-                    if info.parameter_index is None and (value := _rational(info.value)) is not None:
-                        result = (zero, value)
-                    elif info.parameter_index is not None:
-                        index = info.parameter_index
-                        if not 0 <= index < n:
-                            raise ValueError('Invalid canonical parameter index.')
-                        coefficients = list(zero)
-                        coefficients[index] = Fraction(1)
-                        result = (tuple(coefficients), Fraction(0))
-
-            elif isinstance(current, UnaryOp):
-                if (operand := visit(current.operand)) is not None:
-                    a, b = operand
-                    if current.op is Op.POS:
-                        result = operand
-                    elif current.op is Op.NEG:
-                        result = (tuple(-v for v in a), -b)
-                    elif current.op is Op.ABS and a == zero:
-                        result = (zero, abs(b))
-
-            elif isinstance(current, BinaryOp):
-                left, right = visit(current.left), visit(current.right)
-                if left is not None and right is not None:
-                    a, b = left
-                    c, d = right
-                    if current.op is Op.ADD:
-                        result = (tuple(x + y for x, y in zip(a, c)), b + d)
-                    elif current.op is Op.SUB:
-                        result = (tuple(x - y for x, y in zip(a, c)), b - d)
-                    elif current.op is Op.MUL:
-                        if a == zero:
-                            result = (tuple(b * x for x in c), b * d)
-                        elif c == zero:
-                            result = (tuple(d * x for x in a), d * b)
-                    elif current.op is Op.DIV and c == zero and d != 0:
-                        result = (tuple(x / d for x in a), b / d)
-                    elif current.op is Op.POW and c == zero:
-                        if d == 0:
-                            result = (zero, Fraction(1))
-                        elif d == 1:
-                            result = left
-                    elif current.op is Op.MAX and a == c == zero:
-                        result = (zero, max(b, d))
-                    elif current.op is Op.MIN and a == c == zero:
-                        result = (zero, min(b, d))
-        finally:
-            visiting.remove(key)
-        memo[key] = result
-        return result
-
-    return visit(node) if isinstance(node, Node) else None
+        if isinstance(instruction, UnaryInstruction):
+            operand = read(instruction.src)
+            if operand is not None:
+                coefficients, offset = operand
+                if instruction.op is Op.POS:
+                    result = operand
+                elif instruction.op is Op.NEG:
+                    result = tuple(-value for value in coefficients), -offset
+                elif instruction.op is Op.ABS and coefficients == zero:
+                    result = zero, abs(offset)
+        else:
+            left = read(instruction.left)
+            right = read(instruction.right)
+            if left is not None and right is not None:
+                a, b = left
+                c, d = right
+                if instruction.op is Op.ADD:
+                    result = tuple(x + y for x, y in zip(a, c)), b + d
+                elif instruction.op is Op.SUB:
+                    result = tuple(x - y for x, y in zip(a, c)), b - d
+                elif instruction.op is Op.MUL:
+                    if a == zero:
+                        result = tuple(b * value for value in c), b * d
+                    elif c == zero:
+                        result = tuple(d * value for value in a), d * b
+                elif instruction.op is Op.DIV and c == zero and d != 0:
+                    result = tuple(value / d for value in a), b / d
+                elif instruction.op is Op.POW and c == zero:
+                    if d == 0:
+                        result = zero, Fraction(1)
+                    elif d == 1:
+                        result = left
+                elif instruction.op is Op.MIN and a == c == zero:
+                    result = zero, min(b, d)
+                elif instruction.op is Op.MAX and a == c == zero:
+                    result = zero, max(b, d)
+        registers[instruction.dst] = result
+    return tuple(read(output) for output in program._outputs)
 
 
-def _affine_inequalities(constraints, forms, exclude_index, exclude_side, lower, upper):
-    """Build exact inequalities A @ x <= b from retained constraints and box."""
-    rows = []
-    for i, (constraint, form) in enumerate(zip(constraints, forms)):
-        if constraint is None or form is None:
+def _reduce_box_constraints(program, output_indices, descriptors, parameter_lower, parameter_upper):
+    """Remove affine constraint sides implied by parameter bounds."""
+    forms = _program_affine_forms(program)
+    retained_indices = []
+    retained = []
+    for output_index, descriptor in zip(output_indices, descriptors):
+        form = forms[output_index]
+        if form is None:
+            retained_indices.append(output_index)
+            retained.append(descriptor)
             continue
-        a, offset = form
-        if i == exclude_index and constraint.lower_bound == constraint.upper_bound:
+        coefficients, offset = form
+        negated = tuple(-value for value in coefficients)
+        lower = _rational(descriptor.lower_bound)
+        upper = _rational(descriptor.upper_bound)
+        lower_implied = descriptor.lower_bound == -np.inf or (
+            lower is not None and _box_implies(negated, offset - lower, parameter_lower, parameter_upper)
+        )
+        upper_implied = descriptor.upper_bound == np.inf or (
+            upper is not None and _box_implies(coefficients, upper - offset, parameter_lower, parameter_upper)
+        )
+        if lower_implied and upper_implied:
             continue
-        if i != exclude_index or exclude_side != 'upper':
-            if (bound := _rational(constraint.upper_bound)) is not None:
-                rows.append((a, bound - offset))
-        if i != exclude_index or exclude_side != 'lower':
-            if (bound := _rational(constraint.lower_bound)) is not None:
-                rows.append((tuple(-v for v in a), offset - bound))
-
-    for j, (lo, hi) in enumerate(zip(lower, upper)):
-        if (hi := _rational(hi)) is not None:
-            row = [Fraction(0)] * len(lower)
-            row[j] = Fraction(1)
-            rows.append((tuple(row), hi))
-        if (lo := _rational(lo)) is not None:
-            row = [Fraction(0)] * len(lower)
-            row[j] = Fraction(-1)
-            rows.append((tuple(row), -lo))
-    return rows
+        if not any(coefficients):
+            raise ValueError(f"Constraint {descriptor.position} is an unsatisfiable constant constraint.")
+        if descriptor.lower_bound != descriptor.upper_bound:
+            effective_lower = -np.inf if lower_implied else descriptor.lower_bound
+            effective_upper = np.inf if upper_implied else descriptor.upper_bound
+            if effective_lower != descriptor.lower_bound or effective_upper != descriptor.upper_bound:
+                descriptor = replace(descriptor, lower_bound=effective_lower, upper_bound=effective_upper)
+        retained_indices.append(output_index)
+        retained.append(descriptor)
+    return tuple(retained_indices), tuple(retained)
 
 
-def _box_implies(row, rhs, lower, upper):
-    """Prove row @ x <= rhs from parameter bounds alone."""
-    maximum = Fraction(0)
-    for coefficient, lo, hi in zip(row, lower, upper):
-        if coefficient == 0:
+def _interval_product(left, right):
+    products = [first * second for first in left for second in right]
+    return min(products), max(products)
+
+
+def _program_intervals(program, parameter_lower, parameter_upper):
+    """Bound supported real operations using finite rational intervals."""
+    registers = {}
+
+    def read(operand):
+        if isinstance(operand, Register):
+            return registers[operand.index]
+        if isinstance(operand, Input):
+            if operand.index >= len(program.parameter_indices):
+                return None
+            lower = _rational(parameter_lower[operand.index])
+            upper = _rational(parameter_upper[operand.index])
+            return None if lower is None or upper is None else (lower, upper)
+        value = _rational(operand.value)
+        return None if value is None else (value, value)
+
+    for instruction in program._instructions:
+        result = None
+        if isinstance(instruction, UnaryInstruction):
+            operand = read(instruction.src)
+            if operand is not None:
+                lower, upper = operand
+                if instruction.op is Op.POS:
+                    result = operand
+                elif instruction.op is Op.NEG:
+                    result = -upper, -lower
+                elif instruction.op is Op.ABS:
+                    minimum = Fraction(0) if lower <= 0 <= upper else min(abs(lower), abs(upper))
+                    result = minimum, max(abs(lower), abs(upper))
+        else:
+            left = read(instruction.left)
+            right = read(instruction.right)
+            if left is not None and right is not None:
+                lower, upper = left
+                other_lower, other_upper = right
+                if instruction.op is Op.ADD:
+                    result = lower + other_lower, upper + other_upper
+                elif instruction.op is Op.SUB:
+                    result = lower - other_upper, upper - other_lower
+                elif instruction.op is Op.MUL:
+                    result = _interval_product(left, right)
+                elif instruction.op is Op.DIV and not other_lower <= 0 <= other_upper:
+                    result = _interval_product(left, (1 / other_upper, 1 / other_lower))
+                elif instruction.op is Op.POW and other_lower == other_upper:
+                    if other_lower == 0:
+                        result = Fraction(1), Fraction(1)
+                    elif other_lower == 1:
+                        result = left
+                    elif other_lower == 2:
+                        minimum = Fraction(0) if lower <= 0 <= upper else min(lower ** 2, upper ** 2)
+                        result = minimum, max(lower ** 2, upper ** 2)
+                elif instruction.op is Op.MIN:
+                    result = min(lower, other_lower), min(upper, other_upper)
+                elif instruction.op is Op.MAX:
+                    result = max(lower, other_lower), max(upper, other_upper)
+        registers[instruction.dst] = result
+    return tuple(read(output) for output in program._outputs)
+
+
+def _reduce_interval_constraints(program, output_indices, descriptors, parameter_lower, parameter_upper):
+    """Remove constraint sides implied by conservative numerical ranges."""
+    intervals = _program_intervals(program, parameter_lower, parameter_upper)
+    retained_indices = []
+    retained = []
+    for output_index, descriptor in zip(output_indices, descriptors):
+        interval = intervals[output_index]
+        if interval is None:
+            retained_indices.append(output_index)
+            retained.append(descriptor)
             continue
-        endpoint = hi if coefficient > 0 else lo
-        if (value := _rational(endpoint)) is None:
-            return False
-        maximum += coefficient * value
-    return maximum <= rhs
-
-
-def _recover_exact_weights(rows, target, approximate):
-    """Solve A.T @ weights = target exactly on the LP's active support."""
-    if not (active := [i for i, value in enumerate(approximate) if value > 0]):
-        return None
-    matrix = [
-        [rows[i][0][j] for i in active] + [target[j]]
-        for j in range(len(target))
-    ]
-    pivot_columns, pivot_row = [], 0
-    for col in range(len(active)):
-        row = next((r for r in range(pivot_row, len(matrix)) if matrix[r][col]), None)
-        if row is None:
+        minimum, maximum = interval
+        lower = _rational(descriptor.lower_bound)
+        upper = _rational(descriptor.upper_bound)
+        if (lower is not None and maximum < lower) or (upper is not None and minimum > upper):
+            raise ValueError(f"Constraint {descriptor.position} is infeasible within the parameter bounds.")
+        lower_implied = descriptor.lower_bound == -np.inf or (lower is not None and minimum >= lower)
+        upper_implied = descriptor.upper_bound == np.inf or (upper is not None and maximum <= upper)
+        if lower_implied and upper_implied:
             continue
-        matrix[pivot_row], matrix[row] = matrix[row], matrix[pivot_row]
-        pivot = matrix[pivot_row][col]
-        matrix[pivot_row] = [v / pivot for v in matrix[pivot_row]]
-        for r in range(len(matrix)):
-            if r != pivot_row and (multiplier := matrix[r][col]):
-                matrix[r] = [x - multiplier * y for x, y in zip(matrix[r], matrix[pivot_row])]
-        pivot_columns.append(col)
-        pivot_row += 1
-        if pivot_row == len(matrix):
-            break
-    if any(all(v == 0 for v in row[:-1]) and row[-1] != 0 for row in matrix):
-        return None
-
-    # Take free variables as zero; solve pivot multipliers exactly.
-    free_columns = [j for j in range(len(active)) if j not in pivot_columns]
-    weights = [Fraction(0)] * len(active)
-    for r, col in enumerate(pivot_columns):
-        weights[col] = matrix[r][-1] - sum(matrix[r][j] * weights[j] for j in free_columns)
-
-    full = [Fraction(0)] * len(rows)
-    for i, value in zip(active, weights):
-        full[i] = value
-    return full
+        if descriptor.lower_bound != descriptor.upper_bound:
+            effective_lower = -np.inf if lower_implied else descriptor.lower_bound
+            effective_upper = np.inf if upper_implied else descriptor.upper_bound
+            if effective_lower != descriptor.lower_bound or effective_upper != descriptor.upper_bound:
+                descriptor = replace(descriptor, lower_bound=effective_lower, upper_bound=effective_upper)
+        retained_indices.append(output_index)
+        retained.append(descriptor)
+    return tuple(retained_indices), tuple(retained)
 
 
-def _affine_certificate(rows, target, rhs):
-    """Use HiGHS to propose a Farkas certificate; verify it over rational affine forms."""
-    if not rows:
-        return False
-    if any(a == target and b <= rhs for a, b in rows):
-        return True
-    if not target:
-        return False
+def _reduce_equalities(program, output_indices, descriptors):
+    """Keep the first independent affine equalities using exact row elimination."""
+    forms = _program_affine_forms(program)
+    basis = {}
+    retained_indices = []
+    retained = []
+    for output_index, descriptor in zip(output_indices, descriptors):
+        form = forms[output_index]
+        bound = _rational(descriptor.lower_bound)
+        if form is not None and bound is not None and descriptor.lower_bound == descriptor.upper_bound:
+            coefficients, offset = form
+            row = [*coefficients, bound - offset]
+            for pivot in sorted(basis):
+                multiplier = row[pivot]
+                if multiplier != 0:
+                    row = [value - multiplier * other for value, other in zip(row, basis[pivot])]
+            pivot = next((index for index, value in enumerate(row[:-1]) if value != 0), None)
+            if pivot is None:
+                if row[-1] != 0:
+                    raise ValueError(f"Constraint {descriptor.position} conflicts with the preceding affine equalities.")
+                continue
+            divisor = row[pivot]
+            basis[pivot] = tuple(value / divisor for value in row)
+        retained_indices.append(output_index)
+        retained.append(descriptor)
+    return tuple(retained_indices), tuple(retained)
 
+
+def _reduce_affine_constraints(program, output_indices, descriptors, parameter_lower, parameter_upper):
+    """Remove affine constraint sides implied by other retained constraints."""
+    output_forms = _program_affine_forms(program)
+    forms = [output_forms[index] for index in output_indices]
+    if all(form is None for form in forms):
+        return output_indices, descriptors
+    retained = list(descriptors)
+    rows = _affine_inequalities(retained, forms, -1, None, parameter_lower, parameter_upper)
+    _check_affine_feasibility(rows, len(program.parameter_indices))
+
+    def implied(index, side):
+        descriptor = retained[index]
+        coefficients, offset = forms[index]
+        if side == "lower":
+            if descriptor.lower_bound == -np.inf:
+                return True
+            bound = _rational(descriptor.lower_bound)
+            if bound is None:
+                return False
+            target = tuple(-value for value in coefficients)
+            rhs = offset - bound
+        else:
+            if descriptor.upper_bound == np.inf:
+                return True
+            bound = _rational(descriptor.upper_bound)
+            if bound is None:
+                return False
+            target = coefficients
+            rhs = bound - offset
+        available = _affine_inequalities(retained, forms, index, side, parameter_lower, parameter_upper)
+        return _affine_certificate(available, target, rhs)
+
+    for index, descriptor in enumerate(retained):
+        if forms[index] is None:
+            continue
+        if descriptor.lower_bound == descriptor.upper_bound:
+            if implied(index, "lower") and implied(index, "upper"):
+                retained[index] = None
+            continue
+        lower = -np.inf if implied(index, "lower") else descriptor.lower_bound
+        if lower != descriptor.lower_bound:
+            retained[index] = replace(descriptor, lower_bound=lower)
+        upper = np.inf if implied(index, "upper") else descriptor.upper_bound
+        if lower == -np.inf and upper == np.inf:
+            retained[index] = None
+        elif lower != descriptor.lower_bound or upper != descriptor.upper_bound:
+            retained[index] = replace(descriptor, lower_bound=lower, upper_bound=upper)
+
+    pairs = [(index, descriptor) for index, descriptor in zip(output_indices, retained) if descriptor is not None]
+    return tuple(index for index, _ in pairs), tuple(descriptor for _, descriptor in pairs)
+
+
+def _check_affine_feasibility(rows, size):
+    """Verify a rational infeasibility certificate when HiGHS reports a conflict."""
+    if not rows or size == 0:
+        return
     try:
         result = linprog(
-            c=np.asarray([float(b) for _, b in rows]),
-            A_eq=np.asarray([[float(a[j]) for a, _ in rows] for j in range(len(target))]),
-            b_eq=np.asarray([float(v) for v in target]),
-            bounds=(0, None),
-            method='highs',
+            c=np.zeros(size),
+            A_ub=np.asarray([[float(value) for value in coefficients] for coefficients, _ in rows]),
+            b_ub=np.asarray([float(rhs) for _, rhs in rows]),
+            bounds=(None, None),
+            method="highs",
         )
     except (ValueError, OverflowError, FloatingPointError):
-        return False
+        return
+    if result.status != 2:
+        return
 
-    if not result.success or result.x is None or not np.all(np.isfinite(result.x)):
-        return False
-
-    weights = _recover_exact_weights(rows, target, result.x)
-    if weights is None or any(w < 0 for w in weights):
-        return False
-
-    # Exact Farkas conditions: A.T @ w == target, b @ w <= rhs.
-    return (
-        all(sum(w * a[j] for w, (a, _) in zip(weights, rows)) == target[j] for j in range(len(target)))
-        and sum(w * b for w, (_, b) in zip(weights, rows)) <= rhs
-    )
-
-
-def remove_affine_redundant_constraints(
-    constraints, *, parameter_info, parameter_lower, parameter_upper, compile_context=None,
-):
-    """Remove affine bounds implied under real-arithmetic interpretation of the AST."""
-    lower, upper = tuple(parameter_lower), tuple(parameter_upper)
-    if len(lower) != len(upper) or any(np.isnan(lo) or np.isnan(hi) or lo > hi for lo, hi in zip(lower, upper)):
-        raise ValueError('Invalid canonical parameter bounds.')
-
-    retained = list(constraints)
-    forms = [_affine_form(c.evaluate, parameter_info, len(lower), compile_context) for c in retained]
-
-    def implied(i, side):
-        constraint = retained[i]
-        a, offset = forms[i]
-        if side == 'lower':
-            if (bound := _rational(constraint.lower_bound)) is None:
-                return constraint.lower_bound == -np.inf
-            row, rhs = tuple(-v for v in a), offset - bound
-        else:
-            if (bound := _rational(constraint.upper_bound)) is None:
-                return constraint.upper_bound == np.inf
-            row, rhs = a, bound - offset
-
-        if _box_implies(row, rhs, lower, upper):
-            return True
-        rows = _affine_inequalities(retained, forms, i, side, lower, upper)
-        return _affine_certificate(rows, row, rhs)
-
-    for i, constraint in enumerate(retained):
-        if forms[i] is None:
-            continue
-
-        if constraint.lower_bound == constraint.upper_bound:
-            if implied(i, 'lower') and implied(i, 'upper'):
-                retained[i] = None
-            continue
-
-        if implied(i, 'lower') and constraint.lower_bound != -np.inf:
-            retained[i] = Constraint(
-                constraint.evaluate, 
-                lower_bound=-np.inf, 
-                upper_bound=constraint.upper_bound, 
-                label=constraint.label
-            )
-
-        if implied(i, 'upper') and retained[i].upper_bound != np.inf:
-            retained[i] = Constraint(
-                constraint.evaluate, 
-                lower_bound=retained[i].lower_bound, 
-                upper_bound=np.inf, 
-                label=constraint.label
-            )
-
-        if retained[i].lower_bound == -np.inf and retained[i].upper_bound == np.inf:
-            retained[i] = None
-
-    return tuple(c for c in retained if c is not None)
-
-    
-def _same_evaluator(a, b):
-    if a is b:
-        return True
-
-    if isinstance(a, Node) and isinstance(b, Node):
-        from diffractix.graph.utils import ast_equal
-
-        return ast_equal(a, b)
-
-    return False
+    # A nonnegative combination yielding 0 <= -1 proves infeasibility.
+    augmented_rows = [(tuple(coefficients) + (rhs,), Fraction(0)) for coefficients, rhs in rows]
+    target = (Fraction(0),) * size + (Fraction(-1),)
+    try:
+        certificate = linprog(
+            c=np.zeros(len(rows)),
+            A_eq=np.asarray([[float(row[j]) for row, _ in augmented_rows] for j in range(size + 1)]),
+            b_eq=np.asarray(target, dtype=float),
+            bounds=(0, None),
+            method="highs",
+        )
+    except (ValueError, OverflowError, FloatingPointError):
+        return
+    if not certificate.success or certificate.x is None or not np.all(np.isfinite(certificate.x)):
+        return
+    weights = _recover_exact_weights(augmented_rows, target, certificate.x)
+    if weights is None or any(weight < 0 for weight in weights):
+        return
+    if all(
+        sum(weight * row[j] for weight, (row, _) in zip(weights, augmented_rows)) == target[j]
+        for j in range(size + 1)
+    ):
+        raise ValueError("Affine constraints and parameter bounds are infeasible.")
 
 
-def remove_duplicate_constraints(constraints):
-    retained = []
 
-    for constraint in constraints:
-        if (
-            constraint.lower_bound == -np.inf
-            and constraint.upper_bound == np.inf
-        ):
-            continue
 
-        if any(
-            _same_evaluator(other.evaluate, constraint.evaluate)
-            and other.lower_bound >= constraint.lower_bound
-            and other.upper_bound <= constraint.upper_bound
-            for other in retained
-        ):
-            continue
-
-        retained = [
-            other
-            for other in retained
-            if not (
-                _same_evaluator(other.evaluate, constraint.evaluate)
-                and constraint.lower_bound >= other.lower_bound
-                and constraint.upper_bound <= other.upper_bound
-            )
-        ]
-
-        retained.append(constraint)
-
-    return tuple(retained)

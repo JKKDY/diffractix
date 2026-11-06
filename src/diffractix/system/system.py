@@ -554,9 +554,12 @@ class System:
     def _compile_constraints(self, constraints, bindings, parameter_indices, tracer=None):
         from diffractix.solver.constraint import prepare_constraints
 
-        return prepare_constraints(
-            constraints, tracer=tracer, bindings=bindings, parameter_indices=parameter_indices,
+        program, descriptors, callables = prepare_constraints(
+            constraints, tracer=tracer, bindings=bindings,
         )
+        if not program.parameter_indices.keys() <= parameter_indices.keys():
+            raise ValueError("Constraints reference variable Parameters outside the optical model.")
+        return program, descriptors, callables
 
 
     def build(self):
@@ -592,7 +595,8 @@ class System:
             constraint_program = constraint_program, 
             optics_program = optics_program,
             optical_stages = stages, 
-            optical_inputs = inputs
+            optical_inputs = inputs,
+            bindings=bindings,
         )
 
 

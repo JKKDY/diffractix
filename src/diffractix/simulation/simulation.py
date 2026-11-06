@@ -6,6 +6,7 @@ from diffractix.backend import xp
 from collections.abc import Sequence, Mapping
 from functools import cached_property
 from typing import TYPE_CHECKING
+from types import MappingProxyType
 
 from diffractix.graph import InputNode, Parameter, Program
 from .info import SimulationInput, SimulationStep
@@ -69,7 +70,8 @@ class Simulation:
         constraint_program: Program,
         optics_program: Program,
         optical_stages: Sequence[SimulationStep],
-        optical_inputs: Sequence[SimulationInput]
+        optical_inputs: Sequence[SimulationInput],
+        bindings: Mapping = {},
     ):
         self.element_data = tuple(element_data)
         self.parameter_data = tuple(parameter_data)
@@ -79,6 +81,8 @@ class Simulation:
         self.optics_program = optics_program
         self.optical_stages = tuple(optical_stages)
         self.optical_inputs = tuple(optical_inputs)
+        # TODO: Snapshot binding ASTs without losing their canonical theta associations.
+        self.bindings = MappingProxyType(dict(bindings))
 
     @cached_property
     def _initial_values(self):
