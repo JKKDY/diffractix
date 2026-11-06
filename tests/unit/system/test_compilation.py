@@ -297,7 +297,7 @@ def test_satisfied_fixed_constraints_are_removed_including_exact_boundaries(cons
     expression = Parameter(constant) * 2 - constant
     constraint = Constraint(expression, lower, upper, label="constant")
     program, descriptors, callables = System()._compile_constraints((constraint,), {}, {})
-    assert program.evaluate([]) == () and descriptors == [] and callables == []
+    assert program.evaluate([]) == () and descriptors == () and callables == ()
     assert constraint.evaluate is expression and expression.left.left.value == constant
 
 
@@ -320,7 +320,7 @@ def test_variable_constraint_can_start_unsatisfied_and_retains_bounds():
     program, descriptors, callables = System()._compile_constraints((constraint,), {}, {id(variable): 0})
     assert program.evaluate([-1.0]) == (-1.0,) and program.evaluate([1.0]) == (1.0,)
     assert descriptors[0].lower_bound == 0.0 and descriptors[0].upper_bound == 2.0
-    assert descriptors[0].label == "clearance" and callables == []
+    assert descriptors[0].label == "clearance" and callables == ()
 
 
 @pytest.mark.parametrize("through_symbol", [False, True])
@@ -421,7 +421,7 @@ def test_build_handoff_retains_order_and_does_not_mutate_declarations():
     distance = Parameter(0.1).variable()
     space, source = Space(d=distance), Ray(x=0, theta=0, n=1.0)
     graph_constraint = Constraint(distance, upper_bound=0.5, label="system limit")
-    deferred = Constraint(lambda context: context, label="deferred")
+    deferred = Constraint(lambda result: 1.0 if result.final.x > 0 else -1.0, label="deferred")
     system = System(space, optical_input=source).require(graph_constraint, deferred)
     before_system, before_element = system.system_constraints, space.constraints
     first, second = system.build(), system.build()

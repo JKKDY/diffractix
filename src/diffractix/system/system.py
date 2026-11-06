@@ -19,11 +19,12 @@ from diffractix.graph import (
     walk_ast, evaluate_ast, Scalar,
 )
 from diffractix.simulation.simulation import Simulation
+from diffractix.simulation.result import SimulationResultTracer
 from diffractix.simulation.info import SimulationStep, SimulationInput
 
 from .errors import SystemValidationError
 from .symbols import AMBIENT_N
-from .info import ElementData, ParameterData, ConstraintData, Placement, CallSite, ResolvedPlacement
+from .info import ElementData, ParameterData, Placement, CallSite, ResolvedPlacement
 
 
 class System:
@@ -550,60 +551,12 @@ class System:
         return program, steps, inputs, parameter_data, tuple(compiled_element_data)
 
 
-    def _compile_constraints(self, constraints, bindings, parameter_indices):
-        from diffractix.solver.constraint import normalize_to_constraint
+    def _compile_constraints(self, constraints, bindings, parameter_indices, tracer=None):
+        from diffractix.solver.constraint import prepare_constraints
 
-        roots = []
-        constraint_descriptors = []
-        callable_constraints = []
-
-        for position, requirement in enumerate(constraints):
-            constraint = normalize_to_constraint(requirement)
-            expression = constraint.evaluate
-
-            if not isinstance(expression, Node):
-                callable_constraints.append((position, constraint))
-                continue
-
-            has_variables = False
-            for node in walk_ast((expression,), bindings):
-                if isinstance(node, Symbol) and node.key not in bindings:
-                    raise ValueError(f"Constraint {position} has an unresolved Symbol binding: {node.key!r}.")
-                if isinstance(node, Parameter) and node.is_variable:
-                    if id(node) not in parameter_indices:
-                        raise ValueError(
-                            f"Constraint {position} references variable Parameter {node!r} "
-                            "outside the optical model."
-                        )
-                    has_variables = True
-
-            if not has_variables:
-                value = np.asarray(expression.evaluate(bindings))
-                description = constraint.label or f"Constraint {position}"
-                if not np.all(np.isfinite(value)):
-                    raise ValueError(f"{description} has a non-finite constant value.")
-
-                if not np.all((value >= constraint.lower_bound) & (value <= constraint.upper_bound)):
-                    raise ValueError(
-                        f"{description} is an unsatisfiable constant constraint: "
-                        f"value {value} lies outside "
-                        f"[{constraint.lower_bound}, {constraint.upper_bound}]."
-                    )
-                continue
-
-            roots.append(expression)
-            constraint_descriptors.append(ConstraintData(
-                position=position,
-                lower_bound=constraint.lower_bound,
-                upper_bound=constraint.upper_bound,
-                label=constraint.label,
-                description=str(constraint),
-            ))
-
-        constraint_program = precompile(roots, bindings)
-
-        return constraint_program, constraint_descriptors, callable_constraints
-     
+        return prepare_constraints(
+            constraints, tracer=tracer, bindings=bindings, parameter_indices=parameter_indices,
+        )
 
 
     def build(self):
@@ -628,6 +581,7 @@ class System:
             constraints=(*constraints, *index_continuity),
             bindings=bindings,
             parameter_indices=optics_program.parameter_indices,
+            tracer=SimulationResultTracer(element_data, inputs[0].initial_state),
         )
 
         return Simulation(

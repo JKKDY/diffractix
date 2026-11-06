@@ -22,6 +22,9 @@ from diffractix.graph import (
     Parameter,
     Relation,
     Symbol,
+    SymbolicControlFlowError,
+    precompile,
+    walk_ast,
 )
 
 from diffractix.graph.node import BinaryOp, UnaryOp
@@ -121,6 +124,15 @@ class Constraint:
         return self._repr
 
 
+@dataclass(frozen=True)
+class ConstraintDescriptor:
+    position: int
+    lower_bound: float
+    upper_bound: float
+    label: str | None
+    description: str
+
+
 
 def _from_comparison(comparison) -> Constraint:
     lhs, rhs, rel = comparison.left, comparison.right, comparison.relation
@@ -190,8 +202,62 @@ def normalize_to_constraint(value) -> Constraint:
     return Constraint(result, value.lower_bound, value.upper_bound, value.label)
 
 
+def prepare_constraints(constraints, *, tracer, bindings, parameter_indices, start_position=0):
+    """Trace and precompile constraints, retaining dynamic callables."""
+    from diffractix.simulation.result import ResultSymbolKey
+
+    roots = []
+    descriptors = []
+    callables = []
+    for position, requirement in enumerate(constraints, start_position):
+        constraint = normalize_to_constraint(requirement)
+        expression = constraint.evaluate
+        if not isinstance(expression, Node):
+            if tracer is None:
+                callables.append((position, constraint))
+                continue
+            try:
+                expression = expression(tracer)
+            except SymbolicControlFlowError:
+                callables.append((position, constraint))
+                continue
+            if not isinstance(expression, Node):
+                expression = Node._make_literal(expression)
+
+        has_inputs = False
+        for node in walk_ast((expression,), bindings):
+            if isinstance(node, Symbol) and node.key not in bindings:
+                if not isinstance(node.key, ResultSymbolKey):
+                    raise ValueError(f"Constraint {position} has an unresolved Symbol binding: {node.key!r}.")
+                has_inputs = True
+            if isinstance(node, Parameter) and node.is_variable:
+                if id(node) not in parameter_indices:
+                    raise ValueError(f"Constraint {position} references variable Parameter {node!r} outside the optical model.")
+                has_inputs = True
+
+        if not has_inputs:
+            value = np.asarray(expression.evaluate(bindings))
+            description = constraint.label or f"Constraint {position}"
+            if not np.all(np.isfinite(value)):
+                raise ValueError(f"{description} has a non-finite constant value.")
+            if not np.all((value >= constraint.lower_bound) & (value <= constraint.upper_bound)):
+                raise ValueError(f"{description} is an unsatisfiable constant constraint: value {value} lies outside [{constraint.lower_bound}, {constraint.upper_bound}].")
+            continue
+
+        roots.append(expression)
+        descriptors.append(ConstraintDescriptor(position, constraint.lower_bound, constraint.upper_bound, constraint.label, str(constraint)))
+
+    return precompile(roots, bindings), tuple(descriptors), tuple(callables)
 
 
+
+
+
+
+
+
+
+#--------------------------------------
 def _direct_parameter(node):
     """Resolve InputNode indirection to a direct Parameter."""
     seen = set()

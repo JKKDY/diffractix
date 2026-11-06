@@ -12,7 +12,8 @@ from diffractix.simulation.info import SimulationInput, SimulationStep
 from diffractix.simulation.result import SimulationResult
 from diffractix.simulation.simulation import Simulation
 from diffractix.solver.constraint import Constraint
-from diffractix.system.info import ConstraintData, ElementData, ParameterData
+from diffractix.system.info import ElementData, ParameterData
+from diffractix.solver.constraint import ConstraintDescriptor
 
 
 @dataclass(eq=False)
@@ -53,7 +54,7 @@ def make_simulation(roots=(), steps=(), *, source=None, field_indices=(), parame
 def test_constructor_owns_sequence_containers_and_retains_programs():
     simulation = make_simulation()
     elements, parameters, sources, stages = [], [], list(simulation.optical_inputs), []
-    descriptors = [ConstraintData(0, 0, 1, "graph", "bounded graph")]
+    descriptors = [ConstraintDescriptor(0, 0, 1, "graph", "bounded graph")]
     deferred = [(1, Constraint(lambda context: context.theta[0], label="deferred"))]
     copied = Simulation(
         element_data=elements, parameter_data=parameters,
@@ -288,8 +289,8 @@ def test_string_summary_reads_frozen_values_without_mutating_them():
 def test_summary_reconstructs_interleaved_constraint_declaration_order():
     simulation = make_simulation()
     simulation.constraint_descriptors = (
-        ConstraintData(0, 0., 1., "first graph", "first"),
-        ConstraintData(2, 0., 1., "last graph", "last"),
+        ConstraintDescriptor(0, 0., 1., "first graph", "first"),
+        ConstraintDescriptor(2, 0., 1., "last graph", "last"),
     )
     simulation.callable_constraints = ((1, Constraint(lambda ctx: ctx.theta[0], label="middle callable")),)
 

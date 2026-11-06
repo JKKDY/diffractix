@@ -12,8 +12,8 @@ from .info import SimulationInput, SimulationStep
 from .result import SimulationResult
 
 if TYPE_CHECKING:
-    from diffractix.system.info import ConstraintData, ElementData, ParameterData
-    from diffractix.solver.constraint import Constraint
+    from diffractix.system.info import ElementData, ParameterData
+    from diffractix.solver.constraint import Constraint, ConstraintDescriptor
 
 
 
@@ -45,6 +45,8 @@ class InitialValues:
             raise ValueError("An initial value must be finite.")
         self.values[index] = value
 
+
+
 class Simulation:
     """
     Compiled differentiable optical simulation.
@@ -63,7 +65,7 @@ class Simulation:
         element_data: Sequence[ElementData],
         parameter_data: Sequence[ParameterData],
         callable_constraints: Sequence[tuple[int, Constraint]],
-        constraint_descriptors: Sequence[ConstraintData],
+        constraint_descriptors: Sequence[ConstraintDescriptor],
         constraint_program: Program,
         optics_program: Program,
         optical_stages: Sequence[SimulationStep],

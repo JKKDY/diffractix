@@ -5,15 +5,6 @@ from numbers import Real
 from diffractix.core import OpticalBase
 from diffractix.graph import Node
 
-@dataclass(frozen=True)
-class ConstraintData:
-    position: int
-    lower_bound: float
-    upper_bound: float
-    label: str | None
-    description: str
-
-
 @dataclass(eq=False, frozen=True)
 class CallSite:
     """Location in user code where an element was added, used in error messages."""
