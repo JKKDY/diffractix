@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import Enum, auto
+from inspect import getattr_static
 from numbers import Integral
 from typing import TYPE_CHECKING
 
@@ -9,9 +11,144 @@ import numpy as np
 from diffractix.backend import xp
 
 from diffractix.input.paraxial_input import ParaxialState
+from diffractix.graph import Symbol, SymbolicControlFlowError
 if TYPE_CHECKING:
     from diffractix.system.info import ElementData, ParameterData
     from .info import SimulationStep
+
+
+class ResultSymbolKind(Enum):
+    INITIAL = auto()
+    FINAL = auto()
+    BEFORE = auto()
+    AFTER = auto()
+    Z_START = auto()
+    Z_END = auto()
+
+
+@dataclass(frozen=True)
+class ResultSymbolKey:
+    kind: ResultSymbolKind
+    index: int | None = None
+    name: str | None = None
+
+
+class _ResultSymbol(Symbol):
+    def __getitem__(self, index):
+        raise SymbolicControlFlowError("Indexing symbolic result values requires runtime evaluation.")
+
+
+def _stage_index(positions, element, occurrence):
+    try:
+        locations = positions[id(element)]
+    except KeyError:
+        raise KeyError(f"Element {element!r} is not part of this simulation.") from None
+    if occurrence is None:
+        if len(locations) > 1:
+            raise ValueError(
+                f"Element {element!r} occurs {len(locations)} times in this simulation. "
+                "Specify occurrence= to select one."
+            )
+        return locations[0]
+    if isinstance(occurrence, bool) or not isinstance(occurrence, Integral):
+        raise TypeError(f"occurrence must be an integer, got {type(occurrence).__name__}.")
+    if occurrence < 0 or occurrence >= len(locations):
+        raise IndexError(
+            f"Element {element!r} has {len(locations)} occurrence(s); "
+            f"occurrence {occurrence} is out of range."
+        )
+    return locations[occurrence]
+
+
+class SimulationResultTracer:
+    """Symbolic counterpart of SimulationResultView."""
+
+    class OpticalState:
+        def __init__(self, state, kind, index=None):
+            self._state = state
+            self._kind = kind
+            self._index = index
+
+        def __getattr__(self, name):
+            state_type = type(self._state).__name__
+            if name.startswith("_"):
+                raise AttributeError(f"Private state attribute {state_type}.{name} cannot be traced.")
+            try:
+                attribute = getattr_static(self._state, name)
+            except AttributeError:
+                if getattr_static(type(self._state), "__getattr__", None) is not None:
+                    raise SymbolicControlFlowError(
+                        f"Dynamic state attribute {state_type}.{name} requires runtime evaluation."
+                    ) from None
+                raise AttributeError(f"State {state_type} has no attribute {name!r}.") from None
+            if callable(attribute):
+                raise SymbolicControlFlowError(
+                    f"State method {state_type}.{name} requires runtime evaluation."
+                )
+            return _ResultSymbol(ResultSymbolKey(self._kind, self._index, name))
+
+        def __bool__(self):
+            raise SymbolicControlFlowError("Symbolic values cannot be used as Python booleans.")
+
+        def __eq__(self, other):
+            raise SymbolicControlFlowError("Symbolic states cannot be compared in Python control flow.")
+
+        def __ne__(self, other):
+            raise SymbolicControlFlowError("Symbolic states cannot be compared in Python control flow.")
+
+    class OpticalStage:
+        def __init__(self, state, index):
+            self._state = state
+            self._index = index
+
+        @property
+        def before(self):
+            return SimulationResultTracer.OpticalState(self._state, ResultSymbolKind.BEFORE, self._index)
+
+        @property
+        def after(self):
+            return SimulationResultTracer.OpticalState(self._state, ResultSymbolKind.AFTER, self._index)
+
+        @property
+        def z_start(self):
+            return Symbol(ResultSymbolKey(ResultSymbolKind.Z_START, self._index))
+
+        @property
+        def z_end(self):
+            return Symbol(ResultSymbolKey(ResultSymbolKind.Z_END, self._index))
+
+        def __bool__(self):
+            raise SymbolicControlFlowError("Symbolic values cannot be used as Python booleans.")
+
+        def __eq__(self, other):
+            raise SymbolicControlFlowError("Symbolic stages cannot be compared in Python control flow.")
+
+        def __ne__(self, other):
+            raise SymbolicControlFlowError("Symbolic stages cannot be compared in Python control flow.")
+
+    def __init__(self, element_data: Sequence[ElementData], state: ParaxialState):
+        self._state = state
+        self._element_positions = {}
+        for index, element in enumerate(element_data):
+            self._element_positions.setdefault(element.element_id, []).append(index)
+
+    @property
+    def initial(self):
+        return self.OpticalState(self._state, ResultSymbolKind.INITIAL)
+
+    @property
+    def final(self):
+        return self.OpticalState(self._state, ResultSymbolKind.FINAL)
+
+    def __getitem__(self, key):
+        if isinstance(key, tuple):
+            if len(key) != 2:
+                raise TypeError("Expected result[element] or result[element, occurrence].")
+            element, occurrence = key
+        else:
+            element, occurrence = key, None
+        return self.OpticalStage(self._state, _stage_index(self._element_positions, element, occurrence))
+
 
 
 @dataclass(frozen=True)
@@ -30,6 +167,7 @@ class SimulationResultView:
 
     def __getitem__(self, key) -> SimulationResult.Stage:
         return self._result[key]
+
 
 
 class SimulationResult:
@@ -126,31 +264,7 @@ class SimulationResult:
 
     def stage(self, element, occurrence=None) -> Stage:
         """Return a stage view, selecting an occurrence for repeated elements."""
-        try:
-            locations = self._element_positions[id(element)]
-        except KeyError:
-            raise KeyError(
-                f"Element {element!r} is not part of this simulation."
-            ) from None
-        if occurrence is None:
-            if len(locations) > 1:
-                raise ValueError(
-                    f"Element {element!r} occurs {len(locations)} times in this simulation. "
-                    "Specify occurrence= to select one."
-                )
-            index = locations[0]
-            return self.Stage(self, index)
-        if isinstance(occurrence, bool) or not isinstance(occurrence, Integral):
-            raise TypeError(
-                f"occurrence must be an integer, got {type(occurrence).__name__}."
-            )
-        if occurrence < 0 or occurrence >= len(locations):
-            raise IndexError(
-                f"Element {element!r} has {len(locations)} occurrence(s); "
-                f"occurrence {occurrence} is out of range."
-            )
-        index = locations[occurrence]
-        return self.Stage(self, index)
+        return self.Stage(self, _stage_index(self._element_positions, element, occurrence))
 
     def __getitem__(self, key) -> Stage:
         if isinstance(key, tuple):

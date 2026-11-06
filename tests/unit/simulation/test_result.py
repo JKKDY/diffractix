@@ -6,7 +6,11 @@ import pytest
 from diffractix.backend import xp
 from diffractix.input import Ray, RayBundle
 from diffractix.simulation.info import SimulationStep
-from diffractix.simulation.result import SimulationResult, SimulationResultView
+from diffractix.simulation.result import (
+    SimulationResult, SimulationResultView, SimulationResultTracer,
+    ResultSymbolKey, ResultSymbolKind,
+)
+from diffractix.graph import Symbol, SymbolicControlFlowError, precompile
 from diffractix.system.info import ElementData, ParameterData
 
 
@@ -90,6 +94,84 @@ def test_result_view_preserves_derivatives_and_jit():
 
     assert grad(evaluate)(2.0) == pytest.approx(4.0)
     assert jit(grad(evaluate))(2.0) == pytest.approx(4.0)
+
+
+def test_result_tracer_builds_deduplicated_symbols_for_each_access():
+    first, second = object(), object()
+    result = make_result((first, second, first))
+    trace = SimulationResultTracer(result.element_data, result.initial)
+    keys = [
+        trace.initial.x.key, trace.final.theta.key,
+        trace[first, 0].before.x.key, trace[first, 1].after.theta.key,
+        trace[second].z_start.key, trace[second].z_end.key,
+    ]
+    assert keys == [
+        ResultSymbolKey(ResultSymbolKind.INITIAL, name="x"),
+        ResultSymbolKey(ResultSymbolKind.FINAL, name="theta"),
+        ResultSymbolKey(ResultSymbolKind.BEFORE, 0, "x"),
+        ResultSymbolKey(ResultSymbolKind.AFTER, 2, "theta"),
+        ResultSymbolKey(ResultSymbolKind.Z_START, 1),
+        ResultSymbolKey(ResultSymbolKind.Z_END, 1),
+    ]
+    assert isinstance(trace[second].after.x, Symbol)
+    assert trace[second].after.x.key == trace[second, 0].after.x.key
+    program = precompile((trace[second].after.x + trace[second].after.x,))
+    assert len(program.runtime_symbols) == 1
+    assert program.evaluate([], {trace[second].after.x.key: 3.0}) == (6.0,)
+
+
+def test_result_tracer_matches_view_lookup_errors_and_rejects_truth_testing():
+    element = object()
+    result = make_result((element, element))
+    trace = SimulationResultTracer(result.element_data, result.initial)
+    for accessor in (result.view(), trace):
+        with pytest.raises(ValueError, match="occurs"):
+            accessor[element]
+        with pytest.raises(IndexError, match="occurrence"):
+            accessor[element, 2]
+        with pytest.raises(TypeError, match="occurrence"):
+            accessor[element, True]
+        with pytest.raises(KeyError, match="not part"):
+            accessor[object()]
+        with pytest.raises(TypeError, match="Expected result"):
+            accessor[element, 0, 1]
+    for symbolic in (trace.initial, trace[element, 0], trace.final.x):
+        with pytest.raises(SymbolicControlFlowError):
+            bool(symbolic)
+
+
+def test_result_tracer_attribute_checks_and_unsupported_operations():
+    element = object()
+    result = make_result((element,))
+    trace = SimulationResultTracer(result.element_data, result.initial)
+    assert isinstance(trace.final, SimulationResultTracer.OpticalState)
+    assert isinstance(trace[element], SimulationResultTracer.OpticalStage)
+    assert hasattr(trace.final, "x") == hasattr(result.view().final, "x")
+    assert getattr(trace.final, "missing", 7) == getattr(result.view().final, "missing", 7)
+    with pytest.raises(AttributeError, match=r"Ray.*missing"):
+        trace.final.missing
+    with pytest.raises(SymbolicControlFlowError):
+        trace.final == trace.final
+    with pytest.raises(SymbolicControlFlowError):
+        trace.initial != trace.final
+    with pytest.raises(SymbolicControlFlowError):
+        trace[element] == trace[element]
+    with pytest.raises(SymbolicControlFlowError):
+        trace.final.vector[0]
+    with pytest.raises(SymbolicControlFlowError, match=r"State method .*Ray.propagate"):
+        trace.final.propagate(1, 0, 0, 1, 1)
+
+
+def test_result_tracer_falls_back_for_dynamic_state_attributes():
+    class DynamicState:
+        def __getattr__(self, name):
+            if name == "power":
+                return 3.0
+            raise AttributeError(name)
+
+    trace = SimulationResultTracer((), DynamicState())
+    with pytest.raises(SymbolicControlFlowError, match=r"Dynamic state attribute DynamicState.power"):
+        trace.final.power
 
 
 def test_ambiguous_or_unknown_element_has_useful_lookup_errors():
