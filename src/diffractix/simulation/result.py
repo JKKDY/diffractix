@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from numbers import Integral, Real
+from dataclasses import dataclass
+from numbers import Integral
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -11,6 +12,24 @@ from diffractix.input.paraxial_input import ParaxialState
 if TYPE_CHECKING:
     from diffractix.system.info import ElementData, ParameterData
     from .info import SimulationStep
+
+
+@dataclass(frozen=True)
+class SimulationResultView:
+    """Stage access for solver callables; returned states are not copied."""
+
+    _result: SimulationResult
+
+    @property
+    def initial(self) -> ParaxialState:
+        return self._result.initial
+
+    @property
+    def final(self) -> ParaxialState:
+        return self._result.final
+
+    def __getitem__(self, key) -> SimulationResult.Stage:
+        return self._result[key]
 
 
 class SimulationResult:
@@ -101,20 +120,12 @@ class SimulationResult:
         """Stage views in propagation order."""
         return tuple(self.Stage(self, index) for index in range(len(self.element_data)))
 
+    def view(self) -> SimulationResultView:
+        """Return a narrow view of this result for solver callables."""
+        return SimulationResultView(self)
+
     def stage(self, element, occurrence=None) -> Stage:
         """Return a stage view, selecting an occurrence for repeated elements."""
-        before, _ = self._resolve_location(element, occurrence)
-        return self.Stage(self, before)
-
-    def __getitem__(self, key) -> Stage:
-        if isinstance(key, tuple):
-            if len(key) != 2:
-                raise TypeError("Expected result[element] or result[element, occurrence].")
-            element, occurrence = key
-            return self.stage(element, occurrence=occurrence)
-        return self.stage(key)
-
-    def _resolve_location(self, element, occurrence=None):
         try:
             locations = self._element_positions[id(element)]
         except KeyError:
@@ -128,7 +139,7 @@ class SimulationResult:
                     "Specify occurrence= to select one."
                 )
             index = locations[0]
-            return index, index + 1
+            return self.Stage(self, index)
         if isinstance(occurrence, bool) or not isinstance(occurrence, Integral):
             raise TypeError(
                 f"occurrence must be an integer, got {type(occurrence).__name__}."
@@ -139,61 +150,15 @@ class SimulationResult:
                 f"occurrence {occurrence} is out of range."
             )
         index = locations[occurrence]
-        return index, index + 1
+        return self.Stage(self, index)
 
-    def at(self, location, occurrence=None) -> ParaxialState:
-        """
-        Return the optical state at a location.
-
-        Parameters
-        ----------
-        location:
-            Optical element participating in the simulation.
-        occurrence:
-            Occurrence of the element when the same object appears multiple times.
-
-        Returns
-        -------
-        ParaxialState
-            Propagated optical state at the requested location.
-        """
-        if isinstance(location, Real):
-            if occurrence is not None:
-                raise TypeError("occurrence may only be specified when querying an element.")
-
-            raise ValueError("This simulation result does not support arbitrary-z probing.")
-
-        before, _ = self._resolve_location(location, occurrence)
-        return self.states[before]
-
-    def after(self, element, occurrence=None) -> ParaxialState:
-        """
-        Return the optical state immediately after an element.
-
-        Parameters
-        ----------
-        element:
-            Element whose output state should be returned.
-        occurrence:
-            Occurrence of the element when the same object appears multiple times.
-
-        Returns
-        -------
-        ParaxialState
-            Propagated optical state immediately after the element.
-        """
-        _, after = self._resolve_location(element, occurrence)
-        return self.states[after]
-
-    def z_at(self, element, occurrence=None):
-        """Return the longitudinal position at an element's input side."""
-        before, _ = self._resolve_location(element, occurrence)
-        return self.z[before]
-
-    def z_after(self, element, occurrence=None):
-        """Return the longitudinal position immediately after an element."""
-        _, after = self._resolve_location(element, occurrence)
-        return self.z[after]
+    def __getitem__(self, key) -> Stage:
+        if isinstance(key, tuple):
+            if len(key) != 2:
+                raise TypeError("Expected result[element] or result[element, occurrence].")
+            element, occurrence = key
+            return self.stage(element, occurrence=occurrence)
+        return self.stage(key)
 
     def plot(self, ax=None, *, show_elements=True, show_axis=True):
         """Plot a concrete 2D trace, sampling only known homogeneous Spaces.
