@@ -446,8 +446,8 @@ def test_ipopt_constructs_problem_and_derivative_callbacks(monkeypatch):
     backend.solve_ipopt(problem)
 
     native = solvers[0]
-    assert native.kwargs["n"] == problem.n_variables
-    assert native.kwargs["m"] == problem.n_constraints
+    assert native.kwargs["n"] == problem.variable_count
+    assert native.kwargs["m"] == problem.constraint_count
     np.testing.assert_array_equal(native.kwargs["lb"], problem.x_lower)
     np.testing.assert_array_equal(native.kwargs["ub"], problem.x_upper)
     np.testing.assert_array_equal(native.kwargs["cl"], problem.constraint_lower)
@@ -552,7 +552,7 @@ def test_nlopt_default_method_dimensions_and_bounds(monkeypatch):
 
     optimizer = optimizers[0]
     assert optimizer.algorithm == nlopt.LD_SLSQP
-    assert optimizer.n_variables == problem.n_variables
+    assert optimizer.n_variables == problem.variable_count
     np.testing.assert_array_equal(optimizer.lower_bounds, problem.x_lower)
     np.testing.assert_array_equal(optimizer.upper_bounds, problem.x_upper)
     np.testing.assert_array_equal(optimizer.x0, problem.x0)
@@ -582,7 +582,7 @@ def test_nlopt_objective_callback_populates_gradient(monkeypatch):
     problem = make_problem()
     backend.solve_nlopt(problem)
     callback = optimizers[0].objective
-    gradient = np.zeros(problem.n_variables)
+    gradient = np.zeros(problem.variable_count)
 
     value = callback(np.array([1.5]), gradient)
 

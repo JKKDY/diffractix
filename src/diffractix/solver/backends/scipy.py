@@ -24,7 +24,7 @@ def solve_scipy(
         )
 
     constraints = []
-    if problem.n_constraints:
+    if problem.constraint_count:
         equality = problem.constraint_lower == problem.constraint_upper
 
         for indices in (
@@ -43,7 +43,7 @@ def solve_scipy(
             constraint_kwargs = {"jac": jacobian}
             if method == "trust-constr":
                 def hessian(theta, multipliers, indices=indices):
-                    full_multipliers = np.zeros(problem.n_constraints)
+                    full_multipliers = np.zeros(problem.constraint_count)
                     full_multipliers[indices] = multipliers
                     return problem.constraint_hessian(theta, full_multipliers)
 

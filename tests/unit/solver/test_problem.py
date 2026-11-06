@@ -10,9 +10,9 @@ from tests.helpers.optimization import make_constrained_problem, make_problem
 
 def test_problem_dimensions_and_bound_length_validation():
     problem = make_problem()
-    assert (problem.n_variables, problem.n_constraints) == (1, 0)
+    assert (problem.variable_count, problem.constraint_count) == (1, 0)
     constrained = make_constrained_problem()
-    assert (constrained.n_variables, constrained.n_constraints) == (2, 4)
+    assert (constrained.variable_count, constrained.constraint_count) == (2, 4)
 
     with pytest.raises(ValueError, match="Variable bounds"):
         replace(problem, x_upper=np.array([1.0, 2.0]))

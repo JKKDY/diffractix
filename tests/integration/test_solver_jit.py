@@ -123,7 +123,7 @@ def _check_cache_reuse():
         initial_traces = trace_counts.copy()
         if current_backend() == "jax":
             assert initial_traces == [1] * 6
-        assert first.n_constraints == 4
+        assert first.constraint_count == 4
 
         for use_jit, lower, point, expected_rows in (
             (True, [0.7, 0.4], [0.9, 0.5], 3),
@@ -133,7 +133,7 @@ def _check_cache_reuse():
             problem = capture_problem(
                 solver, use_jit=use_jit, x0=point, x_lower=lower, x_upper=[1.5, 1.6],
             )
-            assert problem.n_constraints == expected_rows
+            assert problem.constraint_count == expected_rows
             assert solver._cache is cache
             assert cache.callbacks is eager
             assert cache.jit_callbacks is compiled
@@ -164,7 +164,7 @@ def _check_callbacks():
         scaled = physical.scale()
         scaling = physical.scaling
         sx, sc = scaling.x_scale, scaling.constraint_scale
-        assert physical.n_constraints == 3  # One scalar and one two-ray vector.
+        assert physical.constraint_count == 3  # One scalar and one two-ray vector.
         np.testing.assert_allclose(physical.constraint_lower, [0.4, -1, -1])
         np.testing.assert_allclose(physical.constraint_upper, [4, 6, 6])
 
@@ -238,7 +238,7 @@ def _check_reduced_callbacks():
             # capture_problem round-trips through physical/numerical scaling.
             np.testing.assert_allclose(problem.constraint_lower, expected_lower, rtol=1e-14, atol=0)
             np.testing.assert_allclose(problem.constraint_upper, expected_upper, rtol=1e-14, atol=0)
-            assert problem.n_constraints == len(expected_lower)
+            assert problem.constraint_count == len(expected_lower)
 
             for point in ([0.6, 0.8], [0.9, 0.5]):
                 a, b = point
@@ -302,7 +302,7 @@ def _check_repeated_solves():
                 np.testing.assert_array_equal(solution._problem.x0, start)
                 np.testing.assert_array_equal(solution._problem.x_lower, lower)
                 np.testing.assert_array_equal(solution._problem.x_upper, upper)
-                assert solution._problem.n_constraints == rows
+                assert solution._problem.constraint_count == rows
                 for name, supplied in overrides.items():
                     expected = {"x0": start, "x_lower": lower, "x_upper": upper}[name]
                     np.testing.assert_array_equal(supplied, expected)
@@ -335,7 +335,7 @@ def _check_empty_constraints(use_jit):
     solver.target(focal - 1)
     problem = capture_problem(solver, use_jit=use_jit)
     theta = xp.array([1.2])
-    assert problem.n_constraints == 0
+    assert problem.constraint_count == 0
     np.testing.assert_allclose(problem.objective(theta), 0.04)
     np.testing.assert_allclose(problem.gradient(theta), [0.4])
     np.testing.assert_allclose(problem.objective_hessian(theta), [[2]])

@@ -22,7 +22,7 @@ class Problem:
 
     constraints: Callable
     jacobian: Callable
-    constraint_hessian: Callable
+    constraint_hessian: Callable # TODO allow for sparse hessians and jacobians
     constraint_lower: np.ndarray
     constraint_upper: np.ndarray
 
@@ -40,11 +40,11 @@ class Problem:
             object.__setattr__(self, "scaling", Scaling(self))
 
     @property
-    def n_variables(self) -> int:
+    def variable_count(self) -> int:
         return len(self.x0)
 
     @property
-    def n_constraints(self) -> int:
+    def constraint_count(self) -> int:
         return len(self.constraint_lower)
 
     def scale(self) -> Problem:

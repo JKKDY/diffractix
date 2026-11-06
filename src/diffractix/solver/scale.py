@@ -45,9 +45,9 @@ class Scaling:
 
         # Measure each constraint's sensitivity in normalized variable units.
         # Avoid evaluating a Jacobian when there are no constraints.
-        if problem.n_constraints and len(x0):
+        if problem.constraint_count and len(x0):
             jac = np.asarray(problem.jacobian(x0), dtype=float)
-            if jac.shape != (problem.n_constraints, len(x0)):
+            if jac.shape != (problem.constraint_count, len(x0)):
                 raise ValueError("Constraint Jacobian has incorrect shape.")
             constraint_scales = np.max(np.abs(jac) * scales[None, :], axis=1)
             constraint_scales = np.where(
@@ -56,11 +56,11 @@ class Scaling:
                 1.0,
             )
         else:
-            constraint_scales = np.ones(problem.n_constraints)
+            constraint_scales = np.ones(problem.constraint_count)
 
         object.__setattr__(self, "x_center", x0.copy())
         object.__setattr__(self, "x_scale", scales)
-        object.__setattr__(self, "constraint_center", np.zeros(problem.n_constraints))
+        object.__setattr__(self, "constraint_center", np.zeros(problem.constraint_count))
         object.__setattr__(self, "constraint_scale", constraint_scales)
 
         for values in (
@@ -103,9 +103,7 @@ class Scaling:
 
             def constraint_hessian(y, multipliers):
                 return (
-                    s[:, None]
-                    * obj.constraint_hessian(physical(y), multipliers / t)
-                    * s[None, :]
+                    s[:, None] * obj.constraint_hessian(physical(y), multipliers / t) * s[None, :]
                 )
 
             return Problem(
@@ -158,9 +156,7 @@ class Scaling:
 
             def constraint_hessian(x, multipliers):
                 return (
-                    obj.constraint_hessian(numerical(x), multipliers * t)
-                    / s[:, None]
-                    / s[None, :]
+                    obj.constraint_hessian(numerical(x), multipliers * t) / s[:, None] / s[None, :]
                 )
 
             return Problem(

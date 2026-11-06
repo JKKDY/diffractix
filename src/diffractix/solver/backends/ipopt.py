@@ -35,7 +35,7 @@ class _IpoptProblem:
         return np.asarray(hessian)[row, col]
 
     def hessianstructure(self):
-        return np.tril_indices(self.problem.n_variables)
+        return np.tril_indices(self.problem.variable_count)
 
 
 def solve_ipopt(
@@ -54,8 +54,8 @@ def solve_ipopt(
 
     # maybe add sparsity information later
     solver = cyipopt.Problem(
-        n=problem.n_variables,
-        m=problem.n_constraints,
+        n=problem.variable_count,
+        m=problem.constraint_count,
         problem_obj=callbacks,
         lb=problem.x_lower,
         ub=problem.x_upper,

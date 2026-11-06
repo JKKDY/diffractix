@@ -70,7 +70,7 @@ def solve_nlopt(
 
     optimizer = nlopt.opt(
         _algorithm(method),
-        problem.n_variables,
+        problem.variable_count,
     )
 
     optimizer.set_lower_bounds(problem.x_lower)

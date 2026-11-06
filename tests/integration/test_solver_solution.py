@@ -207,7 +207,7 @@ def test_reduced_optimizer_constraints_do_not_erase_physical_solution_reporting(
     for _ in range(2):
         solution = solver.solve()
         physical = captured[-1]
-        assert physical.n_constraints == 1
+        assert physical.constraint_count == 1
         numpy.testing.assert_allclose(physical.constraints(solution.x), [0.009])
         numpy.testing.assert_allclose(physical.constraint_lower, [0.004])
         assert len(solution.constraints) == 5

@@ -88,7 +88,7 @@ def _optical_cases():
         Constraint(lambda ctx: ctx.after(output).z0*10, lower_bound=-0.5, upper_bound=0.5),
     )
     problem = capture_problem(solver)
-    assert problem.n_constraints == 2
+    assert problem.constraint_count == 2
     return {
         "gaussian": lambda t: beam_properties(gaussian, t),
         "ray": lambda t: phase_space(ray, t),

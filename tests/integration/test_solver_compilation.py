@@ -643,7 +643,7 @@ def test_constraint_shape_change_with_unchanged_size_is_rejected(captured_backen
     solver.require(Constraint(changing_shape, lower_bound=0, upper_bound=20))
     solver.solve()
     problem = captured_backend_problem["problem"].unscale()
-    assert problem.n_constraints == 2
+    assert problem.constraint_count == 2
     with pytest.raises(ValueError, match="shape"):
         problem.constraints(xp.array([4.0]))
 
