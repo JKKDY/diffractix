@@ -1,4 +1,4 @@
-from collections.abc import Mapping, Sequence
+from collections.abc import Hashable, Mapping, Sequence
 
 
 from .program import (
@@ -34,7 +34,8 @@ def remap_parameters(program: Program, parameter_indices: Mapping[int, int]) -> 
             return operand
         if operand.index >= old_size:
             return Input(new_size - old_size + operand.index)
-        if parameter_id:=old_indices_inverted[operand.index] not in parameter_indices:
+        parameter_id = old_indices_inverted[operand.index]
+        if parameter_id not in parameter_indices:
             raise ValueError(f"Missing required Parameter with id {parameter_id}.")
         return Input(parameter_indices[parameter_id])
 

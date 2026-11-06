@@ -111,15 +111,11 @@ class OpticalElement(OpticalBase, ABC):
             )
 
         # Validate every reachable symbolic dependency.
-        roots = [
-            v for v in (*matrix_entries, length, refractive_index)
-            if isinstance(v, Node)
-            and not (
-                v is refractive_index
-                and isinstance(v, InputNode)
-                and v.node is None
-            )
-        ]
+        roots = [v for v in (*matrix_entries, length) if isinstance(v, Node)]
+        if isinstance(refractive_index, Node) and not (
+            isinstance(refractive_index, InputNode) and refractive_index.node is None
+        ):
+            roots.append(refractive_index)
         tuple(walk_ast(roots))
 
 

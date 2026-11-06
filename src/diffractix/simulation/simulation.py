@@ -3,15 +3,13 @@ from __future__ import annotations
 import numpy as np
 from diffractix.backend import xp
 
-from collections.abc import Sequence, Mapping, Sequence
+from collections.abc import Sequence, Mapping
 from functools import cached_property
 from typing import TYPE_CHECKING
 
 from diffractix.graph import InputNode, Parameter, Program
-from .info import SimulationInput, SimulationStep, SimulationTrace
-from .initial_values import InitialValues
-
-import numpy as np
+from .info import SimulationInput, SimulationStep
+from .result import SimulationResult
 
 if TYPE_CHECKING:
     from diffractix.system.info import ConstraintData, ElementData, ParameterData
@@ -92,7 +90,7 @@ class Simulation:
         """Return an independent editable copy of the build-time initial theta."""
         return InitialValues(self._initial_values, self.optics_program.parameter_indices)
 
-    def run(self, theta=None) -> SimulationTrace:
+    def run(self, theta=None) -> SimulationResult:
         """Evaluate the optics program once and propagate the numerical input."""
         if len(self.optical_inputs) != 1:
             raise ValueError("Simulation.run() requires exactly one optical input.")

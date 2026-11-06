@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import cached_property
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -10,7 +11,8 @@ from .context import SolverContext
 from .problem import Problem
 from .objective import Objective
 from .constraint import Constraint
-from ..system.system import ParameterInfo
+if TYPE_CHECKING:
+    from ..system.system import ParameterInfo
 
 from diffractix.graph import evaluate_ast
 

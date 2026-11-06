@@ -26,7 +26,6 @@ from diffractix.graph import (
 
 from diffractix.graph.node import BinaryOp, UnaryOp
 from diffractix.graph.ops import Op
-from diffractix.graph.utils import ast_equal
 
 from .utils import callable_arity
 
@@ -544,6 +543,8 @@ def _same_evaluator(a, b):
         return True
 
     if isinstance(a, Node) and isinstance(b, Node):
+        from diffractix.graph.utils import ast_equal
+
         return ast_equal(a, b)
 
     return False

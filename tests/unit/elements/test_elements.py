@@ -19,7 +19,7 @@ from diffractix.graph import (
     Symbol,
     Comparison,
     Relation,
-    compile_ast,
+    compile_graph,
 )
 
 
@@ -36,21 +36,23 @@ def evaluate_matrix(element, context=None):
         for value in row
     ]
 
-    compiled = compile_ast(roots, context)
-    values = compiled.evaluate(compiled.initial_values)
+    compiled = compile_graph(roots, {} if context is None else context)
+    # Standalone matrices here use fixed declarations; variable cases below
+    # supply their theta explicitly.
+    values = compiled.evaluate(())
 
-    return values.reshape(2, 2)
+    return np.asarray(values).reshape(2, 2)
 
 
-def assert_single_parameter_requirement(element, parameter_name, relation):
+def assert_single_parameter_constraint(element, parameter_name, relation):
     """Assert an element declares one bound on one of its input handles."""
-    (requirement,) = element.requirements
+    (constraint,) = element.constraints
 
-    assert isinstance(requirement, Comparison)
-    assert requirement.relation is relation
-    assert requirement.left is getattr(element, parameter_name)
-    assert isinstance(requirement.right, Literal)
-    assert requirement.right.value == 0
+    assert isinstance(constraint, Comparison)
+    assert constraint.relation is relation
+    assert constraint.left is getattr(element, parameter_name)
+    assert isinstance(constraint.right, Literal)
+    assert constraint.right.value == 0
 
 
 # ---------
@@ -157,15 +159,15 @@ def test_space_refractive_index_does_not_affect_matrix():
 
 
 def test_space_requires_nonnegative_length():
-    assert_single_parameter_requirement(Space(d=0.1), "d", Relation.GE)
+    assert_single_parameter_constraint(Space(d=0.1), "d", Relation.GE)
 
 
 def test_space_requires_positive_explicit_refractive_index():
     space = Space(d=0.1, n=1.5)
 
-    assert len(space.requirements) == 2
-    assert space.requirements[0].relation is Relation.GT
-    assert space.requirements[0].left is space.n
+    assert len(space.constraints) == 2
+    assert space.constraints[0].relation is Relation.GT
+    assert space.constraints[0].left is space.n
 
 
 # ------
@@ -205,8 +207,8 @@ def test_mirror_build_validation_rejects_zero_radius():
         Mirror(R=0.0).validate()
 
 
-def test_mirror_has_no_local_solver_requirement():
-    assert Mirror(R=-0.5).requirements == ()
+def test_mirror_has_no_local_solver_constraint():
+    assert Mirror(R=-0.5).constraints == ()
 
 
 # ---------
@@ -269,9 +271,9 @@ def test_interface_index_derivatives_match_analytical_refraction(radius):
 
     n1, n2 = Parameter(1.0).variable(), Parameter(1.5).variable()
     interface = Interface(n1=n1, n2=n2, R=radius)
-    graph = compile_ast(interface.matrix[1])
-    assert graph.variables == (n1, n2)
-    evaluate = lambda theta: graph.evaluate(theta)
+    graph = compile_graph(interface.matrix[1])
+    assert graph.parameter_indices == {id(n1): 0, id(n2): 1}
+    evaluate = lambda theta: xp.stack(graph.evaluate(theta))
     curvature = 1 / radius
     for first, second in ((1.0, 1.5), (1.4, 1.1)):
         theta = xp.array([first, second])
@@ -293,13 +295,13 @@ def test_curved_interface_retains_radius_derivatives(radius):
     from diffractix.backend import grad, hessian, jit
 
     interface = Interface(n1=1.0, n2=1.5, R=Parameter(radius).variable())
-    graph = compile_ast([interface.matrix[1][0]])
+    graph = compile_graph([interface.matrix[1][0]])
     evaluate = lambda theta: graph.evaluate(theta)[0]
     power_factor = (1.0 - 1.5) / 1.5
     for function in (grad(evaluate), jit(grad(evaluate))):
-        np.testing.assert_allclose(function(graph.initial_values), [-power_factor / radius**2], rtol=1e-12)
+        np.testing.assert_allclose(function(np.array([radius])), [-power_factor / radius**2], rtol=1e-12)
     for function in (hessian(evaluate), jit(hessian(evaluate))):
-        np.testing.assert_allclose(function(graph.initial_values), [[2 * power_factor / radius**3]], rtol=1e-12)
+        np.testing.assert_allclose(function(np.array([radius])), [[2 * power_factor / radius**3]], rtol=1e-12)
 
 
 @pytest.mark.parametrize("radius", (0.5, -0.5, np.inf, -np.inf))
@@ -315,10 +317,10 @@ def test_interface_build_validation_rejects_zero_radius():
 def test_interface_requires_positive_refractive_indices():
     interface = Interface(n1=1.0, n2=1.5)
 
-    assert len(interface.requirements) == 2
-    assert all(requirement.relation is Relation.GT for requirement in interface.requirements)
-    assert interface.requirements[0].left is interface.n1
-    assert interface.requirements[1].left is interface.n2
+    assert len(interface.constraints) == 2
+    assert all(constraint.relation is Relation.GT for constraint in interface.constraints)
+    assert interface.constraints[0].left is interface.n1
+    assert interface.constraints[1].left is interface.n2
 
 
 # ----------
@@ -445,25 +447,25 @@ def test_abcd_refractive_index_can_be_context_dependent():
 
     assert element.n.node is glass_n
 
-    compiled = compile_ast(
+    compiled = compile_graph(
         [element.refractive_index],
-        context={"glass_n": 1.5},
+        bindings={"glass_n": 1.5},
     )
 
-    result = compiled.evaluate(compiled.initial_values)
+    result = compiled.evaluate(())
 
     np.testing.assert_allclose(result, [1.5])
 
 
 def test_abcd_requires_nonnegative_thickness():
-    assert_single_parameter_requirement(ABCD(thickness=0.1), "thickness", Relation.GE)
+    assert_single_parameter_constraint(ABCD(thickness=0.1), "thickness", Relation.GE)
 
 
 def test_abcd_requires_positive_explicit_refractive_index():
     element = ABCD(thickness=0.1, n=1.5)
 
-    assert element.requirements[0].relation is Relation.GT
-    assert element.requirements[0].left is element.n
+    assert element.constraints[0].relation is Relation.GT
+    assert element.constraints[0].left is element.n
 
 
 # -----------------
@@ -506,7 +508,7 @@ def test_gaussian_aperture_matrix():
 
 
 def test_gaussian_aperture_requires_strictly_positive_radius():
-    assert_single_parameter_requirement(GaussianAperture(a=1e-3), "a", Relation.GT)
+    assert_single_parameter_constraint(GaussianAperture(a=1e-3), "a", Relation.GT)
 
 
 # ----
@@ -546,17 +548,14 @@ def test_grin_sinc_derivatives_at_zero_match_taylor_limit(order, expected):
     from diffractix.backend import grad, hessian, jit
 
     element = GRIN(d=0.02, g=Parameter(0.0, variable=True), n=1.5)
-    compiled = compile_ast(
-        [element.matrix[0][1]],
-        parameter_snapshot=None,
-    )
+    compiled = compile_graph([element.matrix[0][1]])
 
     # sin(g*d)/g = d - g^2*d^3/6 + O(g^4), so B''(0) = -d^3/3.
     differentiate = grad if order == 1 else hessian
     derivative = differentiate(lambda theta: compiled.evaluate(theta)[0])
     for evaluate in (derivative, jit(derivative)):
         np.testing.assert_allclose(
-            evaluate(compiled.initial_values), np.full((1,) * order, expected),
+            evaluate(np.array([0.0])), np.full((1,) * order, expected),
             rtol=1e-12, atol=1e-15,
         )
 
@@ -582,18 +581,72 @@ def test_grin_parameters():
 def test_grin_requires_nonnegative_length():
     element = GRIN(d=0.02, g=10.0, n=1.5)
 
-    assert element.requirements[0].relation is Relation.GE
-    assert element.requirements[0].left is element.d
+    assert element.constraints[0].relation is Relation.GE
+    assert element.constraints[0].left is element.d
 
 
 def test_grin_requires_positive_refractive_index():
     element = GRIN(d=0.02, g=10.0, n=1.5)
-    requirement = element.requirements[-1]
+    constraint = element.constraints[-1]
 
-    assert requirement.relation is Relation.GT
-    assert requirement.left is element.n
+    assert constraint.relation is Relation.GT
+    assert constraint.left is element.n
 
 
-def test_thin_lens_and_plane_have_no_local_solver_requirements():
-    assert ThinLens(f=-0.1).requirements == ()
-    assert Plane().requirements == ()
+def test_thin_lens_and_plane_have_no_local_solver_constraints():
+    assert ThinLens(f=-0.1).constraints == ()
+    assert Plane().constraints == ()
+
+
+def test_plane_has_no_optical_power_length_or_independent_parameters():
+    plane = Plane(label="Reference")
+
+    np.testing.assert_array_equal(evaluate_matrix(plane), np.eye(2))
+    assert plane.element_length == 0.0
+    assert plane.refractive_index is None
+    assert plane.parameters == ()
+
+
+def test_aperture_instances_have_independent_symbols_and_complex_power():
+    first = GaussianAperture(a=1e-3)
+    second = GaussianAperture(a=2e-3)
+
+    assert first.wavelength.node is not second.wavelength.node
+    assert first.wavelength.node.key == second.wavelength.node.key == "wavelength"
+    first.wavelength = 1e-6
+    assert isinstance(second.wavelength.node, Symbol)
+    assert evaluate_matrix(first)[1, 0] == pytest.approx(-1j / np.pi)
+    assert evaluate_matrix(second, {"wavelength": 1e-6})[1, 0] == pytest.approx(-1j / (4 * np.pi))
+
+
+@pytest.mark.parametrize("factory, field", [
+    (lambda: Space(d=0.1), "d"),
+    (lambda: ABCD(thickness=0.1), "thickness"),
+    (lambda: GRIN(d=0.1, g=2.0, n=1.5), "d"),
+    (lambda: GaussianAperture(a=1e-3), "a"),
+])
+def test_physical_domain_constraints_follow_reassignment(factory, field):
+    element = factory()
+    handle = getattr(element, field)
+    constraint = next(item for item in element.constraints if item.left is handle)
+
+    setattr(element, field, -0.1)
+
+    assert getattr(element, field) is handle
+    assert constraint.left is handle
+    assert constraint.left.evaluate() == -0.1
+    assert constraint.right.evaluate() == 0.0
+
+
+@pytest.mark.parametrize("shape", [(2,), (3, 3), (2, 3)])
+def test_abcd_rejected_matrix_shape_leaves_coefficients_and_existing_expressions_unchanged(shape):
+    element = ABCD(A=2.0, B=3.0, C=4.0, D=5.0)
+    handles = element.parameters[:4]
+    expression = element.A + element.B
+
+    with pytest.raises(ValueError, match="shape"):
+        element.matrix = np.zeros(shape)
+
+    assert all(old is new for old, new in zip(handles, element.parameters[:4]))
+    np.testing.assert_array_equal(evaluate_matrix(element), [[2.0, 3.0], [4.0, 5.0]])
+    assert expression.evaluate() == 5.0

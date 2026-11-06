@@ -1,291 +1,85 @@
+"""Traversal and variability analysis use identity, not symbolic equality."""
 import pytest
-
-from diffractix.graph.node import (
-    Node,
-    Parameter,
-    Symbol,
-    InputNode,
-)
-from diffractix.graph.utils import (
-    ASTCycleError,
-    UnresolvedInputError,
-    UnsupportedNodeError,
-    walk_ast,
-    collect_variables,
-    clone_ast,
+from diffractix.graph import (
+    ASTCycleError, InputNode, Literal, Node, Parameter, Symbol,
+    UnresolvedInputError, UnsupportedNodeError, walk_ast,
 )
 
 
-# ------------------
-# VARIABLE DISCOVERY
-# ------------------
-def test_collect_variables_filters_fixed_parameters():
-    """Only Parameters marked variable should appear in the variable vector."""
-    variable = Parameter(1, name="variable").variable()
-    fixed = Parameter(2, name="fixed")
-
-    variables = collect_variables([variable, fixed])
-
-    assert variables == (variable,)
-
-
-def test_collect_variables_preserves_order():
-    """
-    Variable ordering should follow deterministic graph traversal order.
-
-    This order defines how external variable values map back to Parameters.
-    """
-    a = Parameter(1, name="a").variable()
-    b = Parameter(2, name="b").variable()
-    expr = a * b
-
-    assert collect_variables([expr]) == (a, b)
-
-
-def test_collect_variables_deduplicates_by_identity():
-    """
-    Reusing the same Parameter object must produce only one variable entry.
-    """
-    x = Parameter(2, name="x").variable()
-    expr = x * x + x
-
-    assert collect_variables([expr]) == (x,)
-
-
-def test_distinct_parameters_are_not_deduplicated():
-    """
-    Parameter identity defines independent variables.
-
-    Equal names and values must not cause distinct Parameter objects to merge.
-    """
-    a = Parameter(1, name="x").variable()
-    b = Parameter(1, name="x").variable()
-
-    variables = collect_variables([a + b])
-
-    assert variables == (a, b)
-
-
-def test_collect_variables_through_input_node():
-    """Variable discovery should follow InputNode indirection."""
-    x = Parameter(2, name="x").variable()
-    handle = InputNode(x)
-
-    assert collect_variables([handle * 2]) == (x,)
-
-
-def test_collect_variables_through_bound_symbol():
-    """
-    Variable discovery should traverse AST nodes injected through context.
-    """
-    x = Parameter(2, name="x").variable()
-    var = Symbol("external")
-
-    variables = collect_variables(
-        [var * 2],
-        context={"external": x},
-    )
-
-    assert variables == (x,)
-
-
-def test_multiple_symbols_can_resolve_to_same_parameter():
-    """
-    Multiple context references to the same Parameter still represent one variable.
-    """
-    a = Symbol("shared")
-    b = Symbol("shared")
-    x = Parameter(2, name="x").variable()
-
-    variables = collect_variables(
-        [a + b],
-        context={"shared": x},
-    )
-
-    assert variables == (x,)
-
-
-def test_scalar_context_value_adds_no_variable():
-    """Scalar context values are terminal and introduce no variable Parameters."""
-    var = Symbol("ambient_n")
-
-    variables = collect_variables(
-        [var * 2],
-        context={"ambient_n": 1.5},
-    )
-
-    assert variables == ()
-
-
-def test_collect_variables_treats_unbound_symbol_as_external_leaf():
-    """An unbound Symbol introduces no Parameter optimization variables."""
-    symbol = Symbol("missing")
-
-    assert collect_variables([symbol]) == ()
-
-
-# ----------------
-# GRAPH TRAVERSAL
-# ----------------
-def test_empty_input_node_fails_traversal():
-    """An empty InputNode is unresolved and cannot be traversed."""
-    handle = InputNode(None)
-
-    with pytest.raises(UnresolvedInputError):
-        tuple(walk_ast([handle]))
-
-
-def test_cycle_through_input_nodes_is_detected():
-    """
-    Cycles introduced through mutable InputNodes must be detected explicitly.
-
-    This avoids relying on Python's recursion limit to identify invalid graphs.
-    """
-    a = InputNode(None)
-    b = InputNode(None)
-
-    a.node = b + 1
-    b.node = a + 1
-
-    with pytest.raises(ASTCycleError):
-        tuple(walk_ast([a]))
-
-
-def test_cycle_through_context_is_detected():
-    """Context resolution may also introduce cycles and must be checked."""
-    var = Symbol("self")
-
-    with pytest.raises(ASTCycleError):
-        tuple(walk_ast([var], {"self": var}))
-
-
-def test_non_node_root_is_rejected():
-    """AST traversal should only accept Node objects as roots."""
-    with pytest.raises(TypeError):
-        tuple(walk_ast([1]))
-
-
-def test_unknown_node_type_is_rejected():
-    """
-    Traversal should fail explicitly for unsupported Node subclasses.
-
-    Silently treating unknown nodes as leaves could hide incomplete graph logic.
-    """
-    class UnknownNode(Node):
-        pass
-
-    with pytest.raises(UnsupportedNodeError):
-        tuple(walk_ast([UnknownNode()]))
-
-
-# -------------
-# AST CLONING
-# -------------
-def test_clone_ast_creates_independent_nodes():
-    """
-    Cloning should create a structurally equivalent but independent graph.
-    """
-    x = Parameter(2, name="x").variable()
-    expr = x * 2
-
-    cloned_expr, = clone_ast([expr])
-
-    assert cloned_expr is not expr
-    assert cloned_expr.left is not x
-    assert cloned_expr.left.value == x.value
-    assert cloned_expr.left.name == x.name
-    assert cloned_expr.left.is_variable == x.is_variable
-
-
-def test_clone_ast_preserves_explicit_sharing():
-    """
-    Explicit sharing in the source graph must remain sharing in the clone.
-
-    A shared source node should be cloned once and referenced from all
-    corresponding cloned branches.
-    """
-    x = Parameter(2, name="x").variable()
-    shared = x + 1
-
-    a = shared * 2
-    b = shared * 3
-
-    cloned_a, cloned_b = clone_ast([a, b])
-
-    assert cloned_a.left is cloned_b.left
-    assert cloned_a.left is not shared
-
-
-def test_clone_ast_does_not_merge_equivalent_nodes():
-    """
-    Cloning preserves graph identity semantics.
-
-    Structurally equivalent but distinct source nodes must remain distinct.
-    """
-    x = Parameter(2, name="x")
-
-    a = x + 1
-    b = x + 1
-
-    cloned_a, cloned_b = clone_ast([a, b])
-
-    assert cloned_a is not cloned_b
-
-
-def test_clone_ast_clones_input_handle():
-    """
-    InputNode handles and their targets should both be independent in the clone.
-    """
-    handle = InputNode(Parameter(2, name="x"))
-
-    cloned_handle, = clone_ast([handle])
-
-    assert cloned_handle is not handle
-    assert cloned_handle.node is not handle.node
-    assert cloned_handle.node.value == handle.node.value
-
-
-def test_clone_ast_can_preserve_canonical_parameters_without_sharing_handles():
-    canonical = Parameter(0.1).variable()
-    external = Parameter(2.0)
-    handle = InputNode(canonical)
-    shared = handle * external
-    first, second = clone_ast([shared, shared + 1], preserve_parameter_ids={id(canonical)})
-
-    assert first is second.left
-    assert first.left is not handle
-    assert first.left.node is canonical
-    assert first.right is not external
-    handle.node = Parameter(99.0)
-    external.value = 99.0
-    assert first.left.node is canonical
-    assert first.right.value == 2.0
-
-
-@pytest.mark.parametrize("kwargs,expected,has_default", [
-    pytest.param({}, None, False, id="unset"),
-    pytest.param({"default": None}, None, False, id="explicit-none"),
-    pytest.param({"default": 0.0}, 0.0, True, id="zero"),
-    pytest.param({"default": 1.5}, 1.5, True, id="value"),
+def test_walk_is_preorder_left_to_right_and_visits_shared_nodes_once():
+    first, second = Parameter(1.0), Parameter(2.0)
+    shared = first + second
+    root = shared * shared
+    assert [id(node) for node in walk_ast((root, second))] == [
+        id(root), id(shared), id(first), id(second),
+    ]
+
+
+def test_walk_follows_node_bindings_but_not_numeric_bindings_or_symbol_defaults():
+    parameter = Parameter(2.0).variable()
+    bound, numeric = Symbol("bound"), Symbol("numeric")
+    defaulted = Symbol("default", default=parameter + 1)
+    handle = InputNode(parameter)
+    nodes = tuple(walk_ast((bound, numeric, defaulted), {"bound": handle, "numeric": 3.0}))
+    assert [id(node) for node in nodes] == [id(bound), id(handle), id(parameter), id(numeric), id(defaulted)]
+
+
+def test_empty_roots_and_distinct_equal_valued_parameters():
+    assert tuple(walk_ast(())) == ()
+    first, second = Parameter(1.0), Parameter(1.0)
+    assert [id(node) for node in walk_ast((first, second))] == [id(first), id(second)]
+
+
+@pytest.mark.parametrize("root,error", [
+    (1, TypeError), (InputNode(None), UnresolvedInputError), (Node(), UnsupportedNodeError),
 ])
-def test_clone_ast_preserves_symbol_key_and_default_independently(kwargs, expected, has_default):
-    key = ("result", 42, "w")
-    symbol = Symbol(key, **kwargs)
-
-    cloned, = clone_ast([symbol])
-
-    assert cloned is not symbol
-    assert isinstance(cloned, Symbol)
-    assert cloned.key == key
-    assert cloned.has_default is has_default
-    symbol.set_default(9.0)
-    assert cloned.default == expected
+def test_walk_rejects_invalid_graphs(root, error):
+    with pytest.raises(error):
+        tuple(walk_ast((root,)))
 
 
-def test_clone_ast_detects_cycle():
-    """Invalid cyclic graphs must not be cloneable."""
-    handle = InputNode(None)
-    handle.node = handle + 1
+@pytest.mark.parametrize("kind", ["handle", "binding"])
+def test_walk_detects_cycles_and_repaired_graph_can_be_walked_again(kind):
+    root = InputNode(None) if kind == "handle" else Symbol("loop")
+    if kind == "handle":
+        root.node = root + 1
+        bindings = {}
+    else:
+        bindings = {"loop": root + 1}
+    with pytest.raises(ASTCycleError, match="Cycle"):
+        tuple(walk_ast((root,), bindings))
+    if kind == "handle":
+        root.node = Literal(1)
+    else:
+        bindings["loop"] = 1.0
+    assert tuple(walk_ast((root,), bindings))[0] is root
 
-    with pytest.raises(ASTCycleError):
-        clone_ast([handle])
+
+def test_variable_analysis_resolves_aliases_and_tracks_parameter_state():
+    parameter = Parameter(1.0)
+    root = Symbol("alias") * 3
+    bindings = {"alias": Symbol("parameter"), "parameter": InputNode(parameter)}
+    assert not root.is_variable
+    assert not root.has_variable_parameters(bindings)
+    parameter.variable()
+    assert root.has_variable_parameters(bindings)
+    assert not root.is_variable
+    parameter.fixed()
+    assert not root.has_variable_parameters(bindings)
+    assert not Literal(3.0).has_variable_parameters()
+
+
+@pytest.mark.parametrize("variable_first", [False, True])
+def test_variable_analysis_does_not_hide_unbound_symbols_after_a_variable(variable_first):
+    variable = Parameter(1.0).variable()
+    unknown = Symbol("unknown", default=2.0)
+    root = variable + unknown if variable_first else unknown + variable
+    with pytest.raises(KeyError, match="unknown"):
+        root.has_variable_parameters()
+    assert root.has_variable_parameters({"unknown": 2.0})
+
+
+def test_variable_analysis_rejects_invalid_dependencies_even_when_other_branch_is_variable():
+    root = Parameter(1.0).variable() + InputNode(None)
+    with pytest.raises(UnresolvedInputError):
+        root.has_variable_parameters()

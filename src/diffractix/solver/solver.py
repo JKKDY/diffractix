@@ -12,7 +12,6 @@ from diffractix.backend import xp, grad, hessian, jacobian, jit
 from diffractix.graph import (
     Node,
     SymbolicControlFlowError,
-    compile_ast,
     evaluate_ast,
 )
 
@@ -180,6 +179,8 @@ class Solver:
 
 
     def _compile_node(self, node, compile_context=None):
+        from diffractix.graph import compile_ast
+
         graph = compile_ast(
             (node,),
             context=self.simulation.compile_context,

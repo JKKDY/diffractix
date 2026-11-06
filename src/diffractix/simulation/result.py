@@ -161,10 +161,7 @@ class SimulationResult:
             if occurrence is not None:
                 raise TypeError("occurrence may only be specified when querying an element.")
 
-            if self._probe is None:
-                raise ValueError("This simulation result does not support arbitrary-z probing.")
-
-            return self._probe(location)
+            raise ValueError("This simulation result does not support arbitrary-z probing.")
 
         before, _ = self._resolve_location(location, occurrence)
         return self.states[before]

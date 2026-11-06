@@ -1,4 +1,5 @@
 from collections.abc import Mapping, Sequence
+from numbers import Real
 
 import numpy as np
 
@@ -46,8 +47,13 @@ def precompile(roots: Sequence[Node], bindings: Mapping = {}) -> Program:
     compiled: dict[int, Operand] = {} # cache for each compiled node
 
     for node in walk_ast(roots, bindings):
-        if isinstance(node, Parameter) and node.is_variable:
-            if id(node) not in parameter_indices:
+        if isinstance(node, Parameter):
+            node._validate_bounds(node.lower_bound, node.upper_bound)
+            if isinstance(node.value, bool) or not isinstance(node.value, Real):
+                raise TypeError(f"Parameter {node.full_name!r} must have a real scalar value.")
+            if np.isnan(node.value) or not node.lower_bound <= node.value <= node.upper_bound:
+                raise ValueError(f"Parameter {node.full_name!r} has a value outside its bounds or NaN.")
+            if node.is_variable and id(node) not in parameter_indices:
                 parameter_indices[id(node)] = len(parameter_indices)
 
         elif isinstance(node, Symbol) and node.key not in bindings:

@@ -1,168 +1,140 @@
-from types import SimpleNamespace
+"""Direct graph interpretation: live values, explicit bindings and pure evaluation."""
 
-from diffractix.backend import xp as anp
 import numpy as np
 import pytest
-from diffractix.backend import grad, hessian, jit
 
+from diffractix.backend import grad, hessian, jit, xp
 from diffractix.graph import (
-    InputNode,
-    Literal,
-    Parameter,
-    Symbol,
-    evaluate_ast,
+    ASTCycleError, InputNode, Literal, Node, Parameter, Symbol,
+    UnresolvedInputError, UnsupportedNodeError, evaluate_ast,
 )
-from diffractix.graph.utils import ASTCycleError, UnresolvedInputError
 
 
-def snapshot_info(value, parameter_index):
-    """Create structural parameter metadata without importing Simulation types."""
-    return SimpleNamespace(
-        value=value,
-        parameter_index=parameter_index,
-    )
-
-
-def test_evaluate_ast_literal_and_basic_arithmetic():
-    expression = -(Literal(2.0) + 3.0) * 4.0
-
-    assert evaluate_ast(expression, np.array([])) == -20.0
-
-
-def test_evaluate_ast_fixed_parameter_uses_snapshot_value():
-    parameter = Parameter(2.0, name="p")
-    snapshot = {id(parameter): snapshot_info(2.0, None)}
-    parameter.value = 10.0
-
-    assert evaluate_ast(parameter * 3.0, np.array([]), snapshot) == 6.0
-
-
-def test_evaluate_ast_variable_parameter_reads_canonical_theta_index():
-    parameter = Parameter(1.0, name="p").variable()
-    snapshot = {id(parameter): snapshot_info(1.0, 1)}
-
-    assert evaluate_ast(
-        parameter * 2.0,
-        np.array([4.0, 3.0]),
-        snapshot,
-    ) == 6.0
-
-
-def test_evaluate_ast_uses_live_fixed_parameter_without_snapshot_entry():
-    parameter = Parameter(3.0, name="p")
-
-    assert evaluate_ast(parameter * 2.0, np.array([])) == 6.0
-
-
-def test_evaluate_ast_rejects_live_variable_without_snapshot_entry():
-    parameter = Parameter(3.0, name="p").variable()
-
-    with pytest.raises(ValueError, match="theta index cannot be determined"):
-        evaluate_ast(parameter, np.array([]))
-
-
-def test_evaluate_ast_reads_symbol_from_runtime_bindings():
-    key = ("at", 42, None, "w")
-    symbol = Symbol(key)
-
-    assert evaluate_ast(
-        symbol * 2.0,
-        np.array([]),
-        bindings={key: 1.5},
-    ) == 3.0
-
-
-@pytest.mark.parametrize("symbol", [Symbol("beam_width"), Symbol("beam_width", default=2.0)],
-                         ids=["unbound", "default-is-metadata"])
-def test_evaluate_ast_reports_missing_symbol_binding(symbol):
-    with pytest.raises(
-        KeyError,
-        match="Missing runtime binding for Symbol key 'beam_width'",
-    ):
-        evaluate_ast(symbol, np.array([]))
-
-
-def test_evaluate_ast_follows_input_node():
-    handle = InputNode(Literal(2.0))
-
-    assert evaluate_ast(handle * 3.0, np.array([])) == 6.0
-
-
-def test_evaluate_ast_rejects_empty_input_node():
-    with pytest.raises(UnresolvedInputError):
-        evaluate_ast(InputNode(None), np.array([]))
-
-
-def test_evaluate_ast_detects_cycles():
-    handle = InputNode(None)
-    handle.node = handle + 1.0
-
-    with pytest.raises(ASTCycleError):
-        evaluate_ast(handle, np.array([]))
-
-
-def test_evaluate_ast_remains_autograd_differentiable():
-    parameter = Parameter(1.0, name="p").variable()
-    snapshot = {id(parameter): snapshot_info(1.0, 0)}
-    expression = parameter**2 + 3.0 * parameter
-
-    derivative = grad(lambda theta: evaluate_ast(expression, theta, snapshot))
-
-    np.testing.assert_allclose(derivative(anp.array([4.0])), [11.0])
-
-
-def test_context_alias_resolves_snapshot_parameters_before_runtime_bindings():
-    variable = Parameter(1.0).variable()
+def test_literal_arithmetic_and_live_fixed_or_variable_parameters():
     fixed = Parameter(2.0)
-    snapshot = {
-        id(variable): snapshot_info(1.0, 1),
-        id(fixed): snapshot_info(2.0, None),
-    }
-    key = ("source", "position")
-    context = {key: Symbol("expression"), "expression": InputNode(variable**2 + fixed)}
+    variable = Parameter(3.0).variable()
+    root = -(fixed + Literal(1.0)) * variable**2
+    assert evaluate_ast(root) == -27.0
+    fixed.value = 4.0
     variable.fixed()
-    variable.value = 99.0
-    fixed.value = 99.0
-    point = anp.array([100.0, 3.0])
-
-    def evaluate(theta):
-        return evaluate_ast(
-            Symbol(key) + Symbol("offset"), theta, snapshot,
-            bindings={key: -99.0, "offset": 0.5}, context=context,
-        )
-
-    for function in (evaluate, jit(evaluate)):
-        assert function(point) == pytest.approx(11.5)
-    for function in (grad(evaluate), jit(grad(evaluate))):
-        np.testing.assert_allclose(function(point), [0.0, 6.0])
-    for function in (hessian(evaluate), jit(hessian(evaluate))):
-        np.testing.assert_allclose(function(point), [[0.0, 0.0], [0.0, 2.0]])
-    # Resolution is read-only, including the numerical runtime bindings.
-    assert context["expression"].node.right is fixed
+    variable.value = 2.0
+    assert root.evaluate() == -20.0
 
 
-@pytest.mark.parametrize("cycle", ["self", "aliases", "expression"])
-def test_evaluate_ast_detects_context_symbol_cycles(cycle):
-    context = {
-        "self": {"a": Symbol("a")},
-        "aliases": {"a": Symbol("b"), "b": Symbol("a")},
-        "expression": {"a": Symbol("a") + 1},
-    }[cycle]
+def test_explicit_parameter_values_override_every_parameter_without_mutation():
+    fixed, variable = Parameter(2.0), Parameter(3.0).variable()
+    root = fixed + variable**2
+    values = {id(fixed): 10.0, id(variable): 4.0}
+    assert root.evaluate(parameter_values=values) == 26.0
+    assert (fixed.value, variable.value, fixed.is_variable, variable.is_variable) == (2, 3, False, True)
+    assert values == {id(fixed): 10.0, id(variable): 4.0}
+
+
+@pytest.mark.parametrize("variable", [False, True])
+def test_explicit_parameter_mapping_requires_fixed_and_variable_entries(variable):
+    parameter = Parameter(2.0, name="missing", variable=variable)
+    with pytest.raises(KeyError, match="Missing value for Parameter.*missing"):
+        parameter.evaluate(parameter_values={})
+
+
+def test_bindings_follow_nodes_and_aliases_and_override_defaults():
+    parameter = Parameter(2.0)
+    key = ("input", 42, "offset")
+    outer = Symbol(key, default=100.0)
+    expression = 3 * outer + 1
+    bindings = {key: Symbol("inner"), "inner": InputNode(parameter + 1)}
+    assert expression.evaluate(bindings) == 10.0
+    assert outer.default == 100.0
+    assert expression.evaluate() == 301.0
+    parameter.value = 4.0
+    assert expression.evaluate(bindings) == 16.0
+    assert bindings[key].key == "inner"
+
+
+def test_node_valued_symbol_defaults_are_evaluated_with_parameter_overrides():
+    parameter = Parameter(2.0)
+    symbol = Symbol("derived", default=parameter * 3)
+    assert symbol.evaluate(parameter_values={id(parameter): 4.0}) == 12.0
+    assert symbol.evaluate({"derived": 0.0}, parameter_values={}) == 0.0
+
+
+def test_runtime_array_binding_is_not_packed_or_cast():
+    values = xp.array([1.0, 2.0], dtype="float32")
+    symbol = Symbol("array")
+    assert symbol.evaluate({"array": values}) is values
+    result = (2 * symbol + 1).evaluate({"array": values})
+    np.testing.assert_allclose(result, [3.0, 5.0])
+    assert result.dtype == values.dtype
+
+
+@pytest.mark.parametrize("symbol", [Symbol("required"), Symbol("required", default=None)])
+def test_missing_symbol_binding_identifies_key(symbol):
+    with pytest.raises(KeyError, match="required"):
+        symbol.evaluate()
+
+
+def test_input_handle_swap_is_seen_on_next_evaluation():
+    handle = InputNode(Parameter(2.0))
+    root = handle * 3
+    assert root.evaluate() == 6.0
+    handle.node = Literal(4.0)
+    assert root.evaluate() == 12.0
+    handle.node = None
+    with pytest.raises(UnresolvedInputError, match="empty InputNode"):
+        root.evaluate()
+
+
+@pytest.mark.parametrize("kind", ["handle", "alias", "default"])
+def test_cycle_detection_is_by_active_identity_and_recovery_is_possible(kind):
+    if kind == "handle":
+        root = InputNode(None)
+        root.node = root + 1
+        bindings = {}
+    elif kind == "alias":
+        root = Symbol("a")
+        bindings = {"a": Symbol("b"), "b": root + 1}
+    else:
+        root = Symbol("a")
+        root.set_default(root + 1)
+        bindings = {}
     with pytest.raises(ASTCycleError, match="Cycle"):
-        evaluate_ast(Symbol("a"), anp.array([]), context=context)
+        root.evaluate(bindings)
+    if kind == "handle":
+        root.node = Literal(3)
+        assert root.evaluate() == 3
+    else:
+        assert root.evaluate({"a": 3}) == 3
 
 
-def test_context_alias_can_resolve_a_runtime_array_without_coercion():
-    values = anp.array([1.0, 2.0])
-    result = evaluate_ast(
-        Symbol("alias"), anp.array([]), context={"alias": Symbol("runtime")},
-        bindings={"runtime": values},
-    )
-    assert result is values
+def test_shared_dag_is_not_a_cycle_and_values_are_not_cached_between_calls():
+    parameter = Parameter(2.0)
+    shared = parameter + 1
+    root = shared * shared + shared
+    assert root.evaluate() == 12.0
+    parameter.value = 3.0
+    assert root.evaluate() == 20.0
 
 
-def test_missing_symbol_in_context_expression_keeps_useful_error():
-    with pytest.raises(KeyError, match="Missing runtime binding.*'missing'"):
-        evaluate_ast(
-            Symbol("alias"), anp.array([]), context={"alias": Symbol("missing") + 1},
+def test_unsupported_node_fails_clearly():
+    class Unknown(Node):
+        pass
+    with pytest.raises(UnsupportedNodeError, match="Unknown"):
+        Unknown().evaluate()
+
+
+def test_interpreter_preserves_gradients_hessians_nested_derivatives_and_jit():
+    parameter = Parameter(0.0).variable()
+    expression = parameter**3 + Symbol("coefficient") * parameter**2
+    def value(point):
+        return expression.evaluate(
+            {"coefficient": point[1]}, parameter_values={id(parameter): point[0]},
         )
+    point = xp.array([2.0, 3.0])
+    for function in (value, jit(value)):
+        assert function(point) == pytest.approx(20.0)
+    for function in (grad(value), jit(grad(value))):
+        np.testing.assert_allclose(function(point), [24.0, 4.0])
+    for function in (hessian(value), jit(hessian(value))):
+        np.testing.assert_allclose(function(point), [[18.0, 4.0], [4.0, 0.0]])
+    nested = grad(lambda t: grad(lambda s: value(xp.stack((s, t[1]))))(t[0]))
+    np.testing.assert_allclose(nested(point), [18.0, 4.0])

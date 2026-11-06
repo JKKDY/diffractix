@@ -1,1037 +1,313 @@
-from dataclasses import dataclass, fields
+"""Compiled optical execution, numerical source reconstruction and metadata."""
 
-import pytest
+from dataclasses import dataclass, field
+
 import numpy as np
-from diffractix.backend import xp
-from numpy.testing import assert_allclose, assert_array_equal
+import pytest
 
-from diffractix.backend import grad
-
-from diffractix import GaussianBeam, Ray, RayBundle, ParaxialState
-from diffractix.graph import Literal, Parameter
-from diffractix.simulation import Simulation, SimulationResult
-from diffractix.simulation.simulation import SimulationSource, SimulationStep
+from diffractix.backend import grad, hessian, jacobian, jit, xp
+from diffractix.graph import Literal, Node, Parameter, Program, compile_graph
+from diffractix.input import GaussianBeam, ParaxialState, Ray, RayBundle
+from diffractix.simulation.info import SimulationInput, SimulationStep
+from diffractix.simulation.result import SimulationResult
+from diffractix.simulation.simulation import Simulation
 from diffractix.solver.constraint import Constraint
-from diffractix.system.info import ElementInfo
+from diffractix.system.info import ConstraintData, ElementData, ParameterData
 
 
-def element_info_for_steps(steps):
-    return tuple(
-        ElementInfo(
-            type_name="DummyElement",
-            label=None,
-            path=None,
-            parameter_names=(),
-            parameter_indices=(),
-        )
-        for _ in steps
-    )
-
-
-def element_info_for_states(states):
-    return element_info_for_steps(states[1:])
-
-
-def create_result(**kwargs):
-    kwargs.setdefault(
-        "element_info",
-        element_info_for_states(kwargs["states"]),
-    )
-    return SimulationResult(**kwargs)
-
-
-@dataclass(frozen=True)
-class DummyState(ParaxialState):
+@dataclass(eq=False)
+class RecordingState(ParaxialState):
     value: float = 0.0
     calls: tuple = ()
 
     def propagate(self, A, B, C, D, n):
-        return DummyState(
-            value=self.value + A + 2 * B + 3 * C + 4 * D + 5 * n,
-            calls=self.calls + ((A, B, C, D, n),),
+        return type(self)(
+            value=self.value + A + 2*B + 3*C + 4*D + 5*n,
+            calls=(*self.calls, (A, B, C, D, n)),
         )
 
 
-def fixed_source(source=None):
-    source = DummyState() if source is None else source
-    return SimulationSource(
-        numerical_type=source.numerical_type(),
-        fixed_fields=tuple((item.name, getattr(source, item.name)) for item in fields(source) if item.init),
-        field_indices=(),
+def make_simulation(roots=(), steps=(), *, source=None, field_indices=(), parameters=()):
+    roots = tuple(value if isinstance(value, Node) else Literal(value) for value in roots)
+    program = compile_graph(roots)
+    parameters_by_id = {id(parameter): parameter for parameter in parameters}
+    parameter_data = tuple(
+        ParameterData(pid, parameters_by_id[pid].name, parameters_by_id[pid].value,
+                      parameters_by_id[pid].lower_bound, parameters_by_id[pid].upper_bound, index)
+        for pid, index in sorted(program.parameter_indices.items(), key=lambda item: item[1])
     )
-
-
-@dataclass
-class DummyGraph:
-    initial_values: np.ndarray
-    evaluator: callable
-    last_bindings: object = None
-
-    def evaluate(self, theta=None, *, variable_values=None, bindings=None):
-        if variable_values is not None:
-            theta = variable_values
-        self.last_bindings = bindings
-        return self.evaluator(theta)
-
-    def _evaluate_roots(self, variable_values, bindings=None):
-        return tuple(self.evaluate(variable_values=variable_values, bindings=bindings))
-
-
-def create_simulation(
-    values,
-    steps,
-    *,
-    initial_values=(),
-    source=None,
-    parameter_info=None,
-    location_map=None,
-    requirements=(),
-    element_info=None,
-    execution_context=None,
-):
-    if source is None:
-        source = DummyState()
-
-    if location_map is None:
-        location_map = {}
-
-    if parameter_info is None:
-        parameter_info = {}
-
-    if element_info is None:
-        element_info = element_info_for_steps(steps)
-
-    if execution_context is None:
-        execution_context = {}
-
-    graph = DummyGraph(
-        initial_values=xp.array(initial_values),
-        evaluator=lambda theta: xp.array(values),
+    elements = tuple(
+        ElementData(index, index, "CustomElement", f"Stage {index}", None, frozenset())
+        for index in range(len(steps))
     )
-
+    source = RecordingState.numerical_type()() if source is None else source
     return Simulation(
-        source_spec=fixed_source(source),
-        graph=graph,
-        steps=steps,
-        parameter_info=parameter_info,
-        location_map=location_map,
-        compile_context={},
-        execution_context=execution_context,
-        requirements=requirements,
-        parameter_graph = None,
-        element_info=element_info,
+        element_data=elements, parameter_data=parameter_data,
+        callable_constraints=(), constraint_descriptors=(),
+        constraint_program=compile_graph(()), optics_program=program,
+        optical_stages=steps,
+        optical_inputs=(SimulationInput(source, tuple(field_indices)),),
     )
 
 
-# --------------
-# INITIALIZATION
-# --------------
-
-def test_simulation_require_appends_comparisons_and_supports_chaining():
-    parameter = Parameter(2.0)
-    original = Constraint(parameter, lower_bound=0.0, label="existing")
-    simulation = create_simulation([], [], requirements=(original,))
-    previous_requirements = simulation.requirements
-
-    assert simulation.require(parameter >= 1.0).require(parameter <= 3.0) is simulation
-    assert isinstance(simulation.requirements, tuple)
-    assert len(previous_requirements) == 1
-    assert previous_requirements[0].label == original.label
-    assert previous_requirements[0].evaluate.value == 2.0
-    first, lower, upper = simulation.requirements
-    assert first is previous_requirements[0]
-    assert lower.evaluate is not parameter
-    assert lower.evaluate.value == 2.0
-    assert (lower.lower_bound, lower.upper_bound) == (1.0, np.inf)
-    assert upper.evaluate.value == 2.0
-    assert (upper.lower_bound, upper.upper_bound) == (-np.inf, 3.0)
-    assert simulation.require() is simulation
-    assert len(simulation.requirements) == 3
-
-
-def test_simulation_require_normalizes_callable_constraints():
-    parameter = Parameter(2.0)
-    simulation = create_simulation([], [])
-    runtime = Constraint(lambda ctx: ctx.z[0], upper_bound=4.0, label="runtime")
-    expression = parameter * 2
-
-    simulation.require(
-        lambda: parameter >= 1.0,
-        Constraint(lambda: expression, upper_bound=6.0, label="expression"),
-        runtime,
+def test_constructor_owns_sequence_containers_and_retains_programs():
+    simulation = make_simulation()
+    elements, parameters, sources, stages = [], [], list(simulation.optical_inputs), []
+    descriptors = [ConstraintData(0, 0, 1, "graph", "bounded graph")]
+    deferred = [(1, Constraint(lambda context: context.theta[0], label="deferred"))]
+    copied = Simulation(
+        element_data=elements, parameter_data=parameters,
+        callable_constraints=deferred, constraint_descriptors=descriptors,
+        constraint_program=simulation.constraint_program, optics_program=simulation.optics_program,
+        optical_stages=stages, optical_inputs=sources,
     )
+    sources.clear()
+    deferred.clear()
+    descriptors.clear()
+    elements.append(object())
+    parameters.append(object())
+    stages.append(object())
 
-    comparison, normalized, retained = simulation.requirements
-    assert all(isinstance(item, Constraint) for item in simulation.requirements)
-    assert comparison.evaluate.value == 2.0
-    assert comparison.lower_bound == 1.0
-    assert normalized.evaluate is not expression
-    assert normalized.evaluate.left is comparison.evaluate
-    assert normalized.evaluate.value == 4.0
-    assert normalized.upper_bound == 6.0
-    assert normalized.label == "expression"
-    assert retained is runtime
-    parameter.value = 99.0
-    assert comparison.evaluate.value == 2.0
-    assert normalized.evaluate.value == 4.0
-
-
-@pytest.mark.parametrize("invalid", [
-    None, True, 3.0, object(), Literal(1.0),
-    lambda: 1.0,
-    lambda ctx: ctx.z[0] >= 0.0,
-    Constraint(lambda: 1.0),
-])
-def test_simulation_require_rejects_invalid_inputs_without_changing_requirements(invalid):
-    parameter = Parameter(2.0)
-    original = Constraint(parameter, lower_bound=0.0)
-    simulation = create_simulation([], [], requirements=(original,))
-    previous_requirements = simulation.requirements
-
-    with pytest.raises(TypeError, match="[Cc]onstraint"):
-        simulation.require(parameter >= 1.0, invalid)
-
-    assert simulation.requirements is previous_requirements
+    assert copied.optics_program is simulation.optics_program
+    assert copied.constraint_program is simulation.constraint_program
+    assert copied.element_data == copied.parameter_data == copied.optical_stages == ()
+    assert len(copied.optical_inputs) == len(copied.callable_constraints) == len(copied.constraint_descriptors) == 1
+    assert all(isinstance(value, tuple) for value in (
+        copied.element_data, copied.parameter_data, copied.optical_inputs,
+        copied.optical_stages, copied.callable_constraints, copied.constraint_descriptors,
+    ))
 
 
-def test_simulation_stores_compiled_data():
-    source = DummyState()
-    graph = DummyGraph(
-        initial_values=xp.array([1.0]),
-        evaluator=lambda theta: xp.array([]),
-    )
-    step = SimulationStep(
-        matrix_indices=((0, 1), (2, 3)),
-        length_index=4,
-        refractive_index_index=5,
-    )
-    parameter_info = {1: object()}
-    location_map = {1: ((0, 1),)}
-    requirements = (Constraint(Literal(0.0)),)
-    compile_context = {"ambient_n": object()}
-    execution_context = {("result", 1, "w"): 0.01}
-    element_info = ElementInfo(
-        type_name="Space",
-        label="Drift",
-        path=None,
-        parameter_names=("d",),
-        parameter_indices=(0,),
-    )
-
-    simulation = Simulation(
-        source_spec=fixed_source(source),
-        graph=graph,
-        steps=[step],
-        parameter_info=parameter_info,
-        location_map=location_map,
-        compile_context=compile_context,
-        execution_context=execution_context,
-        requirements=requirements,
-        parameter_graph=graph,
-        element_info=[element_info],
-    )
-
-    assert simulation.source is not source
-    assert simulation.source.value == source.value
-    assert simulation.graph is graph
-    assert simulation.steps == (step,)
-    assert simulation.parameter_info == parameter_info
-    assert simulation.location_map == location_map
-    assert simulation.location_map is not location_map
-    assert len(simulation.requirements) == 1
-    assert simulation.requirements[0].evaluate.value == requirements[0].evaluate.value
-    assert simulation.requirements[0].lower_bound == requirements[0].lower_bound
-    assert simulation.requirements[0].upper_bound == requirements[0].upper_bound
-    assert simulation.compile_context == compile_context
-    assert simulation.compile_context is not compile_context
-    assert simulation.execution_context == execution_context
-    assert simulation.execution_context is not execution_context
-    assert simulation.parameter_graph is graph
-    assert simulation.element_info == (element_info,)
-
-
-def test_simulation_snapshots_context_mappings():
-    compile_context = {"ambient_n": object()}
-    execution_context = {"runtime_value": 3.0}
-    simulation = Simulation(
-        source_spec=fixed_source(),
-        graph=DummyGraph(
-            initial_values=xp.array([]),
-            evaluator=lambda theta: xp.array([]),
-        ),
-        steps=(),
-        parameter_info={},
-        location_map={},
-        compile_context=compile_context,
-        execution_context=execution_context,
-        requirements=(),
-        parameter_graph=None,
-        element_info=(),
-    )
-
-    compile_context["added"] = object()
-    execution_context["runtime_value"] = 4.0
-
-    assert "added" not in simulation.compile_context
-    assert simulation.execution_context["runtime_value"] == 3.0
-    with pytest.raises(TypeError):
-        simulation.compile_context["added"] = object()
-    with pytest.raises(TypeError):
-        simulation.execution_context["runtime_value"] = 5.0
-
-
-def test_simulation_converts_sequence_fields_to_tuples():
-    simulation = Simulation(
-        source_spec=fixed_source(),
-        graph=DummyGraph(
-            initial_values=xp.array([]),
-            evaluator=lambda theta: xp.array([]),
-        ),
-        steps=[],
-        parameter_info={},
-        location_map={},
-        compile_context={},
-        execution_context={},
-        requirements=[],
-        parameter_graph=None,
-        element_info=(),
-    )
-
-    assert simulation.steps == ()
-    assert simulation.parameter_info == {}
-    assert simulation.requirements == ()
-
-
-def test_simulation_initial_values_are_graph_initial_values():
-    initial_values = xp.array([1.0, 2.0])
-    graph = DummyGraph(
-        initial_values=initial_values,
-        evaluator=lambda theta: xp.array([]),
-    )
-
-    simulation = Simulation(
-        source_spec=fixed_source(),
-        graph=graph,
-        steps=(),
-        parameter_info={},
-        location_map={},
-        compile_context={},
-        execution_context={},
-        requirements=(),
-        parameter_graph=None,
-        element_info=(),
-    )
-
-    assert simulation.initial_values is initial_values
-
-
-def test_simulation_rejects_non_dataclass_state():
-    class InvalidState(ParaxialState):
-        def propagate(self, A, B, C, D, n):
-            return self
-    graph = DummyGraph(
-        initial_values=xp.array([]),
-        evaluator=lambda theta: xp.array([]),
-    )
-    with pytest.raises(TypeError, match="must be a dataclass"):
-        Simulation(
-            source_spec=SimulationSource(InvalidState, (), ()),
-            graph=graph,
-            steps=(),
-            parameter_info={},
-            location_map={},
-            compile_context={},
-            execution_context={},
-            requirements=(),
-            parameter_graph = None,
-            element_info = ()
-        )
-
-
-# -------
-# RESULTS
-# -------
-
-def test_paraxial_state_has_no_default_result_columns():
-    assert ParaxialState.result_columns == ()
-
-
-def test_concrete_state_result_columns_reference_existing_properties():
-    states = (
-        GaussianBeam.from_waist(w0=1e-3, wavelength=1e-6).numeric(),
-        Ray(x=1.0, theta=0.1).numeric({"ambient_n": 1.0}),
-        RayBundle(x=xp.array([0.0, 1.0]), theta=xp.array([0.0, 0.1])).numeric({"ambient_n": 1.0}),
-    )
-
-    assert GaussianBeam.result_columns == ("w", "R", "gouy_phase")
-    assert Ray.result_columns == ("x", "theta")
-    assert RayBundle.result_columns == ("x", "theta")
-
-    for state in states:
-        assert state.result_columns
-        assert all(hasattr(state, name) for name in state.result_columns)
-
-def test_run_records_source_as_initial_state():
-    source = DummyState(value=3.0)
-
-    simulation = create_simulation(
-        values=(),
-        steps=(),
-        source=source,
-    )
+def test_zero_stage_run_returns_an_independent_numerical_source():
+    source = RecordingState.numerical_type()(value=3.0)
+    simulation = make_simulation(source=source)
 
     result = simulation.run()
 
     assert isinstance(result, SimulationResult)
-    assert_array_equal(result.value, [source.value])
-    assert_array_equal(result.z, [0.0])
-    assert result.source is result.initial
+    assert result.source is result.initial is result.final
     assert result.source is not source
-    assert result.source is not simulation.source
+    assert result.source.value == source.value == 3.0
     assert result.states == (result.source,)
+    np.testing.assert_array_equal(result.z, [0.0])
+    assert result.optical_values == ()
 
 
-def test_run_forwards_location_map_to_result():
-    location = object()
-    location_map = {
-        id(location): ((0, 0),),
-    }
+@pytest.mark.parametrize("count", [0, 2])
+def test_run_requires_exactly_one_optical_input(count):
+    simulation = make_simulation()
+    simulation.optical_inputs = simulation.optical_inputs * count
 
-    simulation = create_simulation(
-        values=(),
-        steps=(),
-        location_map=location_map,
-    )
+    with pytest.raises(ValueError, match="exactly one optical input"):
+        simulation.run()
+
+
+def test_run_evaluates_the_program_once_and_obeys_noncontiguous_step_indices(monkeypatch):
+    step = SimulationStep(((4, 1), (5, 0)), length_index=3, refractive_index_index=2)
+    simulation = make_simulation((10., 20., 1.5, .25, 30., 40.), (step,))
+    calls = []
+    evaluate = Program.evaluate
+
+    def counted(program, theta, bindings={}):
+        calls.append((program, theta))
+        return evaluate(program, theta, bindings)
+
+    monkeypatch.setattr(Program, "evaluate", counted)
+    result = simulation.run()
+
+    assert len(calls) == 1 and calls[0][0] is simulation.optics_program
+    assert result.final.calls == ((30., 20., 40., 10., 1.5),)
+    assert result.final.value == 237.5
+    np.testing.assert_allclose(result.z, [0, .25])
+    assert result.optical_values == (10., 20., 1.5, .25, 30., 40.)
+    assert result.element_data is simulation.element_data
+    assert result.optical_stages is simulation.optical_stages
+
+
+def test_steps_propagate_sequentially_and_keep_zero_length_boundary_samples():
+    steps = (SimulationStep(((0, 1), (2, 3)), 4, 5),
+             SimulationStep(((6, 7), (8, 9)), 10, 11))
+    source = RecordingState.numerical_type()(value=3.)
+    simulation = make_simulation((1., 2., 3., 4., .1, 1., 5., 6., 7., 8., 0., 1.5), steps, source=source)
 
     result = simulation.run()
 
-    assert result.at(location) is result.initial
+    assert result.states[1].calls == ((1., 2., 3., 4., 1.),)
+    assert result.final.calls == ((1., 2., 3., 4., 1.), (5., 6., 7., 8., 1.5))
+    assert result.states[1].value == 38.
+    assert result.final.value == 115.5
+    assert source.value == 3. and source.calls == ()
+    np.testing.assert_allclose(result.z, [0., .1, .1])
+
+
+def test_initial_guesses_are_independent_of_defaults_and_live_parameters():
+    distance = Parameter(.1, name="distance").variable(bounds=(0., 1.))
+    step = SimulationStep(((0, 1), (2, 3)), 4, 5)
+    simulation = make_simulation((1., distance, 0., 1., distance, 1.), (step,), parameters=(distance,))
+    original = simulation.initial_values
+    changed = simulation.initial_values
+    changed[distance] = .4
+    distance.value = .9
+    distance.fixed()
+
+    assert changed[distance] == .4
+    assert original[distance] == .1
+    np.testing.assert_allclose(simulation.initial_values.values, [.1])
+    assert not simulation._initial_values.flags.writeable
+    with pytest.raises(ValueError):
+        simulation._initial_values[0] = .3
+    assert simulation.run().final.calls[0][1] == .1
+    assert simulation.run(changed.values).final.calls[0][1] == .4
+    assert distance.value == .9 and not distance.is_variable
+
+
+def test_repeated_runs_do_not_reuse_mutable_state_objects_or_change_theta():
+    parameter = Parameter(2.).variable()
+    step = SimulationStep(((0, 1), (2, 3)), 4, 5)
+    simulation = make_simulation((1., parameter, 0., 1., .2, 1.), (step,), parameters=(parameter,))
+    theta = np.array([7.])
+
+    first, second = simulation.run(theta), simulation.run()
 
-
-def test_run_forwards_execution_context_to_graph():
-    execution_context = {"runtime_value": 3.0}
-    graph = DummyGraph(
-        initial_values=xp.array([]),
-        evaluator=lambda theta: xp.array([]),
-    )
-    simulation = Simulation(
-        source_spec=fixed_source(),
-        graph=graph,
-        steps=(),
-        parameter_info={},
-        location_map={},
-        compile_context={},
-        execution_context=execution_context,
-        requirements=(),
-        parameter_graph=None,
-        element_info=(),
-    )
-
-    simulation.run()
-
-    assert graph.last_bindings == execution_context
-    assert graph.last_bindings is simulation.execution_context
-
-
-def test_result_rejects_inconsistent_element_info_length():
-    states = (DummyState(), DummyState())
-
-    with pytest.raises(ValueError, match="one input state plus one state"):
-        SimulationResult(
-            source=states[0],
-            z=xp.array([0.0, 1.0]),
-            states=states,
-            location_map={},
-            element_info=(),
-        )
-
-def test_result_at_unique_element_does_not_require_occurrence():
-    element = object()
-    states = (
-        DummyState(value=0.0),
-        DummyState(value=1.0),
-    )
-
-    result = create_result(
-        source=states[0],
-        z=xp.array([0.0, 0.0]),
-        states=states,
-        location_map={
-            id(element): ((0, 1),),
-        },
-    )
-
-    assert result.at(element) is states[0]
-
-
-def test_result_after_unique_element_does_not_require_occurrence():
-    element = object()
-    states = (
-        DummyState(value=0.0),
-        DummyState(value=1.0),
-    )
-
-    result = create_result(
-        source=states[0],
-        z=xp.array([0.0, 0.0]),
-        states=states,
-        location_map={
-            id(element): ((0, 1),),
-        },
-    )
-
-    assert result.after(element) is states[1]
-
-
-def test_result_z_accessors_return_unique_element_positions():
-    element = object()
-    states = (DummyState(), DummyState())
-    result = create_result(
-        source=states[0],
-        z=xp.array([1.25, 2.5]),
-        states=states,
-        location_map={id(element): ((0, 1),)},
-    )
-
-    assert result.z_at(element) == pytest.approx(1.25)
-    assert result.z_after(element) == pytest.approx(2.5)
-
-
-def test_result_at_selects_repeated_element_occurrence():
-    element = object()
-    states = (
-        DummyState(value=0.0),
-        DummyState(value=1.0),
-        DummyState(value=2.0),
-        DummyState(value=3.0),
-    )
-
-    result = create_result(
-        source=states[0],
-        z=xp.array([0.0, 0.0, 0.0, 0.0]),
-        states=states,
-        location_map={
-            id(element): (
-                (0, 1),
-                (2, 3),
-            ),
-        },
-    )
-
-    assert result.at(element, occurrence=0) is states[0]
-    assert result.at(element, occurrence=1) is states[2]
-
-
-def test_result_after_selects_repeated_element_occurrence():
-    element = object()
-    states = (
-        DummyState(value=0.0),
-        DummyState(value=1.0),
-        DummyState(value=2.0),
-        DummyState(value=3.0),
-    )
-
-    result = create_result(
-        source=states[0],
-        z=xp.array([0.0, 0.0, 0.0, 0.0]),
-        states=states,
-        location_map={
-            id(element): (
-                (0, 1),
-                (2, 3),
-            ),
-        },
-    )
-
-    assert result.after(element, occurrence=0) is states[1]
-    assert result.after(element, occurrence=1) is states[3]
-
-
-def test_result_z_accessors_select_repeated_element_occurrence():
-    element = object()
-    states = tuple(DummyState() for _ in range(4))
-    result = create_result(
-        source=states[0],
-        z=xp.array([0.0, 1.0, 3.0, 6.0]),
-        states=states,
-        location_map={id(element): ((0, 1), (2, 3))},
-    )
-
-    assert result.z_at(element, occurrence=0) == pytest.approx(0.0)
-    assert result.z_after(element, occurrence=0) == pytest.approx(1.0)
-    assert result.z_at(element, occurrence=1) == pytest.approx(3.0)
-    assert result.z_after(element, occurrence=1) == pytest.approx(6.0)
-    with pytest.raises(ValueError, match="occurs 2 times"):
-        result.z_at(element)
-
-
-def test_result_at_repeated_element_requires_occurrence():
-    element = object()
-    states = (
-        DummyState(value=0.0),
-        DummyState(value=1.0),
-        DummyState(value=2.0),
-    )
-
-    result = create_result(
-        source=states[0],
-        z=xp.array([0.0, 0.0, 0.0]),
-        states=states,
-        location_map={
-            id(element): (
-                (0, 1),
-                (1, 2),
-            ),
-        },
-    )
-
-    with pytest.raises(ValueError, match="occurs 2 times"):
-        result.at(element)
-
-
-def test_result_after_repeated_element_requires_occurrence():
-    element = object()
-    states = (
-        DummyState(value=0.0),
-        DummyState(value=1.0),
-        DummyState(value=2.0),
-    )
-
-    result = create_result(
-        source=states[0],
-        z=xp.array([0.0, 0.0, 0.0]),
-        states=states,
-        location_map={
-            id(element): (
-                (0, 1),
-                (1, 2),
-            ),
-        },
-    )
-
-    with pytest.raises(ValueError, match="occurs 2 times"):
-        result.after(element)
-
-
-def test_result_rejects_out_of_range_occurrence():
-    element = object()
-
-    result = create_result(
-        source=DummyState(),
-        z=xp.array([0.0]),
-        states=(DummyState(),),
-        location_map={
-            id(element): ((0, 0),),
-        },
-    )
-
-    with pytest.raises(IndexError, match="out of range"):
-        result.at(element, occurrence=1)
-
-
-def test_result_rejects_negative_occurrence():
-    element = object()
-
-    result = create_result(
-        source=DummyState(),
-        z=xp.array([0.0]),
-        states=(DummyState(),),
-        location_map={
-            id(element): ((0, 0),),
-        },
-    )
-
-    with pytest.raises(IndexError, match="out of range"):
-        result.at(element, occurrence=-1)
-
-
-def test_result_rejects_non_integer_occurrence():
-    element = object()
-
-    result = create_result(
-        source=DummyState(),
-        z=xp.array([0.0]),
-        states=(DummyState(),),
-        location_map={
-            id(element): ((0, 0),),
-        },
-    )
-
-    with pytest.raises(TypeError, match="occurrence must be an integer"):
-        result.at(element, occurrence=1.5)
-
-
-def test_result_rejects_occurrence_for_numeric_position():
-    result = create_result(
-        source=DummyState(),
-        z=xp.array([0.0]),
-        states=(DummyState(),),
-        location_map={},
-        probe=lambda z: DummyState(value=z),
-    )
-
-    with pytest.raises(TypeError, match="occurrence may only be specified"):
-        result.at(0.5, occurrence=0)
-
-
-@pytest.mark.parametrize("accessor", ["z_at", "z_after"])
-def test_result_z_accessors_match_location_lookup_errors(accessor):
-    element = object()
-    missing = object()
-    result = create_result(
-        source=DummyState(),
-        z=xp.array([0.0]),
-        states=(DummyState(),),
-        location_map={id(element): ((0, 0),)},
-    )
-    resolve = getattr(result, accessor)
-
-    with pytest.raises(KeyError, match="not part of this simulation"):
-        resolve(missing)
-    with pytest.raises(IndexError, match="out of range"):
-        resolve(element, occurrence=1)
-
-
-# -----------
-# PROPAGATION
-# -----------
-
-def test_run_propagates_single_step():
-    step = SimulationStep(
-        matrix_indices=((0, 1), (2, 3)),
-        length_index=4,
-        refractive_index_index=5,
-    )
-
-    simulation = create_simulation(
-        values=(
-            1.0,
-            2.0,
-            3.0,
-            4.0,
-            0.5,
-            1.5,
-        ),
-        steps=(step,),
-    )
-
-    result = simulation.run()
-
-    assert len(result.states) == 2
-    assert result.states[1].calls == (
-        (1.0, 2.0, 3.0, 4.0, 1.5),
-    )
-
-
-def test_run_reads_values_using_step_indices():
-    step = SimulationStep(
-        matrix_indices=((4, 1), (5, 0)),
-        length_index=3,
-        refractive_index_index=2,
-    )
-
-    simulation = create_simulation(
-        values=(
-            10.0,
-            20.0,
-            1.5,
-            0.25,
-            30.0,
-            40.0,
-        ),
-        steps=(step,),
-    )
-
-    result = simulation.run()
-
-    assert result.states[1].calls == (
-        (30.0, 20.0, 40.0, 10.0, 1.5),
-    )
-
-
-def test_run_propagates_steps_sequentially():
-    first = SimulationStep(
-        matrix_indices=((0, 1), (2, 3)),
-        length_index=4,
-        refractive_index_index=5,
-    )
-    second = SimulationStep(
-        matrix_indices=((6, 7), (8, 9)),
-        length_index=10,
-        refractive_index_index=11,
-    )
-
-    simulation = create_simulation(
-        values=(
-            1.0, 2.0, 3.0, 4.0, 0.1, 1.0,
-            5.0, 6.0, 7.0, 8.0, 0.2, 1.5,
-        ),
-        steps=(first, second),
-    )
-
-    result = simulation.run()
-
-    assert len(result.states) == 3
-    assert_allclose(result.z, [0.0, 0.1, 0.3])
-    assert result.states[1].calls == (
-        (1.0, 2.0, 3.0, 4.0, 1.0),
-    )
-    assert result.states[2].calls == (
-        (1.0, 2.0, 3.0, 4.0, 1.0),
-        (5.0, 6.0, 7.0, 8.0, 1.5),
-    )
-
-
-# ---------
-# POSITION
-# ---------
-
-def test_run_preserves_duplicate_positions_for_zero_length_step():
-    step = SimulationStep(
-        matrix_indices=((0, 1), (2, 3)),
-        length_index=4,
-        refractive_index_index=5,
-    )
-
-    simulation = create_simulation(
-        values=(
-            1.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            1.0,
-        ),
-        steps=(step,),
-    )
-
-    result = simulation.run()
-
-    assert np.allclose(
-        result.z,
-        xp.array([0.0, 0.0]),
-    )
-
-
-# -----
-# THETA
-# -----
-
-def test_run_uses_initial_values_when_theta_is_none():
-    graph = DummyGraph(
-        initial_values=xp.array([2.0]),
-        evaluator=lambda theta: xp.array([
-            1.0,
-            theta[0],
-            0.0,
-            1.0,
-            0.0,
-            1.0,
-        ]),
-    )
-
-    step = SimulationStep(
-        matrix_indices=((0, 1), (2, 3)),
-        length_index=4,
-        refractive_index_index=5,
-    )
-
-    simulation = Simulation(
-        source_spec=fixed_source(),
-        graph=graph,
-        steps=(step,),
-        parameter_info={},
-        location_map={},
-        compile_context={},
-        execution_context={},
-        requirements=(),
-        parameter_graph=None,
-        element_info=element_info_for_steps((step,)),
-    )
-
-    result = simulation.run()
-
-    assert result.states[-1].calls[0][1] == pytest.approx(2.0)
-
-
-def test_run_uses_supplied_theta():
-    graph = DummyGraph(
-        initial_values=xp.array([2.0]),
-        evaluator=lambda theta: xp.array([
-            1.0,
-            theta[0],
-            0.0,
-            1.0,
-            0.0,
-            1.0,
-        ]),
-    )
-
-    step = SimulationStep(
-        matrix_indices=((0, 1), (2, 3)),
-        length_index=4,
-        refractive_index_index=5,
-    )
-
-    simulation = Simulation(
-        source_spec=fixed_source(),
-        graph=graph,
-        steps=(step,),
-        parameter_info={},
-        location_map={},
-        compile_context={},
-        execution_context={},
-        requirements=(),
-        parameter_graph=None,
-        element_info=element_info_for_steps((step,)),
-    )
-
-    result = simulation.run(xp.array([7.0]))
-
-    assert result.states[-1].calls[0][1] == pytest.approx(7.0)
-
-
-def test_run_does_not_modify_initial_values():
-    graph = DummyGraph(
-        initial_values=xp.array([2.0]),
-        evaluator=lambda theta: xp.array([
-            1.0,
-            theta[0],
-            0.0,
-            1.0,
-            0.0,
-            1.0,
-        ]),
-    )
-
-    step = SimulationStep(
-        matrix_indices=((0, 1), (2, 3)),
-        length_index=4,
-        refractive_index_index=5,
-    )
-
-    simulation = Simulation(
-        source_spec=fixed_source(),
-        graph=graph,
-        steps=(step,),
-        parameter_info={},
-        location_map={},
-        compile_context={},
-        execution_context={},
-        requirements=(),
-        parameter_graph=None,
-        element_info=element_info_for_steps((step,)),
-    )
-
-    simulation.run(xp.array([7.0]))
-
-    assert np.allclose(
-        simulation.initial_values,
-        xp.array([2.0]),
-    )
-
-
-# ------
-# PURITY
-# ------
-
-def test_run_does_not_mutate_source_state():
-    source = DummyState(value=3.0)
-
-    step = SimulationStep(
-        matrix_indices=((0, 1), (2, 3)),
-        length_index=4,
-        refractive_index_index=5,
-    )
-
-    simulation = create_simulation(
-        values=(
-            1.0,
-            2.0,
-            3.0,
-            4.0,
-            0.1,
-            1.0,
-        ),
-        steps=(step,),
-        source=source,
-    )
-
-    simulation.run()
-
-    assert source.value == pytest.approx(3.0)
-    assert source.calls == ()
-
-
-def test_repeated_runs_are_independent():
-    step = SimulationStep(
-        matrix_indices=((0, 1), (2, 3)),
-        length_index=4,
-        refractive_index_index=5,
-    )
-
-    simulation = create_simulation(
-        values=(
-            1.0,
-            2.0,
-            3.0,
-            4.0,
-            0.1,
-            1.0,
-        ),
-        steps=(step,),
-    )
-
-    first = simulation.run()
-    second = simulation.run()
-
-    assert first.states[0] is not simulation.source
-    assert second.states[0] is not simulation.source
     assert first.source is not second.source
-    assert first.states[1] is not second.states[1]
-    assert first.states[1] == second.states[1]
+    assert first.final is not second.final
+    assert first.final.calls[0][1] == 7.
+    assert second.final.calls[0][1] == 2.
+    np.testing.assert_array_equal(theta, [7.])
+    np.testing.assert_array_equal(simulation.initial_values.values, [2.])
+    assert parameter.value == 2.
 
 
-# -----------------
-# DIFFERENTIABILITY
-# -----------------
+def test_source_reconstruction_uses_outputs_and_recomputes_derived_fields():
+    @dataclass(eq=False)
+    class DerivedState(ParaxialState):
+        value: float = 2.
+        doubled: float = field(init=False)
 
-def test_run_is_differentiable_with_respect_to_theta():
-    graph = DummyGraph(
-        initial_values=xp.array([2.0]),
-        evaluator=lambda theta: xp.array([
-            1.0,
-            theta[0],
-            0.0,
-            1.0,
-            0.0,
-            1.0,
-        ]),
+        def __post_init__(self):
+            self.doubled = 2*self.value
+
+        def propagate(self, A, B, C, D, n):
+            return type(self)(value=A*self.value + B)
+
+    source = DerivedState.numerical_type()(value=2.)
+    source.doubled = -99.
+    specification = SimulationInput(source, (("value", 1),))
+
+    reconstructed = specification.construct((100., 5.))
+
+    assert type(reconstructed) is type(source)
+    assert reconstructed.value == 5. and reconstructed.doubled == 10.
+    assert reconstructed.parameter_names == ()
+    assert source.value == 2. and source.doubled == -99.
+
+
+def test_native_roots_keep_wavelength_real_beside_complex_propagation_coefficients():
+    wavelength = Parameter(1e-6, name="wavelength").variable()
+    aperture = -1j*wavelength / (np.pi * 1e-6)
+    source = GaussianBeam.numerical_type()(q=.02j, wavelength=1e-6, n=1.)
+    step = SimulationStep(((0, 1), (2, 3)), 4, 5)
+    simulation = make_simulation(
+        (1., 0., aperture, 1., 0., 1., wavelength), (step,), source=source,
+        field_indices=(("wavelength", 6),), parameters=(wavelength,),
     )
 
-    step = SimulationStep(
-        matrix_indices=((0, 1), (2, 3)),
-        length_index=4,
-        refractive_index_index=5,
+    result = simulation.run(xp.array([.8e-6]))
+
+    assert not np.iscomplexobj(result.source.wavelength)
+    assert np.iscomplexobj(result.optical_values[2])
+    expected_q = .02j / (1 + (-1j*.8e-6/(np.pi*1e-6))*.02j)
+    assert result.final.q == pytest.approx(expected_q)
+    assert result.source.wavelength == result.final.wavelength == .8e-6
+
+    width_squared = lambda theta: simulation.run(theta).final.w**2
+    coefficient = .02/(np.pi*1e-6)
+    denominator = 1 + coefficient*.8e-6
+    for function, expected in (
+        (grad(width_squared), [.02/(np.pi*denominator**2)]),
+        (hessian(width_squared), [[-2*.02*coefficient/(np.pi*denominator**3)]]),
+    ):
+        np.testing.assert_allclose(function(xp.array([.8e-6])), expected, rtol=1e-11)
+        np.testing.assert_allclose(jit(function)(xp.array([.8e-6])), expected, rtol=1e-11)
+
+
+@pytest.mark.parametrize("dtype", ["float32", "float64"])
+def test_runtime_source_array_dtype_survives_scalar_roots(dtype):
+    source = RayBundle.numerical_type()(
+        x=xp.array([1e-3, -2e-3], dtype=dtype), theta=xp.array([.01, .02], dtype=dtype), n=1.,
+    )
+    step = SimulationStep(((0, 1), (2, 3)), 4, 5)
+    simulation = make_simulation((1., .1, 0., 1., .1, 1.), (step,), source=source)
+    result = simulation.run()
+    np.testing.assert_allclose(result.final.x, [2e-3, 0.], atol=3e-10)
+    assert result.final.x.dtype == np.dtype(dtype)
+
+
+def test_source_and_optics_share_theta_with_analytical_derivatives_and_jit():
+    distance, initial_x = Parameter(.2).variable(), Parameter(.001).variable()
+    source = Ray.numerical_type()(x=.001, theta=.01, n=1.)
+    step = SimulationStep(((0, 1), (2, 3)), 4, 5)
+    simulation = make_simulation(
+        (1., distance, 0., 1., distance, 1., initial_x), (step,), source=source,
+        field_indices=(("x", 6),), parameters=(distance, initial_x),
     )
 
-    simulation = Simulation(
-        source_spec=fixed_source(),
-        graph=graph,
-        steps=(step,),
-        parameter_info={},
-        location_map={},
-        compile_context={},
-        execution_context={},
-        requirements=(),
-        parameter_graph=None,
-        element_info=element_info_for_steps((step,)),
+    def outputs(theta):
+        result = simulation.run(theta)
+        return xp.stack((result.source.x, result.final.x, result.z[-1]))
+
+    def cost(theta):
+        return simulation.run(theta).final.x**2
+
+    point = xp.array([.3, .002])
+    direction = np.array([.01, 1.])
+    for function, expected in (
+        (outputs, [.002, .005, .3]),
+        (jacobian(outputs), [[0., 1.], [.01, 1.], [1., 0.]]),
+        (grad(cost), .01*direction),
+        (hessian(cost), 2*np.outer(direction, direction)),
+        (grad(lambda t: xp.sum(grad(cost)(t)**2)), 8*.005*np.dot(direction, direction)*direction),
+    ):
+        np.testing.assert_allclose(function(point), expected, rtol=1e-11, atol=1e-13)
+        np.testing.assert_allclose(jit(function)(point), expected, rtol=1e-11, atol=1e-13)
+
+
+def test_string_summary_reads_frozen_values_without_mutating_them():
+    step = SimulationStep(((0, 1), (2, 3)), 4, 5)
+    simulation = make_simulation((1., .1, 0., 1., .1, 1.), (step,))
+    before = simulation.optics_program.evaluate([])
+
+    text = str(simulation)
+
+    assert "Compiled Simulation" in text
+    assert "Stage 0" in text and "CustomElement" in text
+    assert "Total length: 0.1" in text and "Variables: 0" in text
+    assert simulation.optics_program.evaluate([]) == before
+
+
+def test_summary_reconstructs_interleaved_constraint_declaration_order():
+    simulation = make_simulation()
+    simulation.constraint_descriptors = (
+        ConstraintData(0, 0., 1., "first graph", "first"),
+        ConstraintData(2, 0., 1., "last graph", "last"),
     )
+    simulation.callable_constraints = ((1, Constraint(lambda ctx: ctx.theta[0], label="middle callable")),)
 
-    def objective(value):
-        result = simulation.run(xp.array([value]))
-        return result.states[-1].value
+    text = str(simulation)
 
-    derivative = grad(objective)(2.0)
+    assert text.index("first graph") < text.index("middle callable") < text.index("last graph")
+    assert "Constraints: 3" in text
 
-    assert derivative == pytest.approx(2.0)
+
+def test_result_columns_are_existing_quantities_on_each_numerical_state():
+    assert ParaxialState.result_columns == ()
+    states = (
+        Ray.numerical_type()(x=.001, theta=.01, n=1.),
+        RayBundle.numerical_type()(x=xp.array([.001]), theta=xp.array([.01]), n=1.),
+        GaussianBeam.numerical_type()(q=.02j, wavelength=1e-6, n=1.),
+    )
+    for state in states:
+        assert state.result_columns
+        for name in state.result_columns:
+            value = getattr(state, name)
+            assert np.shape(value) in ((), (1,))

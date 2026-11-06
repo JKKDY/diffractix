@@ -16,7 +16,7 @@ from diffractix.graph import (
     Symbol,
     Relation,
     SymbolicControlFlowError,
-    compile_ast,
+    compile_graph,
     InputNode
 )
 
@@ -704,7 +704,7 @@ def test_comparison_cannot_be_compiled_as_ast_root():
         TypeError,
         match="AST root must be a Node",
     ):
-        compile_ast((comparison,))
+        compile_graph((comparison,))
 
 
 # -----------------
@@ -721,11 +721,9 @@ def test_distinct_equal_valued_parameters_remain_distinct():
     x = Parameter(1.0, name="x").variable()
     y = Parameter(1.0, name="x").variable()
 
-    graph = compile_ast((x + y,))
+    graph = compile_graph((x + y,))
 
-    assert len(graph.variables) == 2
-    assert graph.variables[0] is x
-    assert graph.variables[1] is y
+    assert graph.parameter_indices == {id(x): 0, id(y): 1}
 
 
 # --------------

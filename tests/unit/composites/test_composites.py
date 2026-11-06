@@ -1,8 +1,22 @@
+"""Builtin composite wiring and independent aggregate optical matrices."""
+
+import numpy as np
 import pytest
 
 from diffractix.composites import FourF, Slab, ThickLens, Telescope
 from diffractix.system import AMBIENT_N
-from diffractix.graph import InputNode, Parameter
+from diffractix.graph import Node, Parameter
+
+
+def aggregate_matrix(composite, bindings=None):
+    matrix = np.eye(2)
+    for leaf in composite.leaf_elements:
+        current = np.array([
+            [entry.evaluate(bindings or {}) if isinstance(entry, Node) else entry for entry in row]
+            for row in leaf.matrix
+        ])
+        matrix = current @ matrix
+    return matrix
 
 
 # ----
@@ -254,3 +268,68 @@ def test_four_f_composite_parameter_can_be_variable():
     assert four_f.f1.node.is_variable
     assert four_f.input_space.d.node is four_f.f1
     assert four_f.lens1.f.node is four_f.f1
+
+
+@pytest.mark.parametrize("ambient", [1.0, 1.33])
+def test_slab_aggregate_matrix_uses_physical_angle_and_returns_to_ambient(ambient):
+    slab = Slab(d=0.012, n=1.52)
+
+    np.testing.assert_allclose(
+        aggregate_matrix(slab, {AMBIENT_N.key: ambient}),
+        [[1.0, 0.012 * ambient / 1.52], [0.0, 1.0]],
+        atol=1e-15,
+    )
+    assert slab.element_length.evaluate() == pytest.approx(0.012)
+    assert slab.back.refractive_index.evaluate({AMBIENT_N.key: ambient}) == ambient
+
+
+@pytest.mark.parametrize("radii", [(0.08, -0.12), (-0.08, 0.12), (np.inf, np.inf)])
+def test_thick_lens_aggregate_matrix_matches_independent_surface_power(radii):
+    thickness, index, ambient = 0.008, 1.52, 1.33
+    first_radius, second_radius = radii
+    lens = ThickLens(d=thickness, n=index, R1=first_radius, R2=second_radius, n_ambient=ambient)
+    entrance = np.array([[1.0, 0.0], [(ambient - index) / (index * first_radius), ambient / index]])
+    drift = np.array([[1.0, thickness], [0.0, 1.0]])
+    exit = np.array([[1.0, 0.0], [(index - ambient) / (ambient * second_radius), index / ambient]])
+
+    np.testing.assert_allclose(aggregate_matrix(lens), exit @ drift @ entrance, rtol=1e-13, atol=1e-14)
+
+
+@pytest.mark.parametrize("focal_lengths", [(0.1, 0.2), (0.2, 0.1)])
+def test_telescope_is_afocal_with_expected_angular_magnification(focal_lengths):
+    f1, f2 = focal_lengths
+    telescope = Telescope(f1=f1, f2=f2)
+
+    np.testing.assert_allclose(
+        aggregate_matrix(telescope),
+        [[-f2 / f1, f1 + f2], [0.0, -f1 / f2]],
+        atol=1e-14,
+    )
+
+
+@pytest.mark.parametrize("focal_lengths", [(0.1, 0.2), (0.2, 0.1)])
+def test_four_f_images_plane_with_expected_transverse_magnification(focal_lengths):
+    f1, f2 = focal_lengths
+    relay = FourF(f1=f1, f2=f2)
+
+    np.testing.assert_allclose(
+        aggregate_matrix(relay),
+        [[-f2 / f1, 0.0], [0.0, -f1 / f2]],
+        atol=1e-14,
+    )
+
+
+def test_shared_focal_parameter_has_one_degree_of_freedom_after_reassignment():
+    from diffractix.graph import compile_graph
+
+    focal_length = Parameter(0.1).variable()
+    relay = FourF(f1=focal_length, f2=2 * focal_length)
+    roots = (relay.input_space.d, relay.fourier_space.d, relay.output_space.d)
+    program = compile_graph(roots)
+
+    assert program.parameter_indices == {id(focal_length): 0}
+    np.testing.assert_allclose(program.evaluate([0.2]), [0.2, 0.6, 0.4])
+    focal_length.fixed()
+    focal_length.value = 0.15
+    np.testing.assert_allclose([root.evaluate() for root in roots], [0.15, 0.45, 0.3])
+    np.testing.assert_allclose(program.evaluate([0.2]), [0.2, 0.6, 0.4])

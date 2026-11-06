@@ -135,8 +135,10 @@ class System:
                 index = operator.index(index)
             except TypeError:
                 raise TypeError("index must be an integer.") from None
-            if index < 0 or index > len(self._placements):
-                raise ValueError("Insertion index out of range.")
+            if index < 0:
+                index = max(0, len(self._placements) + index)
+            else:
+                index = min(index, len(self._placements))
         if z is not None:
             if not isinstance(z, (Node, Real)) or isinstance(z, bool):
                 raise TypeError(f"z must be a Node, Real, or None; got {type(z).__name__}.")
@@ -179,6 +181,8 @@ class System:
         for input in inputs:
             if not isinstance(input, ParaxialState):
                 raise TypeError(f"Expected a ParaxialState, got {type(input).__name__}.")
+            if getattr(type(input), "_is_numerical", False):
+                raise TypeError("System requires a declarative optical input, not a numerical input.")
 
         self._inputs.extend(inputs)
         return self
@@ -492,6 +496,9 @@ class System:
                 if handle.node is not None:
                     field_indices.append((name, len(roots)))
                     roots.append(handle)
+                elif handle is optical_input.refractive_index:
+                    field_indices.append((name, len(roots)))
+                    roots.append(self.ambient_n)
 
             inputs.append(SimulationInput(
                 initial_state=copy.deepcopy(optical_input.numeric(bindings)),

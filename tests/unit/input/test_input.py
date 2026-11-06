@@ -1,14 +1,14 @@
 """Shared declarations and the symbolic-to-numerical input boundary."""
 
 from dataclasses import dataclass, field, fields
+from types import MappingProxyType
 
 import numpy as np
 import pytest
 
-from diffractix import GaussianBeam, Node, OpticalElement, OpticalInput, Parameter, Ray, RayBundle, Symbol, parameter
-from diffractix.backend import xp
-from diffractix.graph import InputNode
-from diffractix.graph.utils import ASTCycleError
+from diffractix import GaussianBeam, Node, OpticalElement, OpticalInput, Parameter, ParaxialState, Ray, RayBundle, Symbol, parameter
+from diffractix.backend import grad, hessian, jit, xp
+from diffractix.graph import ASTCycleError, InputNode, UnresolvedInputError
 from diffractix.system import AMBIENT_N
 
 
@@ -63,6 +63,13 @@ class DerivedInput(ParentInput):
     @property
     def power(self):
         return self.total**2
+
+
+def test_paraxial_state_requires_a_propagation_implementation_in_both_forms():
+    assert ParaxialState.result_columns == ()
+    for state_type in (ParaxialState, ParaxialState.numerical_type()):
+        with pytest.raises(TypeError, match="abstract.*propagate"):
+            state_type()
 
 
 @pytest.mark.parametrize("object_type", [ExampleInput, ExampleElement])
@@ -186,12 +193,11 @@ def test_failed_cyclic_conversion_can_be_repaired_without_changing_prior_results
     assert type(repaired) is type(previous)
 
 
-@pytest.mark.parametrize("bindings", [None, {}])
-def test_numeric_requires_a_binding_for_a_symbol_without_a_default(bindings):
+def test_numeric_requires_a_binding_for_a_symbol_without_a_default():
     source = ExampleInput(direct=Symbol("required_input", default=None))
 
     with pytest.raises(KeyError, match="required_input"):
-        source.numeric(bindings)
+        source.numeric()
 
 
 @pytest.mark.parametrize("value_factory", [
@@ -313,3 +319,121 @@ def test_builtin_inputs_declare_only_scalar_parameters_and_bind_ambient(input_ty
     numerical = source.numeric({AMBIENT_N.key: 1.5})
     assert numerical.refractive_index == 1.5
     assert numerical.parameter_names == ()
+
+
+def test_numeric_resolves_node_bindings_and_aliases_without_mutating_them():
+    parameter_value = Parameter(2.0).variable()
+    expression = 3 * parameter_value + 1
+    source = ExampleInput(direct=Symbol("alias"), explicit=Symbol("expression"))
+    bindings = MappingProxyType({"alias": Symbol("expression"), "expression": expression})
+
+    first = source.numeric(bindings)
+    parameter_value.value = 4.0
+    second = source.numeric(bindings)
+
+    assert (first.direct, first.explicit) == (7.0, 7.0)
+    assert (second.direct, second.explicit) == (13.0, 13.0)
+    assert bindings["expression"] is expression
+    assert bindings["alias"].key == "expression"
+    assert source.direct.node.key == "alias"
+    assert parameter_value.is_variable
+
+
+def test_missing_alias_binding_can_be_repaired_without_rebuilding_input():
+    source = ExampleInput(direct=Symbol("alias"))
+    handle = source.direct
+    bindings = {"alias": Symbol("required")}
+
+    with pytest.raises(KeyError, match="required"):
+        source.numeric(bindings)
+
+    bindings["required"] = 8.0
+    assert source.numeric(bindings).direct == 8.0
+    assert source.direct is handle
+    assert source.direct.node.key == "alias"
+
+
+def test_numeric_rejects_empty_dependencies_but_can_retry_after_repair():
+    empty = InputNode(None)
+    source = ExampleInput(direct=empty + 1)
+
+    with pytest.raises(UnresolvedInputError, match="empty InputNode"):
+        source.numeric()
+
+    empty.node = Parameter(3.0)
+    assert source.numeric().direct == 4.0
+
+
+def test_numeric_preserves_backend_scalar_binding_identity_and_dtype():
+    source = ExampleInput(direct=Symbol("signal"))
+    signal = xp.array(1.25, dtype="float32")
+
+    numerical = source.numeric({"signal": signal})
+
+    assert numerical.direct is signal
+    assert numerical.direct.dtype == np.dtype("float32")
+    assert numerical.numerical_type() is type(numerical)
+    assert isinstance(source.direct, InputNode)
+
+
+def test_numeric_binding_path_retains_gradients_hessians_and_jit():
+    signal = Symbol("signal")
+    source = ExampleInput(direct=signal.sin() + signal**2)
+    evaluate = lambda value: source.numeric({"signal": value}).direct
+    point = 0.4
+
+    for function, expected in (
+        (evaluate, np.sin(point) + point**2),
+        (grad(evaluate), np.cos(point) + 2 * point),
+        (hessian(evaluate), 2 - np.sin(point)),
+    ):
+        np.testing.assert_allclose(function(point), expected, rtol=1e-12)
+        np.testing.assert_allclose(jit(function)(point), expected, rtol=1e-12)
+    assert source.direct.node.left.operand is signal
+
+
+def test_builtin_default_symbols_and_constraints_are_independent_per_input():
+    first = Ray(x=0.0, theta=0.0)
+    second = Ray(x=0.0, theta=0.0)
+    constraint = first.x >= 0
+
+    first.n.node.set_default(1.5)
+    first.require(constraint)
+
+    assert first.n.node is not second.n.node
+    assert first.numeric().n == 1.5
+    with pytest.raises(KeyError, match="ambient_n"):
+        second.numeric()
+    assert len(first.constraints) == 1 and first.constraints[0] is constraint
+    assert second.constraints == ()
+
+
+@pytest.mark.parametrize("input_type, arguments, quantity, expected", [
+    (Ray, {"x": 1e-3, "theta": 0.01, "n": 1.0}, "x", 2e-3),
+    (RayBundle, {"x": np.array([1e-3]), "theta": np.array([0.01]), "n": 1.0}, "x", [2e-3]),
+    (GaussianBeam, {"q": 1j, "wavelength": 1e-6, "n": 1.0}, "q", 0.1 + 1j),
+])
+def test_custom_input_subclasses_remain_numerical_after_inherited_propagation(
+    input_type, arguments, quantity, expected,
+):
+    @dataclass(eq=False)
+    class CustomInput(input_type):
+        calibration: float = 1.25
+
+        @property
+        def calibrated_value(self):
+            return self.calibration * getattr(self, quantity)
+
+    declarative = CustomInput(**arguments)
+    source = declarative.numeric()
+    propagated = source.propagate(1.0, 0.1, 0.0, 1.0, n=1.33)
+
+    assert type(propagated) is type(source) is CustomInput.numerical_type()
+    assert isinstance(propagated, CustomInput)
+    assert propagated.parameter_names == ()
+    np.testing.assert_allclose(getattr(propagated, quantity), expected)
+    np.testing.assert_allclose(propagated.calibrated_value, 1.25 * np.asarray(expected))
+    assert propagated.refractive_index == 1.33
+    assert source.refractive_index == 1.0
+    propagated.n = 1.5
+    assert propagated.n == 1.5 and not isinstance(propagated.n, Node)

@@ -1,27 +1,24 @@
-"""System construction, registration, and declarative validation."""
+"""Declarative System registration, bindings, constraints and validation."""
 
-import pytest
-from pathlib import Path
 from dataclasses import dataclass
-from diffractix import Ray
-from diffractix.composites import Slab
-from diffractix.composites import CompositeElement
-from diffractix.system import AMBIENT_N
-from diffractix.elements import OpticalElement, Space, ThinLens
-from diffractix.graph import Node, Parameter
-from diffractix.graph import Symbol
-from diffractix.system.system import System, Placement, CallSite
-from diffractix.system.errors import SystemValidationError
+
+import numpy as np
+import pytest
+
+from diffractix import GaussianBeam, Ray
+from diffractix.composites import CompositeElement, Slab
+from diffractix.elements import OpticalElement, Plane, Space, ThinLens
+from diffractix.graph import Literal, Parameter, Symbol
+from diffractix.system import AMBIENT_N, System, SystemValidationError
+from diffractix.system.info import CallSite, Placement
 from diffractix.system.symbols import make_symbol
 
 
 @dataclass(eq=False, kw_only=True)
 class FailingElement(OpticalElement):
-    x: Node
-
     @property
     def matrix(self):
-        return ((1.0, self.x), (0.0, 1.0))
+        return ((1.0, 0.0), (0.0, 1.0))
 
     @property
     def element_length(self):
@@ -34,592 +31,303 @@ class FailingElement(OpticalElement):
 class FailingComposite(CompositeElement):
     def __init__(self):
         self.good = ThinLens(f=0.1)
-        self.bad = FailingElement(x=1.0)
+        self.bad = FailingElement(label="Broken child")
         super().__init__()
 
 
+@dataclass(eq=False, kw_only=True)
+class BoundPlane(Plane):
+    supplied_bindings: object = None
+
+    @property
+    def bindings(self):
+        return self.supplied_bindings
+
+
 @pytest.mark.parametrize("default", [1.5, 0.0, None])
-def test_make_symbol_preserves_default_metadata(default):
-    source = Symbol("ambient_n", default=default)
+def test_make_symbol_copies_metadata_into_independent_instances(default):
+    prototype = Symbol(("medium", 1), default=default)
 
     @dataclass
     class Holder:
-        symbol: Symbol = make_symbol(source)
+        symbol: Symbol = make_symbol(prototype)
 
-    first = Holder().symbol
-    second = Holder().symbol
-
-    assert first is not source
-    assert second is not first
-    assert first.key == source.key
+    first, second = Holder().symbol, Holder().symbol
+    assert first is not prototype and second is not first
+    assert first.key == second.key == prototype.key
+    assert first.default == second.default == default
     assert first.has_default is (default is not None)
-    assert first.default == default
-    assert second.has_default is (default is not None)
-    assert second.default == default
+    first.set_default(9.0)
+    assert prototype.default == second.default == default
 
 
-def make_beam():
-    return Ray(
-        x=0.0,
-        theta=0.0,
-    )
+def test_variadic_constructor_matches_incremental_registration():
+    first, second = Space(d=0.1), ThinLens(f=0.2)
+    source = Ray(x=0.001, theta=0.01)
+    variadic = System(first, second, optical_input=source)
+    incremental = System().add(first).add(second).add_input(source)
+    assert variadic.elements == incremental.elements == (first, second)
+    assert variadic._inputs[0] is incremental._inputs[0] is source
+    assert variadic.ambient_n.value == 1.0 and not variadic.ambient_n.is_variable
+    assert System().placements == ()
 
 
-def test_call_site_string():
-    info = CallSite(
-        file="example.py",
-        line=42,
-        call_index=0,
-    )
-
-    assert str(info) == "example.py:42"
-
-
-def test_placement_description():
-    lens = ThinLens(f=0.1, label="Lens")
-    placement = Placement(
-        element=lens,
-        z=0.5,
-        call_site=CallSite(
-            file="example.py",
-            line=42,
-            call_index=0,
-        ),
-    )
-
-    assert placement.describe(2) == (
-        "Placement #2 (ThinLens 'Lens') added at example.py:42"
-    )
+def test_ambient_parameter_identity_and_rebinding_are_preserved():
+    ambient = Parameter(1.33).variable()
+    system = System(ambient_n=ambient)
+    assert system.ambient_n is system.bindings[AMBIENT_N.key] is ambient
+    assert system.set_ambient_n(1.5) is system
+    assert system.ambient_n is system.bindings[AMBIENT_N.key]
+    assert system.ambient_n.value == 1.5 and not system.ambient_n.is_variable
+    assert ambient.value == 1.33 and ambient.is_variable
 
 
-def test_placement_description_without_index():
-    lens = ThinLens(f=0.1, label="Lens")
-    placement = Placement(element=lens)
-
-    assert placement.describe() == "Placement (ThinLens 'Lens')"
-
-
-def test_add_tracks_repeated_source_line_execution():
+@pytest.mark.parametrize("value", [0, -1.0, np.inf, -np.inf, np.nan])
+def test_invalid_ambient_domain_does_not_replace_existing_binding(value):
     system = System()
-
-    for _ in range(3):
-        system.add(ThinLens(f=0.1))
-
-    assert [placement.call_site.call_index for placement in system.placements] == [
-        0,
-        1,
-        2,
-    ]
+    original = system.ambient_n
+    with pytest.raises(ValueError, match="finite and positive"):
+        system.set_ambient_n(value)
+    assert system.ambient_n is original and system.bindings[AMBIENT_N.key] is original
 
 
-def test_system_preserves_positional_ambient_index_constructor():
-    system = System(1.33, True)
-    assert system.ambient_n.value == pytest.approx(1.33)
-    assert system.ambient_n.is_variable
-    assert system.elements == ()
+@pytest.mark.parametrize("value", [True, 1j, "1.0", object()])
+def test_ambient_rejects_non_real_scalars(value):
+    with pytest.raises(TypeError, match="real scalar"):
+        System(ambient_n=value)
 
 
-def test_variadic_system_uses_existing_element_validation():
-    with pytest.raises(TypeError, match="OpticalElement"):
-        System(ThinLens(f=0.1), object())
+@pytest.mark.parametrize("container", [list, tuple, iter], ids=["list", "tuple", "iterator"])
+def test_add_nested_sequences_preserves_composites_and_leaf_order(container):
+    first, last = Plane(), ThinLens(f=0.1)
+    slab = Slab(d=0.01, n=1.5)
+    system = System()
+    assert system.add(container([first, [slab, last]])) is system
+    assert system.elements == (first, slab, last)
+    assert all(p.element is e for p, e in zip(system.placements, (first, slab, last)))
 
 
 @pytest.mark.parametrize("index", [0, 1, -1, -100, 100])
 @pytest.mark.parametrize("count", [1, 2])
-def test_add_indexed_elements_preserves_order_and_python_insertion(index, count):
+def test_indexed_insertion_preserves_python_list_semantics(index, count):
+    """Retain the promised Python-list insertion boundary cases as regressions."""
     original = [Space(d=0.1), ThinLens(f=0.1), Space(d=0.2)]
     additions = [ThinLens(f=0.2), ThinLens(f=0.3)][:count]
-    expected = original.copy()
     position = min(len(original), max(0, index if index >= 0 else len(original) + index))
+    expected = original.copy()
     expected[position:position] = additions
     system = System(*original)
-
     assert system.add(*additions, index=index) is system
     assert len(system.elements) == len(expected)
-    assert all(a is b for a, b in zip(system.elements, expected))
-    assert all(placement.call_site is not None for placement in system.placements)
+    assert all(actual is wanted for actual, wanted in zip(system.elements, expected))
 
 
-def test_add_variadic_append_and_indexed_nested_iterable():
+def test_indexed_nested_insert_and_keyword_position_keep_order():
     first, second, third, fourth = (ThinLens(f=f) for f in (0.1, 0.2, 0.3, 0.4))
-    system = System().add(first, fourth)
-    system.add([second, [third]], index=-1)
+    system = System(first, fourth)
+    system.add([second, [third]], index=np.int64(1))
     assert system.elements == (first, second, third, fourth)
+    image = Plane()
+    system.add(image, z=0.5, index=2)
+    assert system.placements[2].element is image and system.placements[2].z == 0.5
 
 
-def test_add_indexed_position_preserves_legacy_positional_z():
-    lens = ThinLens(f=0.1)
-    system = System(Space(d=0.1))
-    system.add(lens, 0.5, index=0)
-    assert system.placements[0].element is lens
-    assert system.placements[0].z == 0.5
-    with pytest.raises(TypeError, match="z supplied more than once"):
-        system.add(lens, 0.5, z=0.6)
+@pytest.mark.parametrize("index", [True, np.bool_(True), 1.5, "1", object()])
+def test_invalid_insertion_index_does_not_mutate_system(index):
+    system = System(Plane())
+    before = system.placements
+    with pytest.raises(TypeError, match="integer"):
+        system.add(ThinLens(f=0.1), index=index)
+    assert system.placements == before
 
 
-def test_add_index_reuses_validation():
-    system = System()
-    with pytest.raises(TypeError):
-        system.add(ThinLens(f=0.1), index=1.5)
+@pytest.mark.parametrize("invalid", [None, True, 1.0, object(), "lens", b"lens"])
+def test_batch_registration_validates_every_element_before_mutating(invalid):
+    system = System(Plane())
+    before = system.placements
     with pytest.raises(TypeError, match="OpticalElement"):
-        system.add([object()], index=0)
+        system.add(ThinLens(f=0.1), [invalid])
+    assert system.placements == before
+
+
+def test_empty_registration_and_multiple_absolute_positions_fail_atomically():
+    system = System()
+    with pytest.raises(ValueError, match="At least one"):
+        system.add([])
     with pytest.raises(ValueError, match="absolute position"):
-        system.add(ThinLens(f=0.1), Space(d=0.1), z=0.5, index=0)
-    assert system.elements == ()
-
-
-def test_system_initializes_ambient_index():
-    system = System()
-
-    assert system.ambient_n.value == pytest.approx(1.0)
-    assert not system.ambient_n.is_variable
-
-
-def test_system_ambient_index_can_be_variable():
-    system = System(
-        ambient_n=1.33,
-        ambient_n_variable=True,
-    )
-
-    assert system.ambient_n.value == pytest.approx(1.33)
-    assert system.ambient_n.is_variable
-
-
-def test_ambient_index_is_registered_in_context():
-    system = System()
-
-    assert system.compile_context[AMBIENT_N.key] is system.ambient_n
-
-
-def test_system_starts_without_elements():
-    system = System()
-
-    assert system.elements == ()
+        system.add(ThinLens(f=0.1), Space(d=0.1), z=0.5)
     assert system.placements == ()
 
 
-def test_add_single_element():
+@pytest.mark.parametrize("z, error", [
+    (True, TypeError), (1j, TypeError), ("0.5", TypeError), (object(), TypeError),
+    (-0.1, ValueError), (np.inf, ValueError), (-np.inf, ValueError), (np.nan, ValueError),
+])
+def test_invalid_absolute_position_is_rejected_at_registration(z, error):
+    system = System(Plane())
+    before = system.placements
+    with pytest.raises(error, match="z"):
+        system.add(ThinLens(f=0.1), z=z)
+    assert system.placements == before
+
+
+@pytest.mark.parametrize("position", [Parameter(0.5).variable(), Parameter(0.1) + 0.4])
+def test_symbolic_absolute_position_keeps_its_declarative_dependency(position):
+    assert System().add(Plane(), z=position).placements[0].z is position
+
+
+def test_registration_records_call_site_and_repeated_execution_count():
     system = System()
-    lens = ThinLens(f=0.1)
+    for _ in range(3):
+        system.add(ThinLens(f=0.1))
+    sites = [placement.call_site for placement in system.placements]
+    assert all(site.file == test_registration_records_call_site_and_repeated_execution_count.__code__.co_filename
+               for site in sites)
+    assert len({site.line for site in sites}) == 1 and sites[0].line > 0
+    assert [site.call_index for site in sites] == [0, 1, 2]
+    assert str(sites[0]) == f"{sites[0].file}:{sites[0].line}"
 
-    result = system.add(lens)
 
-    assert result is system
-    assert system.elements == (lens,)
-    assert len(system.placements) == 1
-    assert system.placements[0].element is lens
+def test_placement_description_includes_identity_and_location():
+    placement = Placement(ThinLens(f=0.1, label="Focus"), call_site=CallSite("design.py", 42, 0))
+    text = placement.describe(2)
+    assert "#2" in text and "ThinLens" in text and "Focus" in text and "design.py:42" in text
 
 
-def test_add_fixed_absolute_position():
+def test_add_input_rejects_numerical_states_without_mutating_system():
     system = System()
-    lens = ThinLens(f=0.1)
+    numerical = Ray(x=0.001, theta=0.0, n=1.0).numeric()
 
-    system.add(lens, z=0.5)
+    with pytest.raises(TypeError, match="declarative optical input"):
+        system.add_input(numerical)
+    with pytest.raises(TypeError, match="declarative optical input"):
+        System(optical_input=numerical)
 
-    assert system.placements[0].z == pytest.approx(0.5)
+    assert system.add_input(Ray(x=0.001, theta=0.0, n=1.0)) is system
 
 
-def test_add_parameter_absolute_position():
+def test_add_input_rejects_invalid_and_additional_inputs_without_replacement():
     system = System()
-    lens = ThinLens(f=0.1)
-    z = Parameter(0.5).variable()
+    with pytest.raises(TypeError, match="ParaxialState"):
+        system.add_input(object())
+    with pytest.raises(ValueError, match="At least one"):
+        system.add_input([])
+    first = Ray(x=0, theta=0)
+    assert system.add_input([first]) is system
+    with pytest.raises(ValueError, match="Multiple"):
+        system.add_input(Ray(x=0.001, theta=0))
+    assert system._inputs == [first]
 
-    system.add(lens, z=z)
 
-    assert system.placements[0].z is z
-    assert z.is_variable
-
-
-def test_add_expression_absolute_position():
+@pytest.mark.parametrize("key", ["", None, 123, False, ("calibration", 1)])
+def test_bind_accepts_hashable_keys_and_wraps_real_values(key):
     system = System()
-    lens1 = ThinLens(f=0.1)
-    lens2 = ThinLens(f=0.2)
-    z = lens1.f + 0.5
-
-    system.add(lens2, z=z)
-
-    assert system.placements[0].z is z
+    assert system.bind(key, 293.15) is system
+    node = system.bindings[key]
+    assert isinstance(node, Parameter) and not node.is_variable
+    assert node.value == 293.15 and node.name == (key if isinstance(key, str) else None)
 
 
-@pytest.mark.parametrize(
-    "container", [list, tuple, lambda items: (item for item in items)],
-    ids=["list", "tuple", "generator"],
-)
-def test_add_element_iterables_preserve_order_and_identity(container):
+def test_bind_preserves_nodes_complex_values_and_a_read_only_live_view():
     system = System()
-    first = ThinLens(f=0.1)
-    second = ThinLens(f=0.2)
-
-    assert system.add(container([first, second])) is system
-
-    assert system.elements == (
-        first,
-        second,
-    )
-    assert system.placements[0].element is first
-    assert system.placements[1].element is second
+    parameter = Parameter(2.0).variable()
+    view = system.bindings
+    system.bind("gain", parameter).bind("phase", 1 + 2j)
+    assert view["gain"] is parameter
+    assert isinstance(view["phase"], Literal) and view["phase"].value == 1 + 2j
+    with pytest.raises(TypeError):
+        view["gain"] = Parameter(9.0)
+    system.bind("gain", 3.0)
+    assert view["gain"].value == 3.0 and parameter.value == 2.0
 
 
-def test_add_composite_as_single_element():
+@pytest.mark.parametrize("key, value", [([], 1), ({}, 1), ("invalid", True),
+                                          ("invalid", [1]), ("invalid", "1"), ("invalid", object())])
+def test_invalid_binding_leaves_existing_bindings_unchanged(key, value):
     system = System()
+    before = dict(system.bindings)
+    with pytest.raises(TypeError):
+        system.bind(key, value)
+    assert system.bindings.keys() == before.keys()
+    assert all(system.bindings[key] is node for key, node in before.items())
+
+
+def test_collect_bindings_combines_sources_and_deduplicates_reused_elements():
+    first = BoundPlane(supplied_bindings={"calibration": Parameter(2)})
+    second = BoundPlane(supplied_bindings={("phase", 0): Literal(1j)})
+    source = GaussianBeam(q=0.02j, wavelength=1.064e-6, n=1.0)
+    system = System(first, second, first, optical_input=source).bind("user", 3)
+    combined = system._collect_bindings()
+    assert combined["wavelength"] is source.wavelength
+    assert combined["calibration"] is first.bindings["calibration"]
+    assert combined[("phase", 0)] is second.bindings[("phase", 0)]
+    assert combined["user"] is system.bindings["user"]
+    combined["new"] = 1
+    assert "new" not in first.bindings and "new" not in system.bindings
+
+
+def test_collect_bindings_rejects_collisions_instead_of_overriding():
+    shared = Parameter(2)
+    first = BoundPlane(supplied_bindings={"gain": shared})
+    second = BoundPlane(supplied_bindings={"gain": shared})
+    for system in (System(first, second), System(first).bind("gain", shared)):
+        with pytest.raises(ValueError, match="gain"):
+            system._collect_bindings()
+    assert first.bindings["gain"] is shared
+
+
+def test_system_binding_cannot_silently_override_source_wavelength():
+    source = GaussianBeam(q=0.02j, wavelength=1.064e-6, n=1.0)
+    system = System(optical_input=source).bind("wavelength", 1.55e-6)
+    with pytest.raises(ValueError, match="Duplicate symbol binding.*wavelength"):
+        system._collect_bindings()
+    assert source.wavelength.value == 1.064e-6
+    assert system.bindings["wavelength"].value == 1.55e-6
+
+
+def test_constraints_collect_system_input_composite_and_children_once_in_order():
+    source = Ray(x=0, theta=0, n=1.0)
     slab = Slab(d=0.01, n=1.5)
-
-    system.add(slab)
-
-    assert system.elements == (slab,)
-    assert system.placements[0].element is slab
-
-
-def test_add_sequence_with_absolute_position_is_rejected():
-    system = System()
-    elements = [
-        ThinLens(f=0.1),
-        ThinLens(f=0.2),
-    ]
-
-    with pytest.raises(ValueError):
-        system.add(elements, z=0.5)
+    direct, input_constraint, composite_constraint = source.x >= -1, source.theta <= 1, slab.d <= 0.02
+    system = System(slab, slab, optical_input=source).require(direct)
+    source.require(input_constraint)
+    slab.require(composite_constraint)
+    expected = (direct, input_constraint, composite_constraint,
+                *slab.front.constraints, *slab.body.constraints, *slab.back.constraints)
+    actual = system.constraints
+    assert isinstance(actual, tuple) and len(actual) == len(expected)
+    assert all(a is b for a, b in zip(actual, expected))
+    assert system.system_constraints == (direct,) and slab.constraints == (composite_constraint,)
 
 
-@pytest.mark.parametrize(
-    "z",
-    [
-        True,
-        False,
-        "0.5",
-        object(),
-        [],
-        {},
-        1 + 2j,
-    ],
-)
-def test_add_rejects_invalid_absolute_position_types(z):
-    system = System()
-    lens = ThinLens(f=0.1)
-
-    with pytest.raises(TypeError):
-        system.add(lens, z=z)
-
-
-@pytest.mark.parametrize(
-    "element",
-    [
-        None,
-        1,
-        1.5,
-        True,
-        object(),
-        "lens",
-        b"lens",
-    ],
-)
-def test_add_rejects_invalid_element_types(element):
-    system = System()
-
-    with pytest.raises(TypeError):
-        system.add(element)
-
-
-def test_add_sequence_rejects_invalid_child():
-    system = System()
-    lens = ThinLens(f=0.1)
-
-    with pytest.raises(TypeError):
-        system.add([lens, object()])
-
-
-def test_add_supports_chaining():
-    system = System()
-    first = ThinLens(f=0.1)
-    second = ThinLens(f=0.2)
-
-    result = system.add(first).add(second)
-
-    assert result is system
-    assert system.elements == (
-        first,
-        second,
-    )
-
-
-def test_add_records_call_sitermation():
-    system = System()
-    lens = ThinLens(f=0.1)
-
-    system.add(lens)
-
-    info = system.placements[0].call_site
-
-    assert info is not None
-    # Shared bytecode caches can retain another platform's source filename.
-    assert info.file == test_add_records_call_sitermation.__code__.co_filename
-    assert info.line > 0
-    assert info.call_index == 0
-
-
-@pytest.mark.parametrize(
-    "value",
-    [
-        True,
-        False,
-        "293.15",
-        object(),
-        [],
-        {},
-        1 + 2j,
-    ],
-)
-def test_add_context_rejects_invalid_values(value):
-    system = System()
-
-    with pytest.raises(TypeError):
-        system.add_context("temperature", value)
-
-
-def test_add_numeric_context_value():
-    system = System()
-
-    result = system.add_context("temperature", 293.15)
-
-    assert result is system
-    assert isinstance(system.compile_context["temperature"], Parameter)
-    assert system.compile_context["temperature"].value == pytest.approx(293.15)
-    assert not system.compile_context["temperature"].is_variable
-    assert system.compile_context["temperature"].name == "temperature"
-
-
-@pytest.mark.parametrize(
-    "key",
-    [
-        "",
-        None,
-        123,
-        False,
-        ("result", 1, "w"),
-    ],
-)
-def test_add_context_accepts_hashable_keys(key):
-    system = System()
-
-    result = system.add_context(key, 293.15)
-
-    assert result is system
-    assert isinstance(system.compile_context[key], Parameter)
-    assert system.compile_context[key].value == pytest.approx(293.15)
-    assert system.compile_context[key].name == (key if isinstance(key, str) else None)
-
-
-def test_add_context_preserves_node_identity():
-    system = System()
-    temperature = Parameter(293.15).variable()
-
-    system.add_context("temperature", temperature)
-
-    assert system.compile_context["temperature"] is temperature
-
-
-def test_add_context_replaces_existing_value():
-    system = System()
-
-    system.add_context("temperature", 293.15)
-    system.add_context("temperature", 300.0)
-
-    assert system.compile_context["temperature"].value == pytest.approx(300.0)
-
-
-@pytest.mark.parametrize(
-    "key",
-    [
-        [],
-        {},
-        {"unhashable": []},
-    ],
-)
-def test_add_context_rejects_unhashable_keys(key):
-    system = System()
-
-    with pytest.raises(TypeError, match="Compile context key must be hashable"):
-        system.add_context(key, 1.0)
-
-
-def test_add_input_beam():
-    system = System()
-    beam = make_beam()
-
-    result = system.add_input_beam(beam)
-
-    assert result is system
-    assert system.beam is beam
-
-
-def test_add_input_beam_replaces_previous_beam():
-    system = System()
-    first = make_beam()
-    second = Ray(
-        x=0.1,
-        theta=0.01,
-    )
-
-    system.add_input_beam(first)
-    system.add_input_beam(second)
-
-    assert system.beam is second
-
-
-def test_validate_requires_input_beam():
-    system = System()
-    system.add(ThinLens(f=0.1))
-
-    with pytest.raises(SystemValidationError) as exc_info:
+def test_validation_aggregates_missing_input_and_nested_element_errors():
+    system = System(FailingElement(label="Broken direct"), FailingComposite())
+    with pytest.raises(SystemValidationError) as error:
         system._validate()
-
-    assert "No input beam has been set" in str(exc_info.value)
-
-
-def test_validate_rejects_invalid_input_beam():
-    system = System()
-    system.add_input_beam(object())
-
-    with pytest.raises(SystemValidationError) as exc_info:
-        system._validate()
-
-    assert "Input beam must be a ParaxialState" in str(exc_info.value)
+    assert len(error.value.errors) == 3
+    text = str(error.value)
+    assert "No input" in text and "Broken direct" in text and "child 'bad'" in text
+    assert "intentional validation failure" in text and "Placement #0" in text
 
 
-@pytest.mark.parametrize(
-    "ambient_n",
-    [
-        0.0,
-        -1.0,
-        -1.33,
-        float("inf"),
-        float("-inf"),
-        float("nan"),
-    ],
-)
-def test_validate_rejects_invalid_ambient_index(ambient_n):
-    system = System(ambient_n=ambient_n)
-    system.add_input_beam(make_beam())
-
-    with pytest.raises(SystemValidationError) as exc_info:
-        system._validate()
-
-    assert "Ambient refractive index must be finite and positive" in str(exc_info.value)
-
-
-@pytest.mark.parametrize(
-    "z",
-    [
-        -1.0,
-        -0.1,
-        float("inf"),
-        float("-inf"),
-        float("nan"),
-    ],
-)
-def test_validate_rejects_invalid_fixed_absolute_positions(z):
-    system = System()
-    system.add_input_beam(make_beam())
-    system.add(ThinLens(f=0.1), z=z)
-
-    with pytest.raises(SystemValidationError) as exc_info:
-        system._validate()
-
-    assert "absolute position z" in str(exc_info.value)
-
-
-def test_validate_calls_element_validation():
-    system = System()
-    system.add_input_beam(make_beam())
-    system.add(FailingElement(x=1.0, label="Broken"))
-
-    with pytest.raises(SystemValidationError) as exc_info:
-        system._validate()
-
-    text = str(exc_info.value)
-    assert "Broken" in text
-    assert "intentional validation failure" in text
-
-
-def test_validate_calls_leaf_validation_for_composite():
-    system = System()
-    system.add_input_beam(make_beam())
-    system.add(FailingComposite())
-
-    with pytest.raises(SystemValidationError) as exc_info:
-        system._validate()
-
-    text = str(exc_info.value)
-    assert "bad" in text
-    assert "FailingElement" in text
-    assert "intentional validation failure" in text
-
-
-def test_validate_reports_element_validation_location():
-    system = System()
-    system.add_input_beam(make_beam())
-    system.add(FailingElement(x=1.0, label="Broken"))
-
-    with pytest.raises(SystemValidationError) as exc_info:
-        system._validate()
-
-    text = str(exc_info.value)
-    assert "Placement #0" in text
-    assert "Broken" in text
-    assert Path(__file__).name in text
-
-
-def test_validate_collects_multiple_errors():
-    system = System(ambient_n=-1.0)
-    system.add(ThinLens(f=0.1), z=-0.5)
-
-    with pytest.raises(SystemValidationError) as exc_info:
-        system._validate()
-
-    error = exc_info.value
-
-    assert len(error.errors) >= 3
-    assert "No input beam has been set" in str(error)
-    assert "Ambient refractive index" in str(error)
-    assert "absolute position z" in str(error)
-
-
-def test_requirements_are_empty_by_default():
-    system = System()
-
-    assert system.requirements == ()
-
-
-def test_require_adds_requirements():
-    system = System()
-    parameter = Parameter(1.0)
-    first = parameter >= 0.0
-    second = parameter <= 2.0
-
-    result = system.require(first, second)
-
-    assert result is system
-    assert system.requirements[0] is first
-    assert system.requirements[1] is second
-
-
-def test_system_rejects_element_with_structural_equality():
+def test_structural_equality_is_rejected_before_batch_mutation():
     @dataclass(kw_only=True)
-    class BadElement(OpticalElement):
-        x: Node
-
-        @property
-        def matrix(self):
-            return ((1.0, 0.0), (0.0, 1.0))
-
-        @property
-        def element_length(self):
-            return 0.0
+    class EqualPlane(Plane):
+        pass
 
     system = System()
+    with pytest.raises(TypeError, match=r"dataclass\(eq=False\)"):
+        system.add(Plane(), EqualPlane())
+    assert system.placements == ()
 
-    with pytest.raises(
-        TypeError,
-        match="dataclass\\(eq=False\\)",
-    ):
-        system.add(BadElement(x=1.0))
+
+def test_summary_describes_design_without_resolving_or_mutating_it():
+    lens = ThinLens(f=0.1, label="Focus").variable("f")
+    system = System(lens, optical_input=Ray(x=0, theta=0, n=1.0))
+    constraint = lens.f >= 0.05
+    assert system.require(constraint) is system
+    before = system.placements
+    text = str(system)
+    assert "Focus" in text and "ThinLens" in text and "VAR" in text
+    assert "Constraints: 1" in text and "Ray" in text
+    assert system.placements == before and system.system_constraints[0] is constraint

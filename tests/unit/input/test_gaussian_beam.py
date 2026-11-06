@@ -153,3 +153,100 @@ def test_other_factory_derivatives_and_jit_match_independent_formulas(kind):
         function = differentiate(imaginary_q)
         np.testing.assert_allclose(function(point), expected, rtol=1e-11, atol=1e-12)
         np.testing.assert_allclose(jit(function)(point), expected, rtol=1e-11, atol=1e-12)
+
+
+def test_gaussian_properties_follow_the_complex_q_definition_in_glass():
+    wavelength, index = 1.064e-6, 1.5
+    beam = GaussianBeam(q=0.03 + 0.04j, wavelength=wavelength, n=index).numeric()
+    waist = np.sqrt(0.04 * wavelength / (np.pi * index))
+
+    np.testing.assert_allclose(
+        [beam.w, beam.R, beam.z_r, beam.z0, beam.w0, beam.divergence_angle,
+         beam.NA, beam.gouy_phase, beam.b],
+        [np.sqrt(wavelength / (16 * np.pi * index)), 1 / 12, 0.04, -0.03,
+         waist, wavelength / (np.pi * index * waist),
+         wavelength / (np.pi * waist), np.arctan2(0.03, 0.04), 0.08],
+        rtol=1e-12,
+    )
+    assert beam.bindings["wavelength"] == wavelength
+
+
+@pytest.mark.parametrize("distance", [-0.03, 0.0, 0.08])
+def test_gaussian_free_space_helpers_match_analytical_beam_envelope(distance):
+    width, wavelength, index = 0.7e-3, 1.064e-6, 1.33
+    rayleigh_range = np.pi * index * width**2 / wavelength
+    source = GaussianBeam.from_waist(width, wavelength, n=index).numeric()
+    propagated = source.propagate(1.0, distance, 0.0, 1.0, n=index)
+    expected_width = width * np.sqrt(1 + (distance / rayleigh_range)**2)
+
+    assert propagated.q == pytest.approx(distance + 1j * rayleigh_range)
+    assert propagated.w == pytest.approx(expected_width)
+    assert source.w_at_z(distance) == pytest.approx(expected_width)
+    if distance == 0:
+        assert np.isinf(propagated.R) and np.isinf(source.R_at_z(distance))
+    else:
+        expected_radius = distance + rayleigh_range**2 / distance
+        assert propagated.R == pytest.approx(expected_radius)
+        assert source.R_at_z(distance) == pytest.approx(expected_radius)
+    assert source.q == pytest.approx(1j * rayleigh_range)
+    assert type(propagated) is type(source)
+
+
+def test_overlap_matches_waist_size_formula_and_is_symmetric():
+    first_width, second_width = 0.7e-3, 1.1e-3
+    first = GaussianBeam.from_waist(first_width, 1.064e-6, n=1.5).numeric()
+    second = GaussianBeam.from_waist(second_width, 1.064e-6, n=1.5).numeric()
+    expected = 4 * first_width**2 * second_width**2 / (first_width**2 + second_width**2)**2
+
+    assert first.overlap_with(first) == pytest.approx(1.0)
+    assert first.overlap_with(second) == pytest.approx(expected)
+    assert second.overlap_with(first) == pytest.approx(expected)
+    assert 0 < expected < 1
+
+
+def test_overlap_is_preserved_by_common_lossless_lens_and_drift():
+    first = GaussianBeam(q=0.02 + 0.04j, wavelength=1.064e-6, n=1.33).numeric()
+    second = GaussianBeam(q=-0.01 + 0.06j, wavelength=1.064e-6, n=1.33).numeric()
+    distance, focal_length = 0.03, 0.12
+    matrix = (1 - distance / focal_length, distance, -1 / focal_length, 1.0)
+
+    propagated_first = first.propagate(*matrix, n=1.33)
+    propagated_second = second.propagate(*matrix, n=1.33)
+
+    assert propagated_first.overlap_with(propagated_second) == pytest.approx(
+        first.overlap_with(second), rel=1e-12,
+    )
+    assert (first.q, second.q) == (0.02 + 0.04j, -0.01 + 0.06j)
+
+
+@pytest.mark.parametrize("other_arguments, message", [
+    ({"wavelength": 1e-6, "n": 1.5}, "media"),
+    ({"wavelength": 1.1e-6, "n": 1.0}, "wavelength"),
+])
+def test_overlap_rejects_concrete_incompatible_media_or_wavelength(other_arguments, message):
+    first = GaussianBeam(q=1j, wavelength=1e-6, n=1.0).numeric()
+    other = GaussianBeam(q=1j, **other_arguments).numeric()
+
+    with pytest.raises(ValueError, match=message):
+        first.overlap_with(other)
+
+
+@pytest.mark.parametrize("q", [-1j, 1.0 + 0j])
+def test_q_width_extraction_rejects_nonphysical_inverse_imaginary_part(q):
+    with pytest.raises(ValueError, match="Invalid q-parameter"):
+        GaussianBeam.w_R_from_q(q, wavelength=1e-6, n=1.0)
+
+
+def test_waist_envelope_derivatives_remain_finite_through_plane_curvature():
+    width, wavelength = 0.7e-3, 1.064e-6
+    rayleigh_range = np.pi * width**2 / wavelength
+    beam = GaussianBeam.from_waist(width, wavelength).numeric()
+    envelope = lambda distance: beam.w_at_z(distance)
+
+    for function, expected in (
+        (envelope, width),
+        (grad(envelope), 0.0),
+        (hessian(envelope), width / rayleigh_range**2),
+    ):
+        np.testing.assert_allclose(function(0.0), expected, rtol=1e-12, atol=1e-15)
+        np.testing.assert_allclose(jit(function)(0.0), expected, rtol=1e-12, atol=1e-15)

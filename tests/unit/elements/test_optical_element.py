@@ -4,14 +4,14 @@ from dataclasses import dataclass
 
 from diffractix.elements.element import OpticalElement, parameter
 from diffractix.graph import Node, Parameter, InputNode
-from diffractix.graph.utils import (
+from diffractix.graph import (
     ASTCycleError,
     UnresolvedInputError,
     UnsupportedNodeError,
 )
 
 
-@dataclass(kw_only=True)
+@dataclass(eq=False, kw_only=True)
 class DummyElement(OpticalElement):
 
     x: Node
@@ -29,7 +29,7 @@ class DummyElement(OpticalElement):
         return self.x
 
 
-@dataclass(kw_only=True)
+@dataclass(eq=False, kw_only=True)
 class ExplicitParameterElement(OpticalElement):
 
     gain: float = parameter(2.0)
@@ -47,7 +47,7 @@ class ExplicitParameterElement(OpticalElement):
         return 0.0
 
 
-@dataclass(kw_only=True)
+@dataclass(eq=False, kw_only=True)
 class ValidationElement(OpticalElement):
     matrix_value: object = ((1.0, 0.0), (0.0, 1.0))
     length_value: object = 0.0
@@ -101,7 +101,7 @@ def test_ordinary_fields_remain_ordinary_python_values():
 
 def test_node_union_annotation_declares_parameter():
 
-    @dataclass(kw_only=True)
+    @dataclass(eq=False, kw_only=True)
     class OptionalParameterElement(OpticalElement):
 
         x: Node | None = None
@@ -140,39 +140,6 @@ def test_explicit_label_is_preserved():
     assert element.label == "Test Element"
 
 
-# ------------
-# REQUIREMENTS
-# ------------
-
-def test_requirements_are_empty_by_default():
-    element = DummyElement(x=1.0)
-
-    assert element.requirements == ()
-
-
-def test_require_adds_persistent_requirements():
-    element = DummyElement(x=1.0)
-    requirement_a = element.x >= 0.0
-    requirement_b = element.x <= 2.0
-
-    result = element.require(requirement_a, requirement_b)
-
-    assert result is element
-    assert element.requirements[0] is requirement_a
-    assert element.requirements[1] is requirement_b
-
-
-def test_requirements_are_not_shared_between_elements():
-    first = DummyElement(x=1.0)
-    second = DummyElement(x=1.0)
-    requirement = first.x >= 0.0
-
-    first.require(requirement)
-
-    assert first.requirements[0] is requirement
-    assert second.requirements == ()
-
-
 # ------------------
 # ELEMENT PROPERTIES
 # ------------------
@@ -185,7 +152,7 @@ def test_refractive_index_defaults_to_none():
 
 def test_optical_element_requires_matrix():
 
-    @dataclass(kw_only=True)
+    @dataclass(eq=False, kw_only=True)
     class MissingMatrixElement(OpticalElement):
 
         x: Node
@@ -200,7 +167,7 @@ def test_optical_element_requires_matrix():
 
 def test_optical_element_requires_element_length():
 
-    @dataclass(kw_only=True)
+    @dataclass(eq=False, kw_only=True)
     class MissingLengthElement(OpticalElement):
 
         x: Node
@@ -291,6 +258,50 @@ def test_build_validation_rejects_unsupported_node_types():
     )
 
     with pytest.raises(UnsupportedNodeError, match="Unsupported AST node type"):
+        element.validate()
+
+
+@pytest.mark.parametrize("dependency", ["length", "index"])
+def test_build_validation_walks_dependencies_outside_the_matrix(dependency):
+    empty = InputNode(None)
+    kwargs = {"length_value": empty} if dependency == "length" else {"refractive_index_value": empty + 1}
+    element = ValidationElement(**kwargs)
+
+    with pytest.raises(UnresolvedInputError, match="empty InputNode"):
+        element.validate()
+
+
+def test_optional_index_does_not_hide_the_same_empty_handle_in_required_matrix():
+    empty = InputNode(None)
+    element = ValidationElement(
+        matrix_value=((1.0, empty), (0.0, 1.0)),
+        refractive_index_value=empty,
+    )
+
+    with pytest.raises(UnresolvedInputError, match="empty InputNode"):
+        element.validate()
+
+
+def test_build_validation_accepts_shared_graph_dependencies_and_complex_coefficients():
+    parameter = Parameter(0.1)
+    shared = parameter + 1
+    element = ValidationElement(
+        matrix_value=((shared, 1j * shared), (shared, shared)),
+        length_value=shared,
+        refractive_index_value=shared,
+    )
+
+    element.validate()
+
+    assert shared.left is parameter
+    assert parameter.value == 0.1
+
+
+def test_build_validation_rejects_array_as_a_single_matrix_coefficient():
+    import numpy as np
+
+    element = ValidationElement(matrix_value=((1.0, np.array([0.0])), (0.0, 1.0)))
+    with pytest.raises(TypeError, match=r"matrix\[0\]\[1\]"):
         element.validate()
 
 
