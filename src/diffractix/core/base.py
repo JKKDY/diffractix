@@ -83,7 +83,7 @@ class OpticalBase:
         type_hints = get_type_hints(cls)
 
         for base in reversed(cls.mro()):
-            for name in base.__dict__.get("__annotations__", {}):
+            for name in getattr(base, "__annotations__", {}):
                 annotation = type_hints.get(name)
                 if name in names or get_origin(annotation) is ClassVar:
                     continue

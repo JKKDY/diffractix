@@ -28,12 +28,16 @@ class CallSite:
 
 @dataclass(frozen=True)
 class ElementData:
+    """Resolved element metadata; parameter indices address optics-program outputs."""
+
     element_id: int
     position: int
     type_name: str
     label: str | None
     path: str | None
     variable_parameter_ids: frozenset[int]
+    parameter_names: tuple[str, ...] = ()
+    parameter_indices: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)

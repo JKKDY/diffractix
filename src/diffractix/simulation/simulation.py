@@ -1,22 +1,51 @@
 from __future__ import annotations
 
-from types import MappingProxyType
-
 import numpy as np
 from diffractix.backend import xp
 
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import replace
+from collections.abc import Sequence, Mapping, Sequence
+from functools import cached_property
+from typing import TYPE_CHECKING
 
-from diffractix.graph import CompiledAST, Node
-from diffractix.graph.utils import clone_ast
-from diffractix.simulation.result import SimulationResult, result_type_for
+from diffractix.graph import InputNode, Parameter, Program
+from .info import SimulationInput, SimulationStep, SimulationTrace
+from .initial_values import InitialValues
 
-from diffractix.system.info import ElementInfo
+import numpy as np
+
+if TYPE_CHECKING:
+    from diffractix.system.info import ConstraintData, ElementData, ParameterData
+    from diffractix.solver.constraint import Constraint
 
 
 
+class InitialValues:
+    """Editable theta values indexed by model Parameters or their handles."""
 
+    def __init__(self, values: Sequence[float], parameter_indices: Mapping[int, int]):
+        self.values = np.array(values, dtype=float, copy=True)
+        self._parameter_indices = dict(parameter_indices)
+
+    def _index(self, parameter: Parameter | InputNode) -> int:
+        if isinstance(parameter, InputNode):
+            parameter = parameter.node
+        if not isinstance(parameter, Parameter):
+            raise TypeError("Initial values can only be indexed by a Parameter or its direct InputNode handle.")
+        if id(parameter) not in self._parameter_indices:
+            raise KeyError(f"Parameter {parameter!r} is not part of this Simulation's theta.")
+        return self._parameter_indices[id(parameter)]
+
+    def __getitem__(self, parameter: Parameter | InputNode):
+        return self.values[self._index(parameter)]
+
+    def __setitem__(self, parameter: Parameter | InputNode, value):
+        index = self._index(parameter)
+        value = np.asarray(value)
+        if value.ndim != 0 or value.dtype.kind not in "iuf":
+            raise TypeError("An initial value must be a real numeric scalar.")
+        if not np.isfinite(value):
+            raise ValueError("An initial value must be finite.")
+        self.values[index] = value
 
 class Simulation:
     """
@@ -26,104 +55,59 @@ class Simulation:
     evaluate an optical system. Running a simulation does not mutate the source
     System, its elements, or parameter graph.
 
-    Retained ASTs are detached from declarative handles. Callable constraints
-    retain normal Python closure semantics.
+    Programs capture graph expressions. Deferred callable constraints retain
+    normal Python closure semantics.
     """
 
     def __init__(
         self,
-        source_spec: SimulationSource,
-        graph: CompiledAST,
-        steps: Sequence[SimulationStep],
-        parameter_info: Mapping[int, ParameterInfo],
-        compile_context: Mapping,
-        execution_context: Mapping,
-        location_map: Mapping,
-        constraints: Sequence[Callable | Node],
-        parameter_graph: CompiledAST,
-        element_info: Sequence[ElementInfo],
+        *,
+        element_data: Sequence[ElementData],
+        parameter_data: Sequence[ParameterData],
+        callable_constraints: Sequence[tuple[int, Constraint]],
+        constraint_descriptors: Sequence[ConstraintData],
+        constraint_program: Program,
+        optics_program: Program,
+        optical_stages: Sequence[SimulationStep],
+        optical_inputs: Sequence[SimulationInput]
     ):
-        self._source_spec = source_spec
-        self.graph = graph
-        self.steps = tuple(steps)
-        self.parameter_info = MappingProxyType(dict(parameter_info))
-        self.location_map = MappingProxyType(dict(location_map))
-        self.constraints, context = self._snapshot_expressions(constraints, compile_context)
-        self.compile_context = MappingProxyType(context)
-        self.parameter_graph = parameter_graph
-        self.element_info = tuple(element_info)
-        self.execution_context = MappingProxyType(dict(execution_context))
+        self.element_data = tuple(element_data)
+        self.parameter_data = tuple(parameter_data)
+        self.callable_constraints = tuple(callable_constraints)
+        self.constraint_descriptors = tuple(constraint_descriptors)
+        self.constraint_program = constraint_program
+        self.optics_program = optics_program
+        self.optical_stages = tuple(optical_stages)
+        self.optical_inputs = tuple(optical_inputs)
 
-        values = self._evaluate_graph(self.initial_values) if source_spec.field_indices else ()
-        self.source = source_spec.construct(values)
-        self._result_type = result_type_for(self.source)
+    @cached_property
+    def _initial_values(self):
+        """Initial theta in canonical parameter order."""
+        values = np.array([parameter.value for parameter in self.parameter_data], dtype=float)
+        values.setflags(write=False)
+        return values
 
     @property
-    def initial_values(self):
-        return self.graph.initial_values
+    def initial_values(self) -> InitialValues:
+        """Return an independent editable copy of the build-time initial theta."""
+        return InitialValues(self._initial_values, self.optics_program.parameter_indices)
 
-    def _snapshot_expressions(self, constraints, context):
-        """Detach retained ASTs from live handles, preserving canonical leaves."""
-        constraints = tuple(constraints)
-        roots = [c.evaluate for c in constraints if isinstance(c.evaluate, Node)]
-        roots.extend(value for value in context.values() if isinstance(value, Node))
-        copies = iter(clone_ast(roots, preserve_parameter_ids=self.parameter_info))
-        constraints = tuple(
-            replace(c, evaluate=next(copies)) if isinstance(c.evaluate, Node) else c
-            for c in constraints
-        )
-        context = {
-            key: next(copies) if isinstance(value, Node) else value
-            for key, value in context.items()
-        }
-        return constraints, context
-
-    def _evaluate_graph(self, theta):
-        values = self.graph._evaluate_roots(variable_values=theta, bindings=self.execution_context)
-        # Keep graph outputs separate so complex values don't make real values complex.
-        # Normalize scalar types and shapes to preserve differentiation behavior.
-        return tuple(
-            np.float64(value) if isinstance(value, float) else xp.reshape(value, np.shape(value))
-            for value in values
-        )
-
-    def require(self, *constraints):
-        """Append normalized constraints and return this simulation for chaining."""
-        from diffractix.solver.constraint import normalize_to_constraint
-
-        constraints, _ = self._snapshot_expressions(
-            tuple(map(normalize_to_constraint, constraints)), {}
-        )
-        self.constraints += constraints
-        return self
-
-    def run(self, theta=None) -> SimulationResult:
-        """
-        Run the optical simulation.
-
-        Parameters
-        ----------
-        theta:
-            Optional independent parameter vector. If None, the compiled initial
-            values are used.
-
-        Returns
-        -------
-        SimulationResult
-            Numerical trace of the propagated optical state.
-        """
+    def run(self, theta=None) -> SimulationTrace:
+        """Evaluate the optics program once and propagate the numerical input."""
+        if len(self.optical_inputs) != 1:
+            raise ValueError("Simulation.run() requires exactly one optical input.")
         if theta is None:
-            theta = self.initial_values
+            theta = self._initial_values
 
-        values = self._evaluate_graph(theta)
-        source = self._source_spec.construct(values)
+        values = self.optics_program.evaluate(theta)
+        source = self.optical_inputs[0].construct(values)
         state = source
         z = 0.0
 
         states = [state]
         positions = [z]
 
-        for step in self.steps:
+        for step in self.optical_stages:
             A = values[step.matrix_indices[0][0]]
             B = values[step.matrix_indices[0][1]]
             C = values[step.matrix_indices[1][0]]
@@ -137,131 +121,84 @@ class Simulation:
             states.append(state)
             positions.append(z)
 
-        return self._result_type(
-            source=source,
+        return SimulationResult(
+            theta=theta,
+            parameter_data=self.parameter_data,
+            element_data=self.element_data,
+            optical_stages=self.optical_stages,
+            optical_values=values,
             z=xp.stack(positions),
             states=tuple(states),
-            location_map=self.location_map,
-            element_info=self.element_info,
         )
-
 
     def __str__(self) -> str:
-        col_gap = 4
-
-        def format_value(v):
-            return f"{float(v):.4g}"
-
-        def format_bound(b, is_upper=False):
-            if np.isposinf(b) if is_upper else np.isneginf(b):
-                return "inf" if is_upper else "-inf"
-            return format_value(b)
-
-        def format_parameters(info, vals):
-            if not info.parameter_names:
-                return "-"
-            return ", ".join(
-                f"{name}={format_value(vals[idx])}"
-                for name, idx in zip(info.parameter_names, info.parameter_indices)
-            )
-
         def render_table(headers, rows):
             widths = [
-                max(len(h), *(len(r[c]) for r in rows)) if rows else len(h)
-                for c, h in enumerate(headers)
+                max([len(header), *(len(row[i]) for row in rows)])
+                for i, header in enumerate(headers)
             ]
-            fmt = lambda r: (" " * col_gap).join(
-                val.ljust(w) for val, w in zip(r, widths)
-            )
-            div = "-" * (sum(widths) + col_gap * (len(widths) - 1))
-            return [fmt(headers), div, *(fmt(r) for r in rows)]
 
-        values = self.graph.evaluate(
-            self.initial_values,
-            bindings=self.execution_context,
-        )
-        parameter_values = self.parameter_graph.evaluate(
-            self.parameter_graph.initial_values,
-            bindings=self.execution_context,
-        )
+            def format_row(row):
+                return "    ".join(value.ljust(width) for value, width in zip(row, widths))
 
-        has_paths = any(info.path for info in self.element_info)
-        headers = [
-            "#",
-            "z [m]",
-            "Type",
-            "Label",
-            *(["Path"] if has_paths else []),
-            "L [m]",
-            "n",
-            "Parameters",
-        ]
+            divider = "-" * (sum(widths) + 4 * (len(widths) - 1))
+            return [format_row(headers), divider, *(format_row(row) for row in rows)]
 
+        values = self.optics_program.evaluate(self._initial_values)
+        has_paths = any(element.path for element in self.element_data)
+        headers = ["#", "z [m]", "Type", "Label", *(["Path"] if has_paths else []), "L [m]", "n"]
         rows = []
         z = 0.0
 
-        for idx, (step, info) in enumerate(zip(self.steps, self.element_info)):
-            length = values[step.length_index]
-            n = values[step.refractive_index_index]
-
+        for element, stage in zip(self.element_data, self.optical_stages):
+            length = values[stage.length_index]
+            n = values[stage.refractive_index_index]
             rows.append((
-                str(idx),
-                format_value(z),
-                info.type_name,
-                info.label or "-",
-                *([info.path or "-"] if has_paths else []),
-                format_value(length),
-                format_value(n),
-                format_parameters(info, parameter_values),
+                str(element.position),
+                f"{z:.4g}",
+                element.type_name,
+                element.label or "-",
+                *([element.path or "-"] if has_paths else []),
+                f"{length:.4g}",
+                f"{n:.4g}",
             ))
+            z = z + length
 
-            z += length
-
-        variables = sorted(
-            (info for info in self.parameter_info.values() if info.is_variable),
-            key=lambda info: info.parameter_index,
+        constraints = [
+            (info.position, info.label or info.description)
+            for info in self.constraint_descriptors
+        ]
+        constraints.extend(
+            (position, constraint.label or str(constraint))
+            for position, constraint in self.callable_constraints
         )
-
-        table = render_table(headers, rows)
+        constraints.sort(key=lambda item: item[0])
+        sources = ", ".join(type(item.initial_state).__name__ for item in self.optical_inputs) or "-"
 
         lines = [
             "Compiled Simulation",
             "",
-            *table,
-            table[1],
+            *render_table(headers, rows),
             "",
-            f"Source: {type(self.source).__name__}",
-            f"Total length: {format_value(z)} m",
-            f"Variables: {len(variables)}",
-            f"Constraints: {len(self.constraints)}",
+            f"Source: {sources}",
+            f"Total length: {z:.4g} m",
+            f"Variables: {len(self.parameter_data)}",
+            f"Constraints: {len(constraints)}",
         ]
 
-        if variables:
-            var_headers = ("#", "Parameter", "Owner", "Initial", "Bounds")
-            var_rows = [
+        if self.parameter_data:
+            variable_rows = [
                 (
-                    str(info.parameter_index),
-                    info.name or "-",
-                    info.owner_label or info.owner_type or "-",
-                    format_value(info.value),
-                    f"[{format_bound(info.lower_bound)}, "
-                    f"{format_bound(info.upper_bound, is_upper=True)}]",
+                    str(parameter.parameter_index),
+                    parameter.name or "-",
+                    f"{parameter.value:.4g}",
+                    f"[{parameter.lower_bound:.4g}, {parameter.upper_bound:.4g}]",
                 )
-                for info in variables
+                for parameter in self.parameter_data
             ]
-            lines.extend([
-                "",
-                "Variables",
-                "",
-                *render_table(var_headers, var_rows),
-            ])
+            lines.extend(["", "Variables", "", *render_table(("#", "Parameter", "Initial", "Bounds"), variable_rows)])
 
-        if self.constraints:
-            lines.extend([
-                "",
-                "Constraints",
-                "",
-                *(f"{i}  {req}" for i, req in enumerate(self.constraints)),
-            ])
+        if constraints:
+            lines.extend(["", "Constraints", "", *(f"{position}  {description}" for position, description in constraints)])
 
         return "\n".join(lines)

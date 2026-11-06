@@ -70,7 +70,7 @@ class Solution:
         x = np.array(result.x, copy=True)
         x.setflags(write=False)
 
-        if x.shape != (len(simulation.initial_values),):
+        if x.shape != (len(simulation.initial_values.values),):
             raise ValueError(
                 "Backend result x shape must match simulation.initial_values."
             )

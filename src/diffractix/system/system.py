@@ -5,6 +5,7 @@ import inspect
 import operator
 import numpy as np
 from collections.abc import Iterable, Hashable
+from dataclasses import replace
 from numbers import Real
 from typing import Any
 from types import MappingProxyType
@@ -350,9 +351,14 @@ class System:
                 path=placement.path,
             ))
 
-            roots = (handle for handle in element.parameters if handle.node is not None)
+            parameters = tuple(
+                (name, handle)
+                for name, handle in zip(element.parameter_names, element.parameters)
+                if handle.node is not None
+            )
+
             parameter_ids = frozenset(
-                id(node) for node in walk_ast(roots, bindings)
+                id(node) for node in walk_ast((handle for _, handle in parameters)), bindings)
                 if isinstance(node, Parameter) and node.is_variable
             )
 
@@ -363,6 +369,7 @@ class System:
                 label=element.label,
                 path=placement.path,
                 variable_parameter_ids=parameter_ids,
+                parameter_names=tuple(name for name, _ in parameters),
             ))
 
         for placement in placements:
@@ -444,7 +451,7 @@ class System:
     # -----------
     # COMPILATION
     # -----------
-    def _compile_optics(self, placements, optical_inputs, bindings, continuity_constraints=()):
+    def _compile_optics(self, placements, optical_inputs, bindings, continuity_constraints, element_data):
         """Compile optics and register variable dependencies of generated continuity.
 
         Theta follows first occurrence in optical roots, then additional
@@ -493,6 +500,15 @@ class System:
                 field_indices=tuple(field_indices),
             ))
 
+        compiled_element_data = []
+        for placement, data in zip(placements, element_data, strict=True):
+            start = len(roots)
+            roots.extend(getattr(placement.element, name) for name in data.parameter_names)
+            compiled_element_data.append(replace(
+                data,
+                parameter_indices=tuple(range(start, len(roots))),
+            ))
+
         # some entries e.g. in matrix may be numbers -> convert to literals
         roots = [root if isinstance(root, Node) else Node._make_literal(root) for root in roots]
         parameters = {
@@ -526,7 +542,7 @@ class System:
         )
 
         # theta = parameters in [roots] graph
-        return program, steps, inputs, parameter_data
+        return program, steps, inputs, parameter_data, tuple(compiled_element_data)
 
 
     def _compile_constraints(self, constraints, bindings, parameter_indices):
@@ -595,10 +611,19 @@ class System:
         placements, index_continuity = self._resolve_refractive_indices(placements, bindings)
 
         constraints = self._collect_constraints(placements)
-        optics_program, stages, inputs, parameters_data = self._compile_optics(
-            placements, self._inputs, bindings, continuity_constraints=index_continuity)
+       
+        optics_program, stages, inputs, parameters_data, element_data = self._compile_optics(
+            placements=placements,
+            optical_inputs=self._inputs,
+            bindings=bindings,
+            continuity_constraints=index_continuity,
+            element_data=element_data,
+        )
         constraint_program, constraint_descriptors, callable_constraints = self._compile_constraints(
-            (*constraints, *index_continuity), bindings, optics_program.parameter_indices)
+            constraints=(*constraints, *index_continuity),
+            bindings=bindings,
+            parameter_indices=optics_program.parameter_indices,
+        )
 
         return Simulation(
             element_data = element_data, 

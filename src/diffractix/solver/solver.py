@@ -313,7 +313,7 @@ class Solver:
 
 
     def _constraint_bounds(self, constraints, theta=None):
-        theta = self.simulation.initial_values if theta is None else theta
+        theta = self.simulation.initial_values.values if theta is None else theta
         context = SolverContext(theta, self.simulation.run)
 
         lower, upper = [], []
@@ -341,10 +341,10 @@ class Solver:
         return lower_bounds, upper_bounds
 
     def _build_cache(self, raw_objectives, raw_constraints) -> _SolverCache:
-        n = len(self.simulation.initial_values)
+        n = len(self.simulation.initial_values.values)
         compiled_objectives = self._compile_objectives(raw_objectives)
         compiled_constraints = self._compile_constraints(raw_constraints)
-        initial_context = SolverContext(self.simulation.initial_values, self.simulation.run)
+        initial_context = SolverContext(self.simulation.initial_values.values, self.simulation.run)
 
         # Map each original evaluator to its compiled callback and scalar rows.
         constraint_map = {}
@@ -426,7 +426,7 @@ class Solver:
     ) -> Solution:
         """Solve the inverse-design problem."""
         options = {} if options is None else dict(options)
-        n = len(self.simulation.initial_values)
+        n = len(self.simulation.initial_values.values)
 
         raw_constraints = (*self.simulation.constraints, *self.constraints)
         raw_objectives = self.objectives
@@ -445,11 +445,11 @@ class Solver:
 
         if not raw_objectives and not raw_constraints:
             raise ValueError("Optimization problem must have at least one objective or constraint.")
-        if len(self.simulation.initial_values) == 0:
+        if len(self.simulation.initial_values.values) == 0:
             raise ValueError("Optimization problem must have at least one variable parameter.")
 
         default_lower, default_upper = self._parameter_bounds()
-        initial_values = np.array(self.simulation.initial_values if x0 is None else x0, dtype=float)
+        initial_values = np.array(self.simulation.initial_values.values if x0 is None else x0, dtype=float)
         parameter_lower = np.array(default_lower if x_lower is None else x_lower, dtype=float)
         parameter_upper = np.array(default_upper if x_upper is None else x_upper, dtype=float)
         for name, values in (
