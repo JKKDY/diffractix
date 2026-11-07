@@ -33,6 +33,26 @@ class ResultSymbolKey:
     name: str | None = None
 
 
+def resolve_symbol(key, result):
+    if not isinstance(key, ResultSymbolKey):
+        raise KeyError(f"Unsupported runtime Symbol: {key!r}.")
+
+    if key.kind is ResultSymbolKind.INITIAL:
+        return getattr(result.initial, key.name)
+    if key.kind is ResultSymbolKind.FINAL:
+        return getattr(result.final, key.name)
+    if key.kind is ResultSymbolKind.BEFORE:
+        return getattr(result.states[key.index], key.name)
+    if key.kind is ResultSymbolKind.AFTER:
+        return getattr(result.states[key.index + 1], key.name)
+    if key.kind is ResultSymbolKind.Z_START:
+        return result.z[key.index]
+    if key.kind is ResultSymbolKind.Z_END:
+        return result.z[key.index + 1]
+
+    raise KeyError(f"Unknown result Symbol: {key!r}.")
+
+
 class _ResultSymbol(Symbol):
     def __getitem__(self, index):
         raise SymbolicControlFlowError("Indexing symbolic result values requires runtime evaluation.")
