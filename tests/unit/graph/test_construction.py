@@ -124,9 +124,14 @@ def test_scalar_array_constant_is_independent_of_the_original_array():
 
 
 @pytest.mark.parametrize("value", [np.array([2.0]), np.array([[2.0]])])
-def test_array_constants_must_be_zero_dimensional(value):
-    with pytest.raises(TypeError, match="numeric scalar"):
-        Parameter(1) + value
+def test_array_constants_are_wrapped_as_owned_read_only_literals(value):
+    expression = Parameter(1) + value
+    assert isinstance(expression.right, Literal)
+    np.testing.assert_array_equal(expression.right.value, value)
+    assert expression.right.value.shape == value.shape
+    assert expression.right.value.dtype == value.dtype
+    assert not np.shares_memory(expression.right.value, value)
+    assert not expression.right.value.flags.writeable
 
 
 def test_scalar_like_object_is_not_implicitly_normalized():

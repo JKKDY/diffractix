@@ -45,14 +45,9 @@ class Node:
         return has_variable
 
     @staticmethod
-    def _make_literal(value: Scalar) -> Literal:
-        # Normalize concrete NumPy/backend scalar constants at graph construction.
-        if isinstance(value, (np.generic, np.ndarray, xp.ndarray)):
-            if value.ndim != 0:
-                raise TypeError(f"Expected numeric scalar, got array with shape {value.shape}")
+    def _make_literal(value: Scalar | np.ndarray) -> Literal:
+        if isinstance(value, np.generic):
             value = value.item()
-        if not isinstance(value, Scalar):
-            raise TypeError(f"Expected numeric scalar, got {type(value)}")
         return Literal(value)
 
     @staticmethod
@@ -261,7 +256,10 @@ class InputNode(Node):
 
 class Literal(Node):
     """
-    Immutable numeric literal embedded in an expression.
+    Immutable numeric scalar or array embedded in an expression.
+
+    Arrays are stored as owned, read-only NumPy copies. Zero-dimensional
+    arrays retain the scalar normalization used by expression construction.
 
     Example:
         y = 2 * x
@@ -269,9 +267,23 @@ class Literal(Node):
     The value 2 is represented by a Literal rather than a Parameter.
     """
 
-    def __init__(self, value: Scalar):
-        if not isinstance(value, Scalar):
-            raise TypeError("Literal value must be numeric.")
+    def __init__(self, value: Scalar | np.ndarray):
+        if isinstance(value, Scalar):
+            self._value = value
+            return
+        if isinstance(value, (np.ndarray, xp.ndarray)):
+            try:
+                value = np.array(value, copy=True)
+            except (TypeError, ValueError) as error:
+                raise TypeError("Literal value must be a concrete numeric scalar or array.") from error
+            if value.dtype.kind not in "biufc":
+                raise TypeError(f"Literal array must have a numeric dtype, got {value.dtype}.")
+            if value.ndim == 0:
+                value = value.item()
+            else:
+                value.setflags(write=False)
+        else:
+            raise TypeError("Literal value must be a numeric scalar or array.")
 
         self._value = value
 

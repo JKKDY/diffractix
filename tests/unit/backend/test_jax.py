@@ -33,15 +33,16 @@ print('ok')
 ''', 'jax') == 'ok'
 
 
-def test_backend_vector_arrays_are_not_converted_to_literal_constants():
+def test_backend_vector_arrays_are_captured_as_owned_literal_constants():
     assert run_python('''
-import pytest
+import numpy as np
 from diffractix.backend import xp
 from diffractix.graph import Parameter
 p = Parameter(1.0).variable()
 for value in (xp.array([2.0]), xp.array([2.0, 3.0])):
-    with pytest.raises(TypeError, match='numeric scalar'):
-        p + value
+    literal = (p + value).right
+    np.testing.assert_array_equal(literal.value, np.asarray(value))
+    assert not literal.value.flags.writeable
 print('ok')
 ''', 'jax') == 'ok'
 
@@ -49,12 +50,12 @@ print('ok')
 def test_active_jax_tracers_cannot_be_captured_as_literal_constants():
     assert run_python('''
 import pytest
-from jax.errors import ConcretizationTypeError
 from diffractix.backend import jit, xp
 from diffractix.graph import Parameter
 p = Parameter(1.0).variable()
-with pytest.raises(ConcretizationTypeError, match='concrete'):
-    jit(lambda value: p + value)(xp.array(2.0))
+for value in (xp.array(2.0), xp.array([2.0, 3.0])):
+    with pytest.raises(TypeError, match='concrete'):
+        jit(lambda value: p + value)(value)
 print('ok')
 ''', 'jax') == 'ok'
 
