@@ -6,7 +6,6 @@ import textwrap
 import math
 
 from fractions import Fraction
-from numbers import Real
 
 from scipy.optimize import linprog
 
@@ -16,7 +15,6 @@ import numpy as np
 
 from diffractix.graph import (
     Comparison,
-    InputNode,
     Literal,
     Node,
     Parameter,
@@ -28,7 +26,6 @@ from diffractix.graph import (
     walk_ast,
 )
 
-from diffractix.graph.node import BinaryOp, UnaryOp
 from diffractix.graph.ops import Op
 from diffractix.graph.program import Input, Register, Constant, UnaryInstruction
 
@@ -139,7 +136,7 @@ class ConstraintDescriptor:
 def _from_comparison(comparison) -> Constraint:
     lhs, rhs, rel = comparison.left, comparison.right, comparison.relation
 
-    if isinstance(rhs, Literal):
+    if isinstance(rhs, Literal) and np.ndim(rhs.value) == 0:
         if rel is Relation.LT:
             return Constraint(lhs, upper_bound=math.nextafter(rhs.value, -math.inf))
         if rel is Relation.LE:
@@ -151,7 +148,7 @@ def _from_comparison(comparison) -> Constraint:
         if rel is Relation.EQ:
             return Constraint(lhs, rhs.value, rhs.value)
 
-    if isinstance(lhs, Literal):
+    if isinstance(lhs, Literal) and np.ndim(lhs.value) == 0:
         if rel is Relation.LT:
             return Constraint(rhs, lower_bound=math.nextafter(lhs.value, math.inf))
         if rel is Relation.LE:
@@ -289,22 +286,58 @@ def reduce_constraints(
     output_indices, active_descriptors = _reduce_duplicate_outputs(
         program, output_indices, active_descriptors,
     )
+    if not output_indices:
+        return output_indices, active_descriptors
+
+    forms = _program_affine_forms(program)
     output_indices, active_descriptors = _reduce_box_constraints(
-        program, output_indices, active_descriptors,
+        forms, output_indices, active_descriptors,
         parameter_lower, parameter_upper,
     )
+    if not output_indices:
+        return output_indices, active_descriptors
+
     output_indices, active_descriptors = _reduce_interval_constraints(
         program, output_indices, active_descriptors,
         parameter_lower, parameter_upper,
     )
+    if not output_indices:
+        return output_indices, active_descriptors
+
     output_indices, active_descriptors = _reduce_equalities(
-        program, output_indices, active_descriptors,
+        forms, output_indices, active_descriptors,
     )
     output_indices, active_descriptors = _reduce_affine_constraints(
-        program, output_indices, active_descriptors,
+        forms, output_indices, active_descriptors,
         parameter_lower, parameter_upper,
     )
     return output_indices, active_descriptors
+
+
+def _program_output_shapes(program):
+    """Infer output shapes where all inputs have known shapes."""
+    registers = {}
+
+    def read(operand):
+        if isinstance(operand, Register):
+            return registers[operand.index]
+        if isinstance(operand, Input):
+            return () if operand.index < len(program.parameter_indices) else None
+        return np.shape(operand.value)
+
+    for instruction in program._instructions:
+        if isinstance(instruction, UnaryInstruction):
+            shape = read(instruction.src)
+        else:
+            left, right = read(instruction.left), read(instruction.right)
+            shape = None
+            if left is not None and right is not None:
+                try:
+                    shape = np.broadcast_shapes(left, right)
+                except ValueError:
+                    pass
+        registers[instruction.dst] = shape
+    return tuple(read(output) for output in program._outputs)
 
 
 def _reduce_duplicate_outputs(program, output_indices, descriptors):
@@ -323,6 +356,8 @@ def _reduce_duplicate_outputs(program, output_indices, descriptors):
                 key = (Constant, type(value), repr(value))
             elif isinstance(value, np.generic) and value.dtype.kind in "biufc" and np.isfinite(value):
                 key = (Constant, value.dtype.str, value.tobytes())
+            elif isinstance(value, np.ndarray) and value.dtype.kind in "biufc" and np.all(np.isfinite(value)):
+                key = (Constant, value.dtype.str, value.shape, value.tobytes())
             else:
                 key = object()
         return number(key)
@@ -339,11 +374,15 @@ def _reduce_duplicate_outputs(program, output_indices, descriptors):
             key = (instruction.op, identify(instruction.left), identify(instruction.right))
         registers[instruction.dst] = number(key)
     output_keys = tuple(identify(output) for output in program._outputs)
+    output_shapes = _program_output_shapes(program)
 
     retained_indices = []
     retained = []
     representatives = {}
     for output_index, descriptor in zip(output_indices, descriptors):
+        shape = output_shapes[output_index]
+        if shape is not None and 0 in shape:
+            continue
         if descriptor.lower_bound == -np.inf and descriptor.upper_bound == np.inf:
             continue
         key = output_keys[output_index]
@@ -357,6 +396,11 @@ def _reduce_duplicate_outputs(program, output_indices, descriptors):
         lower = max(previous.lower_bound, descriptor.lower_bound)
         upper = min(previous.upper_bound, descriptor.upper_bound)
         if lower > upper:
+            # An unknown runtime array could be empty, satisfying both bounds.
+            if shape is None:
+                retained_indices.append(output_index)
+                retained.append(descriptor)
+                continue
             raise ValueError(f"Conflicting bounds on duplicate constraints {previous.position} and {descriptor.position}.")
         if lower != previous.lower_bound or upper != previous.upper_bound:
             retained[index] = replace(previous, lower_bound=lower, upper_bound=upper)
@@ -423,9 +467,21 @@ def _program_affine_forms(program):
     return tuple(read(output) for output in program._outputs)
 
 
-def _reduce_box_constraints(program, output_indices, descriptors, parameter_lower, parameter_upper):
+def _remove_implied_bounds(descriptor, lower_implied, upper_implied):
+    """Remove proven bound sides, keeping equalities whole unless fully implied."""
+    if lower_implied and upper_implied:
+        return None
+    if descriptor.lower_bound == descriptor.upper_bound:
+        return descriptor
+    lower = -np.inf if lower_implied else descriptor.lower_bound
+    upper = np.inf if upper_implied else descriptor.upper_bound
+    if lower == descriptor.lower_bound and upper == descriptor.upper_bound:
+        return descriptor
+    return replace(descriptor, lower_bound=lower, upper_bound=upper)
+
+
+def _reduce_box_constraints(forms, output_indices, descriptors, parameter_lower, parameter_upper):
     """Remove affine constraint sides implied by parameter bounds."""
-    forms = _program_affine_forms(program)
     retained_indices = []
     retained = []
     for output_index, descriptor in zip(output_indices, descriptors):
@@ -444,17 +500,13 @@ def _reduce_box_constraints(program, output_indices, descriptors, parameter_lowe
         upper_implied = descriptor.upper_bound == np.inf or (
             upper is not None and _box_implies(coefficients, upper - offset, parameter_lower, parameter_upper)
         )
-        if lower_implied and upper_implied:
+        effective = _remove_implied_bounds(descriptor, lower_implied, upper_implied)
+        if effective is None:
             continue
         if not any(coefficients):
             raise ValueError(f"Constraint {descriptor.position} is an unsatisfiable constant constraint.")
-        if descriptor.lower_bound != descriptor.upper_bound:
-            effective_lower = -np.inf if lower_implied else descriptor.lower_bound
-            effective_upper = np.inf if upper_implied else descriptor.upper_bound
-            if effective_lower != descriptor.lower_bound or effective_upper != descriptor.upper_bound:
-                descriptor = replace(descriptor, lower_bound=effective_lower, upper_bound=effective_upper)
         retained_indices.append(output_index)
-        retained.append(descriptor)
+        retained.append(effective)
     return tuple(retained_indices), tuple(retained)
 
 
@@ -540,21 +592,16 @@ def _reduce_interval_constraints(program, output_indices, descriptors, parameter
             raise ValueError(f"Constraint {descriptor.position} is infeasible within the parameter bounds.")
         lower_implied = descriptor.lower_bound == -np.inf or (lower is not None and minimum >= lower)
         upper_implied = descriptor.upper_bound == np.inf or (upper is not None and maximum <= upper)
-        if lower_implied and upper_implied:
+        effective = _remove_implied_bounds(descriptor, lower_implied, upper_implied)
+        if effective is None:
             continue
-        if descriptor.lower_bound != descriptor.upper_bound:
-            effective_lower = -np.inf if lower_implied else descriptor.lower_bound
-            effective_upper = np.inf if upper_implied else descriptor.upper_bound
-            if effective_lower != descriptor.lower_bound or effective_upper != descriptor.upper_bound:
-                descriptor = replace(descriptor, lower_bound=effective_lower, upper_bound=effective_upper)
         retained_indices.append(output_index)
-        retained.append(descriptor)
+        retained.append(effective)
     return tuple(retained_indices), tuple(retained)
 
 
-def _reduce_equalities(program, output_indices, descriptors):
+def _reduce_equalities(forms, output_indices, descriptors):
     """Keep the first independent affine equalities using exact row elimination."""
-    forms = _program_affine_forms(program)
     basis = {}
     retained_indices = []
     retained = []
@@ -580,15 +627,17 @@ def _reduce_equalities(program, output_indices, descriptors):
     return tuple(retained_indices), tuple(retained)
 
 
-def _reduce_affine_constraints(program, output_indices, descriptors, parameter_lower, parameter_upper):
+def _reduce_affine_constraints(output_forms, output_indices, descriptors, parameter_lower, parameter_upper):
     """Remove affine constraint sides implied by other retained constraints."""
-    output_forms = _program_affine_forms(program)
     forms = [output_forms[index] for index in output_indices]
     if all(form is None for form in forms):
         return output_indices, descriptors
     retained = list(descriptors)
-    rows = _affine_inequalities(retained, forms, -1, None, parameter_lower, parameter_upper)
-    _check_affine_feasibility(rows, len(program.parameter_indices))
+    rows = _affine_inequalities(
+        retained, forms, exclude_index=-1, exclude_side=None,
+        lower=parameter_lower, upper=parameter_upper,
+    )
+    _check_affine_feasibility(rows, len(parameter_lower))
 
     def implied(index, side):
         descriptor = retained[index]
@@ -609,7 +658,10 @@ def _reduce_affine_constraints(program, output_indices, descriptors, parameter_l
                 return False
             target = coefficients
             rhs = bound - offset
-        available = _affine_inequalities(retained, forms, index, side, parameter_lower, parameter_upper)
+        available = _affine_inequalities(
+            retained, forms, exclude_index=index, exclude_side=side,
+            lower=parameter_lower, upper=parameter_upper,
+        )
         return _affine_certificate(available, target, rhs)
 
     for index, descriptor in enumerate(retained):
@@ -674,5 +726,127 @@ def _check_affine_feasibility(rows, size):
         raise ValueError("Affine constraints and parameter bounds are infeasible.")
 
 
+def _rational(value):
+    """Exact rational representation of a finite numeric scalar, or None."""
+    if isinstance(value, np.ndarray):
+        if value.ndim != 0:
+            return None
+        value = value.item()
+    elif isinstance(value, np.generic):
+        value = value.item()
+    try:
+        return Fraction(value)
+    except (TypeError, ValueError, OverflowError, ZeroDivisionError):
+        return None
 
 
+def _affine_inequalities(constraints, forms, exclude_index, exclude_side, lower, upper):
+    """Build exact inequalities A @ x <= b from retained constraints and box."""
+    rows = []
+    for i, (constraint, form) in enumerate(zip(constraints, forms)):
+        if constraint is None or form is None:
+            continue
+        a, offset = form
+        if i == exclude_index and constraint.lower_bound == constraint.upper_bound:
+            continue
+        if i != exclude_index or exclude_side != 'upper':
+            if (bound := _rational(constraint.upper_bound)) is not None:
+                rows.append((a, bound - offset))
+        if i != exclude_index or exclude_side != 'lower':
+            if (bound := _rational(constraint.lower_bound)) is not None:
+                rows.append((tuple(-v for v in a), offset - bound))
+
+    for j, (lo, hi) in enumerate(zip(lower, upper)):
+        if (hi := _rational(hi)) is not None:
+            row = [Fraction(0)] * len(lower)
+            row[j] = Fraction(1)
+            rows.append((tuple(row), hi))
+        if (lo := _rational(lo)) is not None:
+            row = [Fraction(0)] * len(lower)
+            row[j] = Fraction(-1)
+            rows.append((tuple(row), -lo))
+    return rows
+
+
+def _box_implies(row, rhs, lower, upper):
+    """Prove row @ x <= rhs from parameter bounds alone."""
+    maximum = Fraction(0)
+    for coefficient, lo, hi in zip(row, lower, upper):
+        if coefficient == 0:
+            continue
+        endpoint = hi if coefficient > 0 else lo
+        if (value := _rational(endpoint)) is None:
+            return False
+        maximum += coefficient * value
+    return maximum <= rhs
+
+
+def _recover_exact_weights(rows, target, approximate):
+    """Solve A.T @ weights = target exactly on the LP's active support."""
+    if not (active := [i for i, value in enumerate(approximate) if value > 0]):
+        return None
+    matrix = [
+        [rows[i][0][j] for i in active] + [target[j]]
+        for j in range(len(target))
+    ]
+    pivot_columns, pivot_row = [], 0
+    for col in range(len(active)):
+        row = next((r for r in range(pivot_row, len(matrix)) if matrix[r][col]), None)
+        if row is None:
+            continue
+        matrix[pivot_row], matrix[row] = matrix[row], matrix[pivot_row]
+        pivot = matrix[pivot_row][col]
+        matrix[pivot_row] = [v / pivot for v in matrix[pivot_row]]
+        for r in range(len(matrix)):
+            if r != pivot_row and (multiplier := matrix[r][col]):
+                matrix[r] = [x - multiplier * y for x, y in zip(matrix[r], matrix[pivot_row])]
+        pivot_columns.append(col)
+        pivot_row += 1
+        if pivot_row == len(matrix):
+            break
+    if any(all(v == 0 for v in row[:-1]) and row[-1] != 0 for row in matrix):
+        return None
+
+    # Take free variables as zero; solve pivot multipliers exactly.
+    weights = [Fraction(0)] * len(active)
+    for r, col in enumerate(pivot_columns):
+        weights[col] = matrix[r][-1]
+
+    full = [Fraction(0)] * len(rows)
+    for i, value in zip(active, weights):
+        full[i] = value
+    return full
+
+
+def _affine_certificate(rows, target, rhs):
+    """Use HiGHS to propose a Farkas certificate; verify it over rational affine forms."""
+    if not rows:
+        return False
+    if any(a == target and b <= rhs for a, b in rows):
+        return True
+    if not target:
+        return False
+
+    try:
+        result = linprog(
+            c=np.asarray([float(b) for _, b in rows]),
+            A_eq=np.asarray([[float(a[j]) for a, _ in rows] for j in range(len(target))]),
+            b_eq=np.asarray([float(v) for v in target]),
+            bounds=(0, None),
+            method='highs',
+        )
+    except (ValueError, OverflowError, FloatingPointError):
+        return False
+
+    if not result.success or result.x is None or not np.all(np.isfinite(result.x)):
+        return False
+
+    weights = _recover_exact_weights(rows, target, result.x)
+    if weights is None or any(w < 0 for w in weights):
+        return False
+
+    # Exact Farkas conditions: A.T @ w == target, b @ w <= rhs.
+    return (
+        all(sum(w * a[j] for w, (a, _) in zip(weights, rows)) == target[j] for j in range(len(target)))
+        and sum(w * b for w, (_, b) in zip(weights, rows)) <= rhs
+    )

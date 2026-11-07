@@ -5,6 +5,8 @@ from dataclasses import dataclass
 
 from typing import Any
 
+import numpy as np
+
 from .ops import Op
 
 
@@ -19,7 +21,13 @@ class Register:
 
 @dataclass(frozen=True)
 class Constant:
-    value: int | float | complex
+    value: int | float | complex | np.ndarray
+
+    def __post_init__(self):
+        if isinstance(self.value, np.ndarray):
+            value = np.array(self.value, copy=True)
+            value.setflags(write=False)
+            object.__setattr__(self, "value", value)
 
 Operand = Input | Register | Constant
 
@@ -46,7 +54,8 @@ class Program:
     Compiled numerical program for evaluating expression graphs.
 
     Inputs contain numerical variables followed by runtime symbols.
-    Instructions operate on these inputs and produce an output vector.
+    Instructions produce a tuple of outputs, each of which may be a scalar
+    or an array. Array constants are stored as owned, read-only copies.
     """
     # TODO rename to parameters
     parameter_indices: dict[int, int]       # id(Parameter) -> theta index

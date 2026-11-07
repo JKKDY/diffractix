@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from diffractix.graph import Literal, Parameter, Symbol, precompile, remap_parameters
-from diffractix.solver.constraint import Constraint, ConstraintDescriptor, reduce_constraints
+from diffractix.solver.constraint import Constraint, ConstraintDescriptor, prepare_constraints, reduce_constraints
 
 
 def make_problem(*constraints):
@@ -492,13 +492,14 @@ def test_equality_basis_eliminates_exact_dependencies_without_an_lp(monkeypatch)
         Constraint(y - z, 0, 0, label="second"),
         Constraint(2 * x - 2 * z, 0, 0, label="dependent"),
     )
-    indices, active = constraint_module._reduce_equalities(program, (0, 1, 2), descriptors)
+    forms = constraint_module._program_affine_forms(program)
+    indices, active = constraint_module._reduce_equalities(forms, (0, 1, 2), descriptors)
     assert indices == (0, 1)
     assert active == descriptors[:2]
 
 
 def test_equality_basis_uses_augmented_rows_to_detect_a_conflict():
-    from diffractix.solver.constraint import _reduce_equalities
+    from diffractix.solver.constraint import _program_affine_forms, _reduce_equalities
 
     x, y, z = (Parameter(0).variable() for _ in range(3))
     program, descriptors = make_problem(
@@ -507,4 +508,168 @@ def test_equality_basis_uses_augmented_rows_to_detect_a_conflict():
         Constraint(x - z, 1, 1),
     )
     with pytest.raises(ValueError):
-        _reduce_equalities(program, (0, 1, 2), descriptors)
+        _reduce_equalities(_program_affine_forms(program), (0, 1, 2), descriptors)
+
+
+def test_array_literal_duplicates_intersect_bounds_without_mutating_the_program():
+    x = Parameter(0).variable()
+    first, second = np.array([1., 2.]), np.array([1., 2.])
+    program, descriptors = make_problem(
+        Constraint(x + first, lower_bound=0, upper_bound=4, label="first"),
+        Constraint(x + second, lower_bound=1, upper_bound=5, label="second"),
+    )
+    instructions, outputs = program._instructions, program._outputs
+    indices, active = reduce(program, descriptors)
+    assert indices == (0,)
+    assert (active[0].lower_bound, active[0].upper_bound) == (1, 4)
+    assert active[0].label == "first"
+    assert descriptors[0].lower_bound == 0
+    assert program._instructions is instructions
+    assert program._outputs is outputs
+    np.testing.assert_array_equal(first, second)
+    assert first.flags.writeable and second.flags.writeable
+    assert_same_feasible_points(program, descriptors, indices, active, [(value,) for value in (-2, -1, 0, 1, 2, 3, 4)])
+
+
+@pytest.mark.parametrize("second", [
+    np.array([2., 1.], dtype=np.float32),
+    np.array([[1., 2.]], dtype=np.float32),
+    np.array([1., 2.], dtype=np.float64),
+])
+def test_array_duplicate_keys_distinguish_values_shapes_and_dtypes(second):
+    x = Parameter(0).variable()
+    program, descriptors = make_problem(
+        Constraint(x + np.array([1., 2.], dtype=np.float32), upper_bound=3),
+        Constraint(x + second, upper_bound=3),
+    )
+    indices, active = reduce(program, descriptors)
+    assert indices == (0, 1)
+    assert active == descriptors
+    assert_same_feasible_points(program, descriptors, indices, active, [(value,) for value in (-1, 0, 1, 2)])
+
+
+def test_array_constants_preserve_signed_zero_in_structural_keys():
+    runtime = Symbol("runtime")
+    program, descriptors = make_problem(
+        Constraint(runtime + np.array([0., -0.]), upper_bound=1),
+        Constraint(runtime + np.array([-0., 0.]), upper_bound=1),
+    )
+    indices, active = reduce(program, descriptors)
+    assert indices == (0, 1)
+    assert active == descriptors
+
+
+@pytest.mark.parametrize("coefficients", [np.array([1.]), np.array([1., -1.]), np.array([[1., 2.]])])
+def test_array_expressions_are_conservatively_excluded_from_scalar_affine_proofs(coefficients):
+    x = Parameter(0).variable()
+    program, descriptors = make_problem(Constraint(x * coefficients, -1, 1))
+    indices, active = reduce(program, descriptors, [-1], [1])
+    assert indices == (0,)
+    assert active == descriptors
+    assert_same_feasible_points(program, descriptors, indices, active, [(value,) for value in (-1, -0.5, 0, 0.5, 1)])
+
+
+def test_vector_equality_is_not_discarded_as_a_scalar_equality_dependency():
+    x = Parameter(1).variable()
+    program, descriptors = make_problem(
+        Constraint(x, 1, 1), Constraint(x * np.array([1., 2.]), 1, 1, label="vector"),
+    )
+    indices, active = reduce(program, descriptors, [0], [2])
+    assert indices == (0, 1)
+    assert active[-1].label == "vector"
+    assert_same_feasible_points(program, descriptors, indices, active, [(value,) for value in (0, 0.5, 1, 2)])
+
+
+def test_known_empty_array_outputs_impose_no_constraints():
+    x = Parameter(0).variable()
+    empty = np.empty((0, 2))
+    program, descriptors = make_problem(
+        Constraint(x + empty, upper_bound=0),
+        Constraint(x + empty, lower_bound=1),
+        Constraint(x, upper_bound=2),
+    )
+    indices, active = reduce(program, descriptors)
+    assert indices == (2,)
+    assert_same_feasible_points(program, descriptors, indices, active, [(value,) for value in (-1, 0, 1, 2, 3)])
+
+
+def test_conflicting_bounds_on_unknown_runtime_shapes_preserve_empty_array_semantics():
+    runtime = Symbol("runtime")
+    program, descriptors = make_problem(Constraint(runtime, upper_bound=0), Constraint(runtime, lower_bound=1))
+    indices, active = reduce(program, descriptors)
+    assert indices == (0, 1)
+    for value in (np.array([]), np.array([0.]), np.array([1., 2.])):
+        assert_same_feasible_points(program, descriptors, indices, active, [()], {"runtime": value})
+
+
+@pytest.mark.parametrize("method", ["__le__", "__lt__", "__ge__", "__gt__", "__eq__"])
+@pytest.mark.parametrize("array_on_left", [False, True])
+def test_comparisons_with_array_literals_normalize_to_componentwise_residuals(method, array_on_left):
+    x = Parameter(0).variable()
+    array = Literal(np.array([0., 1.]))
+    left, right = (array, x) if array_on_left else (x, array)
+    comparison = getattr(left, method)(right)
+    program, descriptors, callables = prepare_constraints((comparison,), tracer=None, bindings={})
+    indices, active = reduce(program, descriptors)
+    assert indices == (0,)
+    assert callables == ()
+    operation = {"__le__": np.less_equal, "__lt__": np.less, "__ge__": np.greater_equal,
+                 "__gt__": np.greater, "__eq__": np.equal}[method]
+    for value in (-1., 0., 1., 2.):
+        # Bounds are host-side optimizer metadata, including nextafter(0) bounds.
+        actual = np.asarray(program.evaluate([value])[0])
+        expected = operation(array.value, value) if array_on_left else operation(value, array.value)
+        assert np.all((actual >= active[0].lower_bound) & (actual <= active[0].upper_bound)) == np.all(expected)
+
+
+def test_constant_array_constraints_are_checked_componentwise_during_preparation():
+    satisfied = Constraint(Literal(np.array([1., 2.])), 0, 3)
+    program, descriptors, callables = prepare_constraints((satisfied,), tracer=None, bindings={})
+    assert program.evaluate([]) == ()
+    assert descriptors == callables == ()
+    for values, message in (([1., 4.], "unsatisfiable"), ([1., np.nan], "non-finite")):
+        with pytest.raises(ValueError, match=message):
+            prepare_constraints((Constraint(Literal(np.array(values)), upper_bound=3),), tracer=None, bindings={})
+
+
+def test_affine_forms_are_shared_by_the_box_equality_and_lp_passes(monkeypatch):
+    import diffractix.solver.constraint as constraint_module
+
+    x, y = Parameter(0).variable(), Parameter(0).variable()
+    program, descriptors = make_problem(
+        Constraint(x, upper_bound=1), Constraint(y, upper_bound=2), Constraint(x + y, upper_bound=3),
+    )
+    analyze = constraint_module._program_affine_forms
+    calls = []
+
+    def record_analysis(program):
+        calls.append(program)
+        return analyze(program)
+
+    monkeypatch.setattr(constraint_module, "_program_affine_forms", record_analysis)
+    indices, _ = reduce(program, descriptors)
+    assert indices == (0, 1)
+    assert calls == [program]
+
+
+@pytest.mark.parametrize("stage", ["duplicates", "box", "interval"])
+def test_reduction_stops_when_an_earlier_pass_removes_every_output(stage, monkeypatch):
+    import diffractix.solver.constraint as constraint_module
+
+    x = Parameter(0).variable()
+    if stage == "duplicates":
+        constraint, lower, upper = Constraint(x), [-1], [1]
+        next_analysis = "_program_affine_forms"
+    elif stage == "box":
+        constraint, lower, upper = Constraint(x, 0, 1), [0], [1]
+        next_analysis = "_program_intervals"
+    else:
+        constraint, lower, upper = Constraint(x ** 2, 0, 1), [-1], [1]
+        next_analysis = "_reduce_equalities"
+    program, descriptors = make_problem(constraint)
+
+    def unexpected_analysis(*args):
+        pytest.fail("No further analysis is needed after all outputs have been removed")
+
+    monkeypatch.setattr(constraint_module, next_analysis, unexpected_analysis)
+    assert reduce(program, descriptors, lower, upper) == ((), ())
