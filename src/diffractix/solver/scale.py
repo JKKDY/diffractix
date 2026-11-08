@@ -7,7 +7,7 @@ import numpy as np
 
 if TYPE_CHECKING:
     from .problem import Problem
-    from .result import SolverResult
+    from .solution import SolverResult
 
 
 @dataclass(frozen=True, init=False)
@@ -74,7 +74,7 @@ class Scaling:
     def scale(self, obj: Problem | SolverResult) -> Problem | SolverResult:
         """Return an object expressed in backend numerical coordinates."""
         from .problem import Problem
-        from .result import SolverResult
+        from .solution import SolverResult
 
         c, s = self.x_center, self.x_scale
         a, t = self.constraint_center, self.constraint_scale
@@ -126,7 +126,7 @@ class Scaling:
     def unscale(self, obj: Problem | SolverResult) -> Problem | SolverResult:
         """Return an object expressed in physical SI coordinates."""
         from .problem import Problem
-        from .result import SolverResult
+        from .solution import SolverResult
 
         c, s = self.x_center, self.x_scale
         a, t = self.constraint_center, self.constraint_scale

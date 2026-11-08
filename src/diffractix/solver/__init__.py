@@ -6,7 +6,7 @@ from .context import (
 )
 from .solver import Backend, Solver
 from .solution import DEFAULT_FEASIBILITY_TOLERANCE, Solution
-from .result import SolverResult
+from .solution import SolverResult
 from .constraint import Constraint
 from .objective import Objective
 

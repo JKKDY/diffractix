@@ -4,7 +4,7 @@ import numpy as np
 import nlopt
 
 from ..problem import Problem
-from ..result import SolverResult
+from ..solution import SolverResult
 
 
 DEFAULT_METHOD = "LD_SLSQP"

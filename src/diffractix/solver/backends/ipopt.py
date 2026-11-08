@@ -4,7 +4,7 @@ import numpy as np
 import cyipopt
 
 from ..problem import Problem
-from ..result import SolverResult
+from ..solution import SolverResult
 
 
 class _IpoptProblem:

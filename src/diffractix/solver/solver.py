@@ -12,8 +12,6 @@ from diffractix.backend import xp, grad, hessian, jacobian, jit, require
 from diffractix.graph import (
     Node,
     Program,
-    SymbolicControlFlowError,
-    evaluate_ast,
     remap_parameters,
     remap_runtime_symbols,
     fuse,
@@ -33,12 +31,6 @@ from .constraint import (
 )
 from .problem import Problem
 from .backends import solve_ipopt, solve_nlopt, solve_scipy
-from .context import (
-    SolverCompileContext,
-    SolverContext,
-    SolverSymbolKey,
-    SolverSymbolKind,
-)
 
 
 class Backend(str, Enum):
@@ -257,7 +249,14 @@ class Solver:
         result = problem.scaling.unscale(result)
 
         return Solution(
-            ...
+            result, problem, self.simulation,
+            objective_program=cache.objective_program,
+            objective_descriptors=cache.objective_descriptors,
+            callable_objectives=cache.callable_objectives,
+            constraint_program=cache.constraint_program,
+            constraint_descriptors=cache.constraint_descriptors,
+            callable_constraints=cache.callable_constraints,
+            feasibility_tolerance=feasibility_tolerance,
         )
 
     #-----------------

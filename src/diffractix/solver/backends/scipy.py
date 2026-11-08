@@ -4,7 +4,7 @@ import numpy as np
 from scipy.optimize import Bounds, NonlinearConstraint, minimize
 
 from ..problem import Problem
-from ..result import SolverResult
+from ..solution import SolverResult
 
 DEFAULT_METHOD = "SLSQP"
 SUPPORTED_METHODS = {"trust-constr", "SLSQP"}

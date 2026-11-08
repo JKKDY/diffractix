@@ -1,447 +1,249 @@
-"""Solution reporting, feasibility, and immutable snapshots."""
-
-from __future__ import annotations
+"""Solution reporting uses complete compiled models in physical coordinates."""
 
 from types import SimpleNamespace
+
 import numpy as np
-from diffractix.backend import xp
-import numpy as numpy
 import pytest
-from diffractix.graph import Parameter, Symbol
-from diffractix.solver import Constraint, DEFAULT_FEASIBILITY_TOLERANCE, Objective, OptimizationResult, Solution
-from diffractix.solver.problem import Problem
-from tests.helpers.simulation import make_simulation, parameter_info
+
+from diffractix import Constraint, Objective, Parameter, Ray, Solver, System
+from diffractix.backend import xp
+from diffractix.solver import Solution, SolverResult, DEFAULT_FEASIBILITY_TOLERANCE
+from diffractix.solver.solution import ParameterBoundResult
 
 
-def make_problem(n_variables=1, *, lower=None, upper=None):
-    return Problem(
-        x0=np.zeros(n_variables),
-        x_lower=np.full(n_variables, -np.inf) if lower is None else np.array(lower),
-        x_upper=np.full(n_variables, np.inf) if upper is None else np.array(upper),
-        objective=lambda theta: xp.sum(theta**2),
-        gradient=lambda theta: 2.0 * theta,
-        objective_hessian=lambda theta: 2.0 * np.eye(n_variables),
-        constraints=lambda theta: xp.array([]),
-        jacobian=lambda theta: np.empty((0, n_variables)),
-        constraint_hessian=lambda theta, multipliers: np.zeros(
-            (n_variables, n_variables)
-        ),
-        constraint_lower=xp.array([]),
-        constraint_upper=xp.array([]),
+def make_solution(*, solver=None, x=(2.,), lower=None, upper=None,
+                  success=True, tolerance=DEFAULT_FEASIBILITY_TOLERANCE):
+    if solver is None:
+        solver = Solver(System(optical_input=Ray(x=Parameter(0.5).variable(), theta=0, n=1)))
+    cache = solver._build_cache(False, solver.simulation.initial_values.values)
+    result = SolverResult(np.array(x), success, 7.5, "stopped")
+    problem = SimpleNamespace(
+        x_lower=np.full(len(solver.simulation.parameter_data), -np.inf) if lower is None else np.array(lower),
+        x_upper=np.full(len(solver.simulation.parameter_data), np.inf) if upper is None else np.array(upper),
     )
-
-
-def make_solution(
-    *,
-    x=(5.0,),
-    success=True,
-    cost=1.25,
-    message="done",
-    simulation=None,
-    problem=None,
-    objectives=(),
-    constraints=(),
-    feasibility_tolerance=DEFAULT_FEASIBILITY_TOLERANCE,
-):
-    if simulation is None:
-        parameter = Parameter(2.0, name="p").variable()
-        simulation = make_simulation((parameter,))
-
-    problem = make_problem(len(x)) if problem is None else problem
-    return Solution(
-        OptimizationResult(
-            x=xp.array(x),
-            success=success,
-            cost=cost,
-            message=message,
-            scaling=problem.scaling,
-        ),
-        problem,
-        simulation,
-        objectives,
-        constraints,
-        feasibility_tolerance,
-    )
-
-
-def test_solution_forwards_backend_result():
-    solution = make_solution(x=(3.0,), success=False, cost=7.5, message="stopped")
-
-    numpy.testing.assert_array_equal(solution.x, [3.0])
-    assert solution.success is False
-    assert solution.cost == 7.5
-    assert solution.message == "stopped"
-
-
-def test_solution_owns_an_immutable_copy_of_backend_x():
-    backend_x = np.array([3.0])
-    simulation = make_simulation((Parameter(2.0).variable(),))
-    problem = make_problem()
-    result = OptimizationResult(backend_x, True, 0.0, "done", scaling=problem.scaling)
-    solution = Solution(result, problem, simulation, (), ())
-
-    result.x[0] = 4.0
-
-    numpy.testing.assert_array_equal(solution.x, [3.0])
-    with pytest.raises(ValueError):
-        solution.x[0] = 5.0
-
-
-def test_solution_feasibility_tolerance_validation_and_default():
-    parameter = Parameter(2.0).variable()
-    simulation = make_simulation((parameter,))
-    problem = make_problem()
-    result = OptimizationResult(xp.array([2.0]), True, 0.0, "done", scaling=problem.scaling)
-
-    with pytest.raises(ValueError, match="non-negative"):
-        Solution(result, problem, simulation, (), (), -1.0)
-
-    default_solution = Solution(result, problem, simulation, (), ())
-    assert default_solution.feasibility_tolerance == DEFAULT_FEASIBILITY_TOLERANCE
-    assert make_solution(feasibility_tolerance=1e-3).feasibility_tolerance == 1e-3
-
-
-@pytest.mark.parametrize("tolerance", (np.nan, np.inf, -np.inf))
-def test_solution_rejects_nonfinite_feasibility_tolerance(tolerance):
-    with pytest.raises(ValueError, match="finite|NaN|non-negative"):
-        make_solution(feasibility_tolerance=tolerance)
-
-
-def test_solution_parameter_info_and_parameters_use_canonical_order():
-    first = Parameter(2.0, name="first").variable()
-    second = Parameter(4.0, name="second").variable()
-    simulation = make_simulation((first, second))
-    first_info = parameter_info(first, 1)
-    second_info = parameter_info(second, 0)
-    simulation.parameter_info = {
-        id(first): first_info,
-        id(second): second_info,
-    }
-    solution = make_solution(x=(5.0, 7.0), simulation=simulation)
-
-    assert solution.parameter_info == (second_info, first_info)
-    assert solution.parameter_info is solution.parameter_info
-    assert solution.parameters is solution.parameters
-    assert tuple(parameter.info for parameter in solution.parameters) == (
-        second_info,
-        first_info,
-    )
-    assert tuple(parameter.value for parameter in solution.parameters) == (5.0, 7.0)
-    assert tuple(parameter.initial for parameter in solution.parameters) == (4.0, 2.0)
-    assert tuple(parameter.delta for parameter in solution.parameters) == (1.0, 5.0)
-
-
-def test_solution_value_of_and_getitem_use_solved_snapshot():
-    parameter = Parameter(2.0, name="p").variable()
-    simulation = make_simulation((parameter,))
-    solution = make_solution(x=(5.0,), simulation=simulation)
-    expression = 3.0 * parameter + 2.0
-    parameter.value = 100.0
-
-    assert solution.value_of(parameter) == pytest.approx(5.0)
-    assert solution[parameter] == pytest.approx(5.0)
-    assert solution[expression] == pytest.approx(17.0)
-
-
-def test_solution_value_of_resolves_runtime_symbol_from_execution_context():
-    parameter = Parameter(2.0, name="p").variable()
-    simulation = make_simulation((parameter,))
-    key = ("result", "beam_width")
-    simulation.execution_context = {key: 2.5}
-    solution = make_solution(x=(5.0,), simulation=simulation)
-
-    assert solution.value_of(parameter + Symbol(key)) == pytest.approx(7.5)
-
-
-def test_solution_value_of_reports_missing_runtime_symbol_binding():
-    solution = make_solution()
-
-    with pytest.raises(KeyError, match="Missing runtime binding.*missing_result"):
-        solution.value_of(Symbol("missing_result"))
-
-
-def test_solution_run_uses_solved_theta():
-    parameter = Parameter(2.0).variable()
-    calls = []
-
-    def run(theta):
-        calls.append(theta)
-        return "simulation result"
-
-    solution = make_solution(
-        x=(5.0,),
-        simulation=make_simulation((parameter,), run=run),
-    )
-
-    assert solution.run() == "simulation result"
-    numpy.testing.assert_array_equal(calls[0], solution.x)
-
-
-def test_solution_target_results_preserve_order_shape_weight_and_cost():
-    objectives = (
-        Objective(lambda context: 2.0, label="scalar"),
-        Objective(lambda context: xp.array([1.0, -2.0]), weight=3.0, label="vector"),
-    )
-    solution = make_solution(objectives=objectives)
-
-    scalar, vector = solution.targets
-    assert scalar.objective is objectives[0]
-    assert scalar.value == 2.0
-    assert scalar.weight == 1.0
-    assert scalar.cost == 4.0
-    assert vector.objective is objectives[1]
-    numpy.testing.assert_array_equal(vector.value, [1.0, -2.0])
-    assert vector.weight == 3.0
-    assert vector.cost == 15.0
-    assert solution.targets is solution.targets
-
-
-@pytest.mark.parametrize("value", [np.nan, np.inf, -np.inf])
-def test_solution_preserves_non_finite_target_values_and_costs(value):
-    solution = make_solution(
-        objectives=(Objective(lambda context: value),),
-    )
-
-    target = solution.targets[0]
-    if np.isnan(value):
-        assert np.isnan(target.value)
-        assert np.isnan(target.cost)
-    else:
-        assert target.value == value
-        assert np.isinf(target.cost)
-
-
-def test_solution_empty_targets():
-    solution = make_solution(objectives=())
-    assert solution.targets == ()
-
-
-@pytest.mark.parametrize(
-    ("constraint", "value", "margin", "violation", "satisfied"),
-    [
-        (Constraint(lambda context: 3.0, lower_bound=2.0), 3.0, 1.0, 0.0, True),
-        (Constraint(lambda context: 1.5, lower_bound=2.0), 1.5, -0.5, 0.5, False),
-        (Constraint(lambda context: 3.0, upper_bound=4.0), 3.0, 1.0, 0.0, True),
-        (Constraint(lambda context: 4.25, upper_bound=4.0), 4.25, -0.25, 0.25, False),
-        (Constraint(lambda context: 3.0, lower_bound=1.0, upper_bound=5.0), 3.0, 2.0, 0.0, True),
-        (Constraint(lambda context: 5.25, lower_bound=1.0, upper_bound=5.0), 5.25, -0.25, 0.25, False),
-        (Constraint(lambda context: 3.0, lower_bound=3.0, upper_bound=3.0), 3.0, 0.0, 0.0, True),
-        (Constraint(lambda context: 3.01, lower_bound=3.0, upper_bound=3.0), 3.01, -0.01, 0.01, False),
-    ],
-)
-def test_solution_constraint_result_semantics(
-    constraint,
-    value,
-    margin,
-    violation,
-    satisfied,
-):
-    result = make_solution(constraints=(constraint,)).constraints[0]
-
-    assert result.constraint is constraint
-    assert result.value == pytest.approx(value)
-    assert result.margin == pytest.approx(margin)
-    assert result.violation == pytest.approx(violation)
-    assert result.satisfied is satisfied
-
-
-@pytest.mark.parametrize(
-    ("value", "satisfied"),
-    [(3.0005, True), (3.002, False)],
-)
-def test_solution_feasibility_tolerance_boundary(value, satisfied):
-    constraint = Constraint(
-        lambda context: value,
-        lower_bound=3.0,
-        upper_bound=3.0,
-    )
-    result = make_solution(
-        constraints=(constraint,),
-        feasibility_tolerance=1e-3,
-    ).constraints[0]
-
-    assert result.satisfied is satisfied
-
-
-def test_solution_vector_constraint_preserves_shape_and_requires_all_values():
-    constraint = Constraint(
-        lambda context: xp.array([2.0, 4.25]),
-        lower_bound=1.0,
-        upper_bound=4.0,
-    )
-    result = make_solution(constraints=(constraint,)).constraints[0]
-
-    assert result.value.shape == (2,)
-    numpy.testing.assert_allclose(result.margin, [1.0, -0.25])
-    numpy.testing.assert_allclose(result.violation, [0.0, 0.25])
-    assert result.satisfied is False
-
-
-@pytest.mark.parametrize("value", [np.nan, np.inf, -np.inf])
-def test_non_finite_constraint_values_are_never_reported_feasible(value):
-    constraint = Constraint(
-        lambda context: value,
-        lower_bound=0.0,
-        upper_bound=1.0,
-    )
-    solution = make_solution(constraints=(constraint,))
-
-    result = solution.constraints[0]
-    assert result.satisfied is False
-    assert solution.violations == (result,)
-    assert solution.feasible is False
-
-
-@pytest.mark.parametrize("x", [(), (3.0, 4.0), ((3.0,),), 3.0])
-def test_solution_rejects_backend_theta_shape_mismatch(x):
-    parameter = Parameter(2.0, name="p").variable()
-    simulation = make_simulation((parameter,))
-    result = OptimizationResult(np.array(x), True, 0.0, "done")
-
-    with pytest.raises(ValueError, match="x shape.*initial_values"):
-        Solution(result, make_problem(), simulation, (), ())
-
-
-@pytest.mark.parametrize("value", [np.nan, np.inf, -np.inf])
-def test_solution_rejects_nonfinite_backend_theta(value):
-    with pytest.raises(ValueError, match="Backend result x.*finite"):
-        make_solution(x=(value,))
-
-
-def test_solution_empty_constraints_are_feasible():
-    solution = make_solution(constraints=())
-
-    assert solution.constraints == ()
-    assert solution.violations == ()
-    assert solution.feasible is True
-
-
-@pytest.mark.parametrize("bound, direction", [(0.0, -1), (1.0, 1)])
-@pytest.mark.parametrize("tolerance", [0.0, 0.125])
-def test_parameter_bound_feasibility_includes_tolerance_boundary(bound, direction, tolerance):
-    problem = make_problem(lower=[0.0], upper=[1.0])
-    edge = bound + direction * tolerance
-    on_boundary = make_solution(x=(edge,), problem=problem, feasibility_tolerance=tolerance)
-    outside = make_solution(
-        x=(np.nextafter(edge, direction * np.inf),),
-        problem=problem,
+    solution = Solution(
+        result, problem, solver.simulation,
+        objective_program=cache.objective_program,
+        objective_descriptors=cache.objective_descriptors,
+        callable_objectives=cache.callable_objectives,
+        constraint_program=cache.constraint_program,
+        constraint_descriptors=cache.constraint_descriptors,
+        callable_constraints=cache.callable_constraints,
         feasibility_tolerance=tolerance,
     )
-
-    assert on_boundary.feasible is True
-    assert outside.feasible is False
-    assert outside.success is True  # Backend success does not establish feasibility.
-    assert outside.constraints == outside.violations == ()
+    return solution, result
 
 
-@pytest.mark.parametrize("x, feasible", [
-    ((0.5, 1e12, 0.0), True),
-    ((0.5, -1e12, 0.25), False),
-    ((-0.25, 0.0, 0.0), False),
+def test_backend_status_and_owned_x():
+    solution, result = make_solution(success=False)
+    result.x[0] = 100
+    np.testing.assert_array_equal(solution.x, [2])
+    with pytest.raises(ValueError):
+        solution.x[0] = 3
+    assert not solution.success
+    assert solution.cost == 7.5
+    assert solution.message == "stopped"
+    assert solution.feasible
+
+
+@pytest.mark.parametrize("x", [(), (1., 2.), ((1.,),), 1.])
+def test_invalid_result_shape(x):
+    with pytest.raises(ValueError, match="x shape"):
+        make_solution(x=x)
+
+
+@pytest.mark.parametrize("x", [np.nan, np.inf, -np.inf])
+def test_nonfinite_result_x(x):
+    with pytest.raises(ValueError, match="finite"):
+        make_solution(x=(x,))
+
+
+@pytest.mark.parametrize("tolerance", [-1., np.nan, np.inf, -np.inf])
+def test_invalid_tolerance(tolerance):
+    with pytest.raises(ValueError, match="finite.*non-negative"):
+        make_solution(tolerance=tolerance)
+
+
+@pytest.mark.parametrize("tolerance", [True, 1j, "0", object()])
+def test_wrong_tolerance_type(tolerance):
+    with pytest.raises(TypeError, match="real"):
+        make_solution(tolerance=tolerance)
+
+
+def test_updated_simulation_and_canonical_value_lookup():
+    p = Parameter(0.5).variable()
+    source = Ray(x=p, theta=0, n=1)
+    solver = Solver(System(optical_input=source))
+    solution, _ = make_solution(solver=solver, x=(2.,), lower=[1.], upper=[3.])
+    assert solution.simulation is not solver.simulation
+    assert solution.value(p) == solution.value(source.x) == 2
+    np.testing.assert_array_equal(solution.simulation.initial_values.values, [2])
+    assert solution.simulation.parameter_data[0].lower_bound == 1
+    assert solution.simulation.parameter_data[0].upper_bound == 3
+    assert solver.simulation.parameter_data[0].value == 0.5
+    assert p.value == 0.5
+    p.value = 20
+    assert solution.run().final.x == pytest.approx(2)
+    assert solution.simulation.run().final.x == pytest.approx(2)
+    with pytest.raises(KeyError):
+        solution.value(Parameter(1).variable())
+    with pytest.raises(TypeError):
+        solution.value(p + 1)
+
+
+def test_complete_evaluations_preserve_interleaved_order_and_vector_shapes():
+    p = Parameter(0.5).variable()
+    system = System(optical_input=Ray(x=p, theta=0, n=1))
+    system.require(Constraint(p, lower_bound=0, label="system"))
+    solver = Solver(system)
+
+    def dynamic(result):
+        if result.final.x > 0:
+            return xp.array([result.final.x, -result.final.x])
+        return xp.zeros(2)
+
+    solver.target(Objective(dynamic, weight=3, label="dynamic"),
+                  Objective(p - 1, weight=2, label="parameter"),
+                  Objective(lambda result: result.final.x, label="runtime"))
+    solver.require(Constraint(dynamic, lower_bound=-1, upper_bound=1, label="vector"),
+                   Constraint(p ** 2, upper_bound=3, label="square"))
+    solution, _ = make_solution(solver=solver)
+    assert [entry.label for entry in solution.objectives] == ["dynamic", "parameter", "runtime"]
+    np.testing.assert_allclose([entry.cost for entry in solution.objectives], [24, 2, 4])
+    assert [entry.position for entry in solution.objectives] == [0, 1, 2]
+    assert [entry.label for entry in solution.constraints] == ["system", "vector", "square"]
+    vector = solution.constraints[1]
+    np.testing.assert_allclose(vector.value, [2, -2])
+    np.testing.assert_allclose(vector.violation, [1, 1])
+    assert not vector.satisfied
+    assert [entry.label for entry in solution.violations] == ["vector", "square"]
+    assert not solution.feasible
+    assert solution.run() is solution.run()
+
+
+@pytest.mark.parametrize("lower,upper,x,margin", [
+    (1, np.inf, 2, 1), (1, np.inf, 0.5, -0.5),
+    (-np.inf, 3, 2, 1), (-np.inf, 3, 4, -1),
+    (1, 3, 2, 1), (1, 3, 4, -1), (2, 2, 2, 0), (2, 2, 2.25, -0.25),
 ])
-def test_parameter_bounds_check_every_coordinate_and_allow_unbounded_dimensions(x, feasible):
-    simulation = make_simulation(tuple(Parameter(0.0).variable() for _ in x))
-    problem = make_problem(3, lower=[0.0, -np.inf, 0.0], upper=[1.0, np.inf, 0.0])
-    solution = make_solution(x=x, simulation=simulation, problem=problem, feasibility_tolerance=0.0)
-
-    assert solution.feasible is feasible
-
-
-def test_solution_violations_preserve_unsatisfied_constraint_order():
-    constraints = (
-        Constraint(lambda context: 2.0, lower_bound=1.0),
-        Constraint(lambda context: 0.0, lower_bound=1.0, label="first violation"),
-        Constraint(lambda context: 3.0, upper_bound=2.0, label="second violation"),
-    )
-    solution = make_solution(constraints=constraints)
-
-    assert tuple(result.constraint for result in solution.violations) == constraints[1:]
-    assert solution.violations is solution.violations
-    assert solution.constraints is solution.constraints
-    assert solution.feasible is False
+def test_constraint_margins_and_violations(lower, upper, x, margin):
+    p = Parameter(0.5).variable()
+    solver = Solver(System(optical_input=Ray(x=p, theta=0, n=1)))
+    solver.require(Constraint(p, lower_bound=lower, upper_bound=upper))
+    solution, _ = make_solution(solver=solver, x=(x,))
+    entry = solution.constraints[0]
+    assert entry.margin == pytest.approx(margin)
+    assert entry.violation == pytest.approx(max(-margin, 0))
+    assert entry.satisfied == (margin >= 0)
 
 
-@pytest.mark.parametrize(
-    ("success", "constraint", "feasible"),
-    [
-        (True, Constraint(lambda context: 0.0, lower_bound=1.0), False),
-        (False, Constraint(lambda context: 2.0, lower_bound=1.0), True),
-    ],
-)
-def test_solution_success_and_feasibility_are_independent(
-    success,
-    constraint,
-    feasible,
-):
-    solution = make_solution(success=success, constraints=(constraint,))
-
-    assert solution.success is success
-    assert solution.feasible is feasible
+@pytest.mark.parametrize("bound,direction", [(0., -1), (1., 1)])
+@pytest.mark.parametrize("tolerance", [0., 0.125])
+def test_bound_violation_reporting_respects_tolerance(bound, direction, tolerance):
+    edge = bound + direction * tolerance
+    on_edge, _ = make_solution(x=(edge,), lower=[0], upper=[1], tolerance=tolerance)
+    outside, _ = make_solution(x=(np.nextafter(edge, direction * np.inf),),
+                               lower=[0], upper=[1], tolerance=tolerance)
+    assert on_edge.feasible
+    assert not outside.feasible
+    assert outside.success
+    assert isinstance(outside.violations[0], ParameterBoundResult)
+    assert outside.violations[0].violation > tolerance
 
 
-def test_solution_shares_one_runtime_simulation_result():
-    parameter = Parameter(2.0).variable()
-    element = object()
-    calls = 0
+def test_reporting_shares_one_optical_result(monkeypatch):
+    p = Parameter(0.5).variable()
+    solver = Solver(System(optical_input=Ray(x=p, theta=0, n=1)))
+    solver.target(lambda result: result.final.x)
+    solver.require(Constraint(lambda result: result.final.x, upper_bound=1))
+    solution, _ = make_solution(solver=solver)
+    calls = []
+    run = solution.simulation.run
 
-    class Result:
-        def at(self, location, occurrence=None):
-            assert location is element
-            return SimpleNamespace(w=3.0)
+    def record(theta):
+        calls.append(theta)
+        return run(theta)
 
-    def run(theta):
-        nonlocal calls
-        calls += 1
-        return Result()
-
-    simulation = make_simulation((parameter,), run=run)
-    objective = Objective(lambda context: context.at(element).w)
-    constraint = Constraint(lambda context: context.at(element).w, lower_bound=2.0)
-    solution = make_solution(
-        simulation=simulation,
-        objectives=(objective,),
-        constraints=(constraint,),
-    )
-
-    solution.targets
+    monkeypatch.setattr(solution.simulation, "run", record)
+    solution.objectives
     solution.constraints
     solution.violations
-    solution.feasible
     solution.run()
-
-    assert calls == 1
-
-
-def test_solution_pure_graph_access_does_not_run_simulation():
-    parameter = Parameter(2.0).variable()
-    calls = 0
-
-    def run(theta):
-        nonlocal calls
-        calls += 1
-
-    solution = make_solution(
-        x=(5.0,),
-        simulation=make_simulation((parameter,), run=run),
-    )
-
-    assert solution[parameter] == 5.0
-    assert solution[2.0 * parameter + 1.0] == 11.0
-    assert calls == 0
+    assert len(calls) == 1
 
 
-def test_solution_does_not_mutate_declarative_parameters():
-    parameter = Parameter(2.0, name="p").variable()
-    simulation = make_simulation((parameter,))
-    solution = make_solution(x=(5.0,), simulation=simulation)
+def test_real_solve_reports_reduced_constraints_and_keeps_overrides_local():
+    p = Parameter(0.5).variable(bounds=(0, 5))
+    solver = Solver(System(optical_input=Ray(x=p, theta=0, n=1)))
+    solver.target(p - 3)
+    solver.require(Constraint(p, lower_bound=1, label="bound-redundant"))
+    solution = solver.solve(x0=[1.5], x_lower=[1], x_upper=[2])
+    assert solution.success and solution.feasible
+    assert solution.x[0] == pytest.approx(2, abs=1e-6)
+    assert solution.cost == pytest.approx(1, abs=1e-6)
+    assert len(solution.constraints) == 1
+    assert solution.constraints[0].label == "bound-redundant"
+    assert solver._cache.output_indices == ()
+    assert solution.simulation.parameter_data[0].upper_bound == 2
+    assert solver.simulation.parameter_data[0].upper_bound == 5
+    second = solver.solve(x_upper=[4])
+    assert second.x[0] == pytest.approx(3, abs=1e-6)
+    assert solution.x[0] == pytest.approx(2, abs=1e-6)
+    assert solution.constraints[0].value == pytest.approx(2, abs=1e-6)
 
-    solution.parameters
-    solution[parameter]
-    solution.targets
-    solution.constraints
-    solution.run()
 
-    assert parameter.value == 2.0
-    assert parameter.is_variable is True
-    assert solution[parameter] == 5.0
-    assert solution.parameters[0].value == 5.0
+@pytest.mark.parametrize("value,satisfied", [(2.125, True), (2.25, False)])
+def test_constraint_reporting_tolerance(value, satisfied):
+    p = Parameter(0.5).variable()
+    solver = Solver(System(optical_input=Ray(x=p, theta=0, n=1)))
+    solver.require(Constraint(p, lower_bound=2, upper_bound=2))
+    solution, _ = make_solution(solver=solver, x=(value,), tolerance=0.125)
+    assert solution.constraints[0].satisfied is satisfied
+    assert solution.feasible is satisfied
+
+
+def test_empty_reporting_and_value_lookup_need_no_propagation(monkeypatch):
+    p = Parameter(0.5).variable()
+    solver = Solver(System(optical_input=Ray(x=p, theta=0, n=1)))
+    solution, _ = make_solution(solver=solver)
+
+    def unexpected_run(*args):
+        raise AssertionError("Reporting constants and theta does not need propagation")
+
+    monkeypatch.setattr(solution.simulation, "run", unexpected_run)
+    assert solution.value(p) == 2
+    assert solution.objectives == solution.constraints == solution.violations == ()
+    assert solution.feasible
+
+
+def test_parameter_bound_checks_cover_all_canonical_coordinates():
+    first = Parameter(0.5).variable()
+    second = Parameter(0.25).variable()
+    solver = Solver(System(optical_input=Ray(x=first, theta=second, n=1)))
+    solution, _ = make_solution(solver=solver, x=(2., -3.),
+                                lower=[-np.inf, 0], upper=[np.inf, 1])
+    assert solution.value(first) == 2
+    assert solution.value(second) == -3
+    assert len(solution.violations) == 1
+    assert solution.violations[0].parameter.parameter_id == id(second)
+    assert solution.violations[0].violation == 3
+
+
+@pytest.mark.parametrize("kind", ["objective", "constraint"])
+@pytest.mark.parametrize("invalid", [np.nan, np.inf, -np.inf])
+def test_nonfinite_reporting_is_rejected(kind, invalid):
+    p = Parameter(0.5).variable()
+    solver = Solver(System(optical_input=Ray(x=p, theta=0, n=1)))
+
+    def residual(result):
+        if result.final.x > 1:
+            return invalid
+        return result.final.x
+
+    if kind == "objective":
+        solver.target(residual, label="bad")
+    else:
+        solver.require(Constraint(residual, label="bad"))
+    solution, _ = make_solution(solver=solver)
+    with pytest.raises(ValueError, match="bad.*non-finite"):
+        getattr(solution, "objectives" if kind == "objective" else "constraints")

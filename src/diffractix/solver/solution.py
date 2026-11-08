@@ -1,41 +1,50 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import cached_property
-from typing import TYPE_CHECKING
+from numbers import Real
+from typing import Any
 
 import numpy as np
 
-from .result import SolverResult
-from .context import SolverContext
-from .problem import Problem
-from .objective import Objective
-from .constraint import Constraint
-if TYPE_CHECKING:
-    from ..system.system import ParameterInfo
+from diffractix.graph import Node
+from diffractix.simulation import Simulation
+from diffractix.simulation.result import resolve_symbol
+from diffractix.system.info import ParameterData
 
-from diffractix.graph import evaluate_ast
+from .scale import Scaling
+
+
+@dataclass(frozen=True)
+class SolverResult:
+    """Optimization result; Solver returns x in physical SI coordinates."""
+
+    x: np.ndarray
+    success: bool
+    cost: float
+    message: str
+    iterations: int | None = None
+    raw: Any = None
+    scaling: Scaling | None = None
 
 
 DEFAULT_FEASIBILITY_TOLERANCE = 1e-8
 
+
 @dataclass(frozen=True)
-class SolvedParameter:
-    info: ParameterInfo
-    value: float
-
-    @property
-    def initial(self):
-        return self.info.value
-
-    @property
-    def delta(self):
-        return self.value - self.initial
+class ObjectiveResult:
+    position: int
+    label: str | None
+    value: object
+    weight: float
+    cost: float
 
 
 @dataclass(frozen=True)
 class ConstraintResult:
-    constraint: Constraint
+    position: int
+    label: str | None
+    description: str
     value: object
     lower_bound: float
     upper_bound: float
@@ -45,153 +54,169 @@ class ConstraintResult:
 
 
 @dataclass(frozen=True)
-class TargetResult:
-    objective: Objective
-    value: object
-    weight: float
-    cost: float
+class ParameterBoundResult:
+    parameter: ParameterData
+    value: float
+    lower_bound: float
+    upper_bound: float
+    violation: float
+    margin: float
+    satisfied: bool
 
 
 class Solution:
-    """Result of solving a Diffractix inverse-design problem."""
+    """Solved values and complete model evaluations in physical coordinates."""
 
     def __init__(
-        self,
-        result: SolverResult,
-        problem: Problem,
-        simulation,
-        objectives,
-        constraints,
-        feasibility_tolerance: float = DEFAULT_FEASIBILITY_TOLERANCE
+        self, result: SolverResult, problem, simulation: Simulation, *,
+        objective_program, objective_descriptors, callable_objectives,
+        constraint_program, constraint_descriptors, callable_constraints,
+        feasibility_tolerance=DEFAULT_FEASIBILITY_TOLERANCE,
     ):
+        if isinstance(feasibility_tolerance, bool) or not isinstance(feasibility_tolerance, Real):
+            raise TypeError("feasibility_tolerance must be a real numeric scalar.")
         if not np.isfinite(feasibility_tolerance) or feasibility_tolerance < 0:
-            raise ValueError(
-                "feasibility_tolerance must be finite and non-negative."
-            )
+            raise ValueError("feasibility_tolerance must be finite and non-negative.")
 
         x = np.array(result.x, copy=True)
-        x.setflags(write=False)
-
-        if x.shape != (len(simulation.initial_values.values),):
-            raise ValueError(
-                "Backend result x shape must match simulation.initial_values."
-            )
+        if x.shape != (len(simulation.parameter_data),):
+            raise ValueError("Backend result x shape must match simulation.initial_values.")
         if not np.all(np.isfinite(x)):
             raise ValueError("Backend result x must contain only finite values.")
-
+        x.setflags(write=False)
         self._result = result
         self._x = x
-        self._problem = problem
-        self._simulation = simulation
-        self._objectives = tuple(objectives)
-        self._constraints = tuple(constraints)
         self._feasibility_tolerance = feasibility_tolerance
+        self._objective_program = objective_program
+        self._objective_descriptors = tuple(objective_descriptors)
+        self._callable_objectives = tuple(callable_objectives)
 
-    @cached_property
-    def _context(self):
-        return SolverContext(
-            self.x,
-            self._simulation.run,
+        parameters = tuple(
+            replace(info, value=value, lower_bound=lower, upper_bound=upper)
+            for info, value, lower, upper in zip(
+                simulation.parameter_data, x, problem.x_lower, problem.x_upper, strict=True)
+        )
+        self._simulation = Simulation(
+            element_data=simulation.element_data,
+            parameter_data=parameters,
+            callable_constraints=callable_constraints,
+            constraint_descriptors=constraint_descriptors,
+            constraint_program=constraint_program,
+            optics_program=simulation.optics_program,
+            optical_stages=simulation.optical_stages,
+            optical_inputs=simulation.optical_inputs,
+            bindings=simulation.bindings,
         )
 
+    @property
+    def simulation(self):
+        """Separate simulation with solved initial values and current-solve bounds."""
+        return self._simulation
 
     @property
     def x(self):
         return self._x
-
-    @cached_property
-    def parameter_info(self):
-        return tuple(sorted(
-            (
-                info for info in self._simulation.parameter_info.values()
-                if info.parameter_index is not None
-            ),
-            key=lambda info: info.parameter_index,
-        ))
-
-    @cached_property
-    def parameters(self):
-        return tuple(
-            SolvedParameter(info, value)
-            for info, value in zip(self.parameter_info, self.x)
-        )
-
-    @property
-    def success(self):
-        return self._result.success
 
     @property
     def cost(self):
         return self._result.cost
 
     @property
+    def success(self):
+        return self._result.success
+
+    @property
     def message(self):
         return self._result.message
-
-    @cached_property
-    def constraints(self):
-        results = []
-
-        for c in self._constraints:
-            val = np.asarray(c.evaluate(self._context))
-            margin = np.minimum(val - c.lower_bound, c.upper_bound - val)
-            violation = np.maximum(-margin, 0.0)
-
-            results.append(
-                ConstraintResult(
-                    constraint=c,
-                    value=val,
-                    lower_bound=c.lower_bound,
-                    upper_bound=c.upper_bound,
-                    violation=violation,
-                    margin=margin,
-                    satisfied=bool(np.all(violation <= self.feasibility_tolerance)),
-                )
-            )
-
-        return tuple(results)
-
-    @cached_property
-    def targets(self):
-        return tuple(
-            TargetResult(
-                objective=obj,
-                value=(val := obj.evaluate(self._context)),
-                weight=obj.weight,
-                cost=obj.weight * np.sum(np.square(val)),
-            )
-            for obj in self._objectives
-        )
-
-    @cached_property
-    def violations(self):
-        return tuple(
-            result for result in self.constraints
-            if not result.satisfied
-        )
 
     @property
     def feasibility_tolerance(self):
         return self._feasibility_tolerance
 
     @cached_property
-    def feasible(self):
-        """Whether current-solve bounds and constraints satisfy the reporting tolerance."""
-        bound_margin = np.minimum(self.x - self._problem.x_lower, self._problem.x_upper - self.x,)
-        return bool(np.all(bound_margin >= -self.feasibility_tolerance)) and not self.violations
-
-    def value_of(self, node):
-        return evaluate_ast(
-            node,
-            self.x,
-            parameter_snapshot=self._simulation.parameter_info,
-            bindings=self._simulation.execution_context,
-            context=self._simulation.compile_context,
-        )
-    def __getitem__(self, node):
-        return self.value_of(node)
+    def _optical_result(self):
+        return self.simulation.run(self.x)
 
     def run(self):
-        return self._context._get_result()
+        """Return the optical result at the solved parameter vector."""
+        return self._optical_result
 
+    def value(self, parameter):
+        """Look up a canonical Parameter or its direct InputNode handle."""
+        return self.simulation.initial_values[parameter]
 
+    def _evaluate(self, program, descriptors, callables, description):
+        bindings = {key: resolve_symbol(key, self.run()) for key in program.runtime_symbols}
+        values = program.evaluate(self.x, bindings)
+        entries = [(descriptor.position, descriptor, value)
+                   for descriptor, value in zip(descriptors, values, strict=True)]
+        if callables:
+            view = self.run().view()
+            for position, entry in callables:
+                value = entry.evaluate(view)
+                if isinstance(value, Node):
+                    raise TypeError("Deferred solver callables must return numerical scalars or arrays.")
+                entries.append((position, entry, value))
+        entries.sort(key=lambda entry: entry[0])
+        evaluated = []
+        for position, entry, value in entries:
+            value = np.array(value, copy=True)
+            if not np.all(np.isfinite(value)):
+                raise ValueError(f"{description} {entry.label!r} evaluated to a non-finite value.")
+            value.setflags(write=False)
+            evaluated.append((position, entry, value))
+        return evaluated
+
+    @cached_property
+    def objectives(self):
+        results = []
+        for position, entry, value in self._evaluate(
+            self._objective_program, self._objective_descriptors,
+            self._callable_objectives, "Objective",
+        ):
+            cost = entry.weight * np.sum(np.square(value))
+            if not np.isfinite(cost):
+                raise ValueError(f"Objective {entry.label!r} cost is non-finite.")
+            results.append(ObjectiveResult(position, entry.label, value, entry.weight, float(cost)))
+        return tuple(results)
+
+    @cached_property
+    def constraints(self):
+        results = []
+        for position, entry, value in self._evaluate(
+            self.simulation.constraint_program, self.simulation.constraint_descriptors,
+            self.simulation.callable_constraints, "Constraint",
+        ):
+            margin = np.minimum(value - entry.lower_bound, entry.upper_bound - value)
+            violation = np.maximum(-margin, 0.0)
+            results.append(ConstraintResult(
+                position=position,
+                label=entry.label,
+                description=getattr(entry, "description", str(entry)),
+                value=value,
+                lower_bound=entry.lower_bound,
+                upper_bound=entry.upper_bound,
+                violation=violation,
+                margin=margin,
+                satisfied=bool(np.all(violation <= self.feasibility_tolerance)),
+            ))
+        return tuple(results)
+
+    @cached_property
+    def violations(self):
+        """Violated model constraints, followed by violated parameter bounds."""
+        violations = [entry for entry in self.constraints if not entry.satisfied]
+        for info, value in zip(self.simulation.parameter_data, self.x, strict=True):
+            margin = min(value - info.lower_bound, info.upper_bound - value)
+            violation = max(-margin, 0.0)
+            if violation > self.feasibility_tolerance:
+                violations.append(ParameterBoundResult(
+                    parameter=info, value=value, lower_bound=info.lower_bound,
+                    upper_bound=info.upper_bound, violation=violation,
+                    margin=margin, satisfied=False,
+                ))
+        return tuple(violations)
+
+    @property
+    def feasible(self):
+        return not self.violations
