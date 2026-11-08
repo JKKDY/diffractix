@@ -60,6 +60,33 @@ print('ok')
 ''', 'jax') == 'ok'
 
 
+@pytest.mark.parametrize("kind", ["objective", "constraint"])
+def test_solver_requested_jit_propagates_dynamic_control_flow_errors(kind):
+    code = '''
+import pytest
+from jax.errors import TracerBoolConversionError
+from diffractix import Constraint, Parameter, Ray, Solver, System
+from diffractix.backend import xp
+
+parameter = Parameter(0.5).variable()
+solver = Solver(System(optical_input=Ray(x=parameter, theta=0, n=1)))
+
+def dynamic(result):
+    return result.final.x ** 2 if result.final.x > 0 else 5.0
+
+if KIND == 'objective':
+    solver.target(dynamic)
+else:
+    solver.require(Constraint(dynamic))
+cache = solver._build_cache(True, solver.simulation.initial_values.values)
+callback = cache.callbacks.objective if KIND == 'objective' else cache.callbacks.constraints
+with pytest.raises(TracerBoolConversionError):
+    callback(xp.array([0.5]))
+print('ok')
+'''
+    assert run_python(code.replace("KIND", repr(kind)), "jax") == "ok"
+
+
 @pytest.mark.parametrize("name", [
     "graph", "graph_gradient", "graph_jacobian", "objective", "gradient",
     "constraints", "jacobian", "hessian", "weighted_hessian", "nested", "fourth",

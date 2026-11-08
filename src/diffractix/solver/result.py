@@ -9,7 +9,7 @@ from .scale import Scaling
 
 
 @dataclass(frozen=True)
-class OptimizationResult:
+class SolverResult:
     """Optimization result; Solver returns x in physical SI coordinates."""
 
     x: np.ndarray

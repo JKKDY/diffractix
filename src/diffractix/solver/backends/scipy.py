@@ -4,7 +4,7 @@ import numpy as np
 from scipy.optimize import Bounds, NonlinearConstraint, minimize
 
 from ..problem import Problem
-from ..result import OptimizationResult
+from ..result import SolverResult
 
 DEFAULT_METHOD = "SLSQP"
 SUPPORTED_METHODS = {"trust-constr", "SLSQP"}
@@ -14,7 +14,7 @@ def solve_scipy(
     problem: Problem,
     method: str | None = None,
     options: dict | None = None,
-) -> OptimizationResult:
+) -> SolverResult:
     """Solve a compiled optimization problem with SciPy."""
     method = DEFAULT_METHOD if method is None else method
     options = {} if options is None else dict(options)
@@ -73,7 +73,7 @@ def solve_scipy(
         **kwargs,
     )
 
-    return OptimizationResult(
+    return SolverResult(
         x=res.x,
         success=bool(res.success),
         cost=float(res.fun),

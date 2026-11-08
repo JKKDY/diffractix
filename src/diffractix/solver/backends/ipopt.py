@@ -4,7 +4,7 @@ import numpy as np
 import cyipopt
 
 from ..problem import Problem
-from ..result import OptimizationResult
+from ..result import SolverResult
 
 
 class _IpoptProblem:
@@ -42,7 +42,7 @@ def solve_ipopt(
     problem: Problem,
     method: str | None = None,
     options: dict | None = None,
-) -> OptimizationResult:
+) -> SolverResult:
     """Solve a compiled optimization problem with IPOPT."""
 
     if method is not None:
@@ -72,7 +72,7 @@ def solve_ipopt(
     if isinstance(message, bytes):
         message = message.decode()
 
-    return OptimizationResult(
+    return SolverResult(
         x=np.asarray(x),
         success=info.get("status") in (0, 1),
         cost=float(info["obj_val"]),

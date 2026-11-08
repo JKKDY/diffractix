@@ -5,7 +5,7 @@ import pytest
 
 from diffractix import Constraint, GaussianBeam, Objective, Parameter, Ray, Solver, Space, System
 from diffractix.backend import jit, xp
-from diffractix.graph import Symbol, optimize
+from diffractix.graph import optimize
 
 
 def build_callbacks(solver):
@@ -85,15 +85,14 @@ def test_all_result_symbol_kinds_and_lazy_result_sharing(monkeypatch):
     assert len(calls) == 3
 
 
-def test_dynamic_nodes_use_current_theta_and_bindings_and_keep_constraint_order():
+def test_dynamic_numeric_branches_use_current_result_and_keep_constraint_order():
     parameter = Parameter(0.5).variable()
     system = System(optical_input=Ray(x=parameter, theta=0, n=1))
-    system.bind("gain", 2)
     solver = Solver(system)
 
     def dynamic(result):
         if result.final.x > 0:
-            return Symbol("gain") * parameter ** 2
+            return 2 * result.final.x ** 2
         return 5.0
 
     solver.target(Objective(dynamic, weight=3))

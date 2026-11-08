@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from .result import OptimizationResult
+from .result import SolverResult
 from .context import SolverContext
 from .problem import Problem
 from .objective import Objective
@@ -57,7 +57,7 @@ class Solution:
 
     def __init__(
         self,
-        result: OptimizationResult,
+        result: SolverResult,
         problem: Problem,
         simulation,
         objectives,

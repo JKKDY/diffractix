@@ -4,7 +4,7 @@ import numpy as np
 import nlopt
 
 from ..problem import Problem
-from ..result import OptimizationResult
+from ..result import SolverResult
 
 
 DEFAULT_METHOD = "LD_SLSQP"
@@ -61,7 +61,7 @@ def solve_nlopt(
     problem: Problem,
     method: str | None = None,
     options: dict | None = None,
-) -> OptimizationResult:
+) -> SolverResult:
     """Solve a compiled optimization problem with NLopt."""
 
     options = {} if options is None else dict(options)
@@ -165,7 +165,7 @@ def solve_nlopt(
 
     status = optimizer.last_optimize_result()
 
-    return OptimizationResult(
+    return SolverResult(
         x=np.asarray(x),
         success=status in (
             nlopt.SUCCESS,

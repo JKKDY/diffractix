@@ -6,7 +6,7 @@ from .context import (
 )
 from .solver import Backend, Solver
 from .solution import DEFAULT_FEASIBILITY_TOLERANCE, Solution
-from .result import OptimizationResult
+from .result import SolverResult
 from .constraint import Constraint
 from .objective import Objective
 
@@ -19,7 +19,7 @@ __all__ = [
     "SolverCompileContext",
     "Solution",
     "DEFAULT_FEASIBILITY_TOLERANCE",
-    "OptimizationResult",
+    "SolverResult",
     "Constraint",
     "Objective"
 ]

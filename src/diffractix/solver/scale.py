@@ -7,7 +7,7 @@ import numpy as np
 
 if TYPE_CHECKING:
     from .problem import Problem
-    from .result import OptimizationResult
+    from .result import SolverResult
 
 
 @dataclass(frozen=True, init=False)
@@ -71,15 +71,15 @@ class Scaling:
         ):
             values.setflags(write=False)
 
-    def scale(self, obj: Problem | OptimizationResult) -> Problem | OptimizationResult:
+    def scale(self, obj: Problem | SolverResult) -> Problem | SolverResult:
         """Return an object expressed in backend numerical coordinates."""
         from .problem import Problem
-        from .result import OptimizationResult
+        from .result import SolverResult
 
         c, s = self.x_center, self.x_scale
         a, t = self.constraint_center, self.constraint_scale
 
-        if isinstance(obj, OptimizationResult):
+        if isinstance(obj, SolverResult):
             return replace(obj, x=(obj.x - c) / s, scaling=self)
 
         if isinstance(obj, Problem):
@@ -123,15 +123,15 @@ class Scaling:
 
         raise TypeError(f"Cannot scale {type(obj).__name__}.")
 
-    def unscale(self, obj: Problem | OptimizationResult) -> Problem | OptimizationResult:
+    def unscale(self, obj: Problem | SolverResult) -> Problem | SolverResult:
         """Return an object expressed in physical SI coordinates."""
         from .problem import Problem
-        from .result import OptimizationResult
+        from .result import SolverResult
 
         c, s = self.x_center, self.x_scale
         a, t = self.constraint_center, self.constraint_scale
 
-        if isinstance(obj, OptimizationResult):
+        if isinstance(obj, SolverResult):
             # Cost and raw backend diagnostics remain exactly as reported.
             return replace(obj, x=c + s * obj.x, scaling=self)
 
