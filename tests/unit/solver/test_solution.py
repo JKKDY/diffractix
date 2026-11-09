@@ -5,7 +5,9 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from diffractix import Constraint, Objective, Parameter, Ray, Solver, System
+from diffractix import Constraint, Objective, Parameter, Ray, Solver, Space, System
+from diffractix.graph import InputNode, Literal, Symbol, UnresolvedInputError
+from diffractix.simulation.result import ResultSymbolKey, ResultSymbolKind
 from diffractix.backend import xp
 from diffractix.solver import Solution, SolverResult, DEFAULT_FEASIBILITY_TOLERANCE
 from diffractix.solver.solution import ParameterBoundResult
@@ -87,8 +89,8 @@ def test_updated_simulation_and_canonical_value_lookup():
     assert solution.simulation.run().final.x == pytest.approx(2)
     with pytest.raises(KeyError):
         solution.value(Parameter(1).variable())
-    with pytest.raises(TypeError):
-        solution.value(p + 1)
+    with pytest.raises(TypeError, match="Parameter or graph expression"):
+        solution.value(1.0)
 
 
 def test_complete_evaluations_preserve_interleaved_order_and_vector_shapes():
@@ -255,3 +257,95 @@ def test_nonfinite_reporting_is_rejected(kind, invalid):
     solution, _ = make_solution(solver=solver)
     with pytest.raises(ValueError, match="bad.*non-finite"):
         getattr(solution, "objectives" if kind == "objective" else "constraints")
+
+
+def two_parameter_solution(**bindings):
+    """Solution with first=2 and second=-3, whatever the canonical order of the two."""
+    first, second = Parameter(0.5).variable(), Parameter(0.25).variable()
+    system = System(optical_input=Ray(x=first, theta=second, n=1))
+    for key, build in bindings.items():
+        system.bind(key, build(first, second))
+    solver = Solver(system)
+    indices = solver.simulation.optics_program.parameter_indices
+    x = np.zeros(2)
+    x[indices[id(first)]], x[indices[id(second)]] = 2., -3.
+    solution, _ = make_solution(solver=solver, x=tuple(x))
+    return solution, first, second
+
+
+def test_value_evaluates_expressions_of_the_solved_parameters():
+    solution, first, second = two_parameter_solution()
+    assert solution.value(first - 2 * second) == pytest.approx(8.)
+    assert solution.value(second - 2 * first) == pytest.approx(-7.)
+    assert solution.value((first + 1) * (second - 1) / 4 + 0.5) == pytest.approx(-2.5)
+    assert solution.value(first.sin() ** 2 + first.cos() ** 2) == pytest.approx(1.)
+    assert solution.value(InputNode(first * 3)) == pytest.approx(6.)
+    assert solution.value(InputNode(InputNode(first))) == pytest.approx(2.)
+
+
+def test_value_expression_results_are_plain_numbers_and_arrays():
+    solution, first, _ = two_parameter_solution()
+    assert type(solution.value(first * 2)) is float
+    assert type(solution.value(first * (1 + 1j))) is complex
+    array = solution.value(first * Literal(np.array([1., 2.])))
+    assert isinstance(array, np.ndarray) and array.shape == (2,)
+    np.testing.assert_allclose(array, [2., 4.])
+
+
+def test_value_resolves_symbols_through_the_simulation_bindings():
+    solution, first, second = two_parameter_solution(
+        twice=lambda a, b: 2 * a, alias=lambda a, b: Symbol("twice") + b, constant=lambda a, b: 5.0,
+    )
+    assert solution.value(Symbol("twice") + 1) == pytest.approx(5.)
+    assert solution.value(Symbol("alias") * 2) == pytest.approx(2 * (4. - 3.))
+    assert solution.value(Symbol("constant") * first) == pytest.approx(10.)
+
+
+def test_value_uses_solved_values_not_live_parameter_state():
+    solution, first, _ = two_parameter_solution()
+    first.value = 99.
+    first.fixed()
+    assert solution.value(first) == 2.
+    assert solution.value(first * 10) == pytest.approx(20.)
+
+
+def test_value_uses_the_current_value_of_fixed_parameters():
+    solution, first, _ = two_parameter_solution(constant=lambda a, b: 5.0)
+    fixed = Parameter(3.0, name="fixed")
+    assert solution.value(fixed * first) == pytest.approx(6.)
+    assert solution.value(Symbol("constant") * first) == pytest.approx(10.)
+    fixed.value = 4.0   # documented: fixed Parameters are read live, like in solver expressions
+    assert solution.value(fixed * first) == pytest.approx(8.)
+
+
+def test_value_needs_no_propagation(monkeypatch):
+    solution, first, second = two_parameter_solution()
+    monkeypatch.setattr(solution.simulation, "run", lambda *args: pytest.fail("No propagation needed"))
+    assert solution.value(first + second) == pytest.approx(-1.)
+
+
+@pytest.mark.parametrize("make_quantity, error, message", [
+    (lambda first, second: Parameter(1.0).variable() + first, KeyError, "outside this solution's model"),
+    (lambda first, second: Symbol("unbound") + first, KeyError, "no binding"),
+    (lambda first, second: Symbol("unbound", default=1.0) + first, KeyError, "no binding"),
+    (lambda first, second: Symbol(ResultSymbolKey(ResultSymbolKind.FINAL, name="x")), KeyError, r"run\(\)"),
+    (lambda first, second: InputNode(None) + first, UnresolvedInputError, "empty InputNode"),
+], ids=["outside-variable", "unbound", "unbound-with-default", "result-symbol", "empty-handle"])
+def test_value_rejects_what_the_solution_does_not_contain(make_quantity, error, message):
+    solution, first, second = two_parameter_solution()
+    with pytest.raises(error, match=message):
+        solution.value(make_quantity(first, second))
+
+
+def test_value_ignores_symbol_defaults_even_when_other_symbols_are_bound():
+    solution, _, _ = two_parameter_solution(offset=lambda a, b: 2 * a)
+    assert solution.value(Symbol("offset")) == pytest.approx(4.)
+    with pytest.raises(KeyError, match="no binding"):
+        solution.value(Symbol("other", default=0.0) + Symbol("offset"))
+
+
+@pytest.mark.parametrize("quantity", ["x", None, [1.0], Parameter(1.0) >= 0], ids=["str", "none", "list", "comparison"])
+def test_value_rejects_non_graph_quantities(quantity):
+    solution, _, _ = two_parameter_solution()
+    with pytest.raises(TypeError, match="Parameter or graph expression"):
+        solution.value(quantity)

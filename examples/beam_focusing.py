@@ -90,10 +90,6 @@ def row(label, before, after, scale=1.0, unit=""):
     print(f"{label:<26} {before * scale:>12.4f} {after * scale:>12.4f} {unit}")
 
 
-def length(result, space):
-    return result[space].z_end - result[space].z_start
-
-
 print(f"Optimization: success={solution.success}, feasible={solution.feasible}, "
       f"cost={solution.cost:.3e}, time={elapsed:.2f} s")
 print(f"  {solution.message}")
@@ -101,8 +97,7 @@ print(f"  {solution.message}")
 table("Design")
 row("Source to lens", input_gap.d.value, solution.value(input_gap.d), 1e3, "mm")
 row("Lens focal length", lens.f.value, solution.value(lens.f), 1e3, "mm")
-row("Working distance", length(initial, working_distance),
-    length(optimized, working_distance), 1e3, "mm")
+row("Working distance", working_distance.d.value, solution.value(working_distance.d), 1e3, "mm")
 row("System length", initial.z[-1], optimized.z[-1], 1e3, "mm")
 print(f"Minimum working distance: {MIN_WORKING_DISTANCE * 1e3:.1f} mm")
 

@@ -197,8 +197,13 @@ be nonzero. Total cost is the sum of weight times
 the squared residual entries. target=0 is valid.
 
 Solution exposes x, cost, success, message, feasible, objectives, constraints,
-violations, simulation, value(parameter) and run(). value() accepts only canonical
-Parameters or their direct handles. There is no Solution indexing or value_of().
+violations, simulation, value(quantity) and run(). value() returns the solved
+value of a variable Parameter (or its direct handle) and evaluates any other graph
+expression, such as a derived gap, with the interpreter. Solved values replace the
+model's variable Parameters, fixed Parameters keep their current value, and the
+Simulation's bindings resolve Symbols. A variable Parameter outside the model, an
+unbound Symbol (defaults are ignored) or a runtime result Symbol raises KeyError;
+read result quantities from run(). There is no Solution indexing or value_of().
 solution.simulation carries solved defaults, current parameter bounds and the full
 constraints, including ones removed only for numerical optimization. It can be
 passed to a new Solver. success is backend termination status; feasible includes

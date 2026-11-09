@@ -173,8 +173,12 @@ including reduction-removed ones, and leaves original Simulation/Parameters inta
 Report original declaration order, residual shapes, labels/weights/individual cost,
 bounds/margins/violations. Parameter bounds count for feasible and violations with
 same reporting tolerance; success is independent. Nonfinite reporting fails clearly.
-value accepts canonical Parameter or direct InputNode only, not arbitrary AST or
-external/fixed parameters. run returns one reused optical result; result-dependent
+value(quantity) returns the solved value of a canonical Parameter or direct
+InputNode, and evaluates any other graph expression with the interpreter: solved
+values for the model's variable Parameters, current values for fixed Parameters,
+Simulation bindings for Symbols. A variable Parameter outside the model, an
+unbound Symbol (defaults ignored) or a runtime result Symbol raises KeyError;
+non-graph arguments raise TypeError. run returns one reused optical result; result-dependent
 reports share it; pure parameter reporting must not propagate. Repeated solves
 cannot retroactively change earlier Solution reports or bounds.
 

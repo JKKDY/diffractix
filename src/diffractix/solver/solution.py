@@ -7,9 +7,9 @@ from typing import Any
 
 import numpy as np
 
-from diffractix.graph import Node
+from diffractix.graph import InputNode, Node, Parameter, Symbol, evaluate_ast, walk_ast
 from diffractix.simulation import Simulation
-from diffractix.simulation.result import resolve_symbol
+from diffractix.simulation.result import ResultSymbolKey, resolve_symbol
 from diffractix.system.info import ParameterData
 
 from .scale import Scaling
@@ -141,9 +141,47 @@ class Solution:
         """Return the optical result at the solved parameter vector."""
         return self._optical_result
 
-    def value(self, parameter):
-        """Look up a canonical Parameter or its direct InputNode handle."""
-        return self.simulation.initial_values[parameter]
+    def value(self, quantity):
+        """Return a design Parameter, or an expression of them, at the solution.
+
+        A Parameter that was variable in the model (or a handle directly holding
+        one) returns its solved value. Any other graph expression is evaluated
+        with the interpreter: solved values replace the model's variable
+        Parameters, fixed Parameters keep their current value, and the
+        Simulation's bindings resolve its Symbols. KeyError is raised for
+        anything the solution cannot determine, namely a variable Parameter
+        outside the model, an unbound Symbol (its default is ignored), or a
+        runtime result quantity (read those from run()).
+        """
+        if isinstance(quantity, Parameter) or (
+            isinstance(quantity, InputNode) and isinstance(quantity.node, Parameter)
+        ):
+            return self.simulation.initial_values[quantity]
+        if not isinstance(quantity, Node):
+            raise TypeError(
+                f"Expected a Parameter or graph expression, got {type(quantity).__name__}."
+            )
+
+        indices = self.simulation.optics_program.parameter_indices
+        bindings = self.simulation.bindings
+        parameter_values = {pid: self.x[index] for pid, index in indices.items()}
+        for node in walk_ast((quantity,), bindings):
+            if isinstance(node, Parameter) and id(node) not in indices:
+                if node.is_variable:
+                    raise KeyError(
+                        f"{node.full_name} is a variable Parameter outside this solution's model, "
+                        "so it has no solved value."
+                    )
+                parameter_values[id(node)] = node.value
+            if isinstance(node, Symbol) and node.key not in bindings:
+                if isinstance(node.key, ResultSymbolKey):
+                    raise KeyError(
+                        f"Symbol {node.key!r} is a runtime result quantity; read it from run()."
+                    )
+                raise KeyError(f"Symbol {node.key!r} has no binding in this solution's simulation.")
+
+        value = np.array(evaluate_ast(quantity, bindings, parameter_values))
+        return value.item() if value.ndim == 0 else value
 
     def _evaluate(self, program, descriptors, callables, description):
         bindings = {key: resolve_symbol(key, self.run()) for key in program.runtime_symbols}

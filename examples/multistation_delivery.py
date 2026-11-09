@@ -266,10 +266,6 @@ def row(label, before, after, scale=1.0, unit=""):
     print(f"{label:<32} {before * scale:>12.4f} {after * scale:>12.4f} {unit}")
 
 
-def length(result, space):
-    return result[space].z_end - result[space].z_start
-
-
 print(f"Optimization ({SOLVER_METHOD}): success={solution.success}, "
       f"feasible={solution.feasible}, cost={solution.cost:.3e}, time={elapsed:.2f} s")
 print(f"  {solution.message}")
@@ -284,8 +280,8 @@ for index, (position, lens) in enumerate(zip(positions, lenses), start=1):
         row(f"Lens {index} {name}", parameter.value, solution.value(parameter), 1e3, "mm")
 row("AOM crystal thickness", aom_crystal.d.value, solution.value(aom_crystal.d), 1e3, "mm")
 row("EOM crystal thickness", eom_crystal.d.value, solution.value(eom_crystal.d), 1e3, "mm")
-row("Lens 2 to lens 3 air gap", length(initial, lens2_to_lens3), length(optimized, lens2_to_lens3), 1e3, "mm")
-row("Working distance", length(initial, working_distance), length(optimized, working_distance), 1e3, "mm")
+row("Lens 2 to lens 3 air gap", lens2_to_lens3.d.value, solution.value(lens2_to_lens3.d), 1e3, "mm")
+row("Working distance", working_distance.d.value, solution.value(working_distance.d), 1e3, "mm")
 row("Total length", initial.z[-1], optimized.z[-1], 1e3, "mm")
 print(f"Minimums: lens gap {MIN_LENS_GAP * 1e3:.0f} mm, working distance {MIN_WORKING_DISTANCE * 1e3:.0f} mm")
 
