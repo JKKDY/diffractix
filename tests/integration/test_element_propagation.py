@@ -1,7 +1,7 @@
 """Medium-aware optical mathematics after layout and graph compilation."""
 import numpy as np
 import pytest
-from diffractix import GaussianAperture, GaussianBeam, GRIN, Interface, Parameter, Ray, Space, System
+from diffractix import GaussianAperture, GaussianBeam, GRIN, Interface, Parameter, Ray, Space, System, ThinLens
 from diffractix.backend import grad,hessian,jit,xp
 
 
@@ -50,3 +50,19 @@ def test_aperture_radius_derivatives_include_complex_matrix_without_complex_wave
     for transform in (lambda f:f,grad,hessian):
         np.testing.assert_allclose(transform(width_squared)(point),transform(reference)(point),rtol=1e-10,atol=1e-12)
         np.testing.assert_allclose(jit(transform(width_squared))(point),transform(reference)(point),rtol=1e-10,atol=1e-12)
+
+
+def test_gaussian_beam_focused_by_thin_lens_follows_the_abcd_q_law():
+    waist, wavelength, before, focal, after = 5e-4, 1.064e-6, 0.05, 0.1, 0.12
+    lens = ThinLens(f=focal)
+    result = System(Space(d=before), lens, Space(d=after),
+                    optical_input=GaussianBeam.from_waist(waist, wavelength, n=1)).build().run()
+    q0 = 1j * np.pi * waist**2 / wavelength
+    q1 = q0 + before
+    q2 = q1 / (1 - q1 / focal)
+    q3 = q2 + after
+    np.testing.assert_allclose(result[lens].before.q, q1, rtol=1e-12)
+    np.testing.assert_allclose(result[lens].after.q, q2, rtol=1e-12)
+    np.testing.assert_allclose(result.final.q, q3, rtol=1e-12)
+    np.testing.assert_allclose(result.final.w, np.sqrt(-wavelength / (np.pi * np.imag(1 / q3))), rtol=1e-12)
+    assert result[lens].before.w == pytest.approx(result[lens].after.w, rel=1e-12)

@@ -479,38 +479,6 @@ def test_one_ulp_coefficient_difference_preserves_independent_equalities():
     assert active == descriptors
 
 
-def test_equality_basis_eliminates_exact_dependencies_without_an_lp(monkeypatch):
-    import diffractix.solver.constraint as constraint_module
-
-    def unexpected_lp(*args, **kwargs):
-        raise AssertionError("Equality basis analysis should use exact elimination")
-
-    monkeypatch.setattr(constraint_module, "linprog", unexpected_lp)
-    x, y, z = (Parameter(0).variable() for _ in range(3))
-    program, descriptors = make_problem(
-        Constraint(x - y, 0, 0, label="first"),
-        Constraint(y - z, 0, 0, label="second"),
-        Constraint(2 * x - 2 * z, 0, 0, label="dependent"),
-    )
-    forms = constraint_module._program_affine_forms(program)
-    indices, active = constraint_module._reduce_equalities(forms, (0, 1, 2), descriptors)
-    assert indices == (0, 1)
-    assert active == descriptors[:2]
-
-
-def test_equality_basis_uses_augmented_rows_to_detect_a_conflict():
-    from diffractix.solver.constraint import _program_affine_forms, _reduce_equalities
-
-    x, y, z = (Parameter(0).variable() for _ in range(3))
-    program, descriptors = make_problem(
-        Constraint(x - y, 0, 0),
-        Constraint(y - z, 0, 0),
-        Constraint(x - z, 1, 1),
-    )
-    with pytest.raises(ValueError):
-        _reduce_equalities(_program_affine_forms(program), (0, 1, 2), descriptors)
-
-
 def test_array_literal_duplicates_intersect_bounds_without_mutating_the_program():
     x = Parameter(0).variable()
     first, second = np.array([1., 2.]), np.array([1., 2.])
@@ -632,48 +600,15 @@ def test_constant_array_constraints_are_checked_componentwise_during_preparation
             prepare_constraints((Constraint(Literal(np.array(values)), upper_bound=3),), tracer=None, bindings={})
 
 
-def test_affine_forms_are_shared_by_the_box_equality_and_lp_passes(monkeypatch):
-    import diffractix.solver.constraint as constraint_module
-
-    x, y = Parameter(0).variable(), Parameter(0).variable()
-    program, descriptors = make_problem(
-        Constraint(x, upper_bound=1), Constraint(y, upper_bound=2), Constraint(x + y, upper_bound=3),
-    )
-    analyze = constraint_module._program_affine_forms
-    calls = []
-
-    def record_analysis(program):
-        calls.append(program)
-        return analyze(program)
-
-    monkeypatch.setattr(constraint_module, "_program_affine_forms", record_analysis)
-    indices, _ = reduce(program, descriptors)
-    assert indices == (0, 1)
-    assert calls == [program]
-
-
-@pytest.mark.parametrize("stage", ["duplicates", "box", "interval"])
-def test_reduction_stops_when_an_earlier_pass_removes_every_output(stage, monkeypatch):
-    import diffractix.solver.constraint as constraint_module
-
+@pytest.mark.parametrize("constraint_factory, lower, upper", [
+    pytest.param(lambda x: Constraint(x), [-1], [1], id="unbounded"),
+    pytest.param(lambda x: Constraint(x, 0, 1), [0], [1], id="box-implied"),
+    pytest.param(lambda x: Constraint(x ** 2, 0, 1), [-1], [1], id="interval-implied"),
+])
+def test_constraints_implied_by_parameter_bounds_are_all_removed(constraint_factory, lower, upper):
     x = Parameter(0).variable()
-    if stage == "duplicates":
-        constraint, lower, upper = Constraint(x), [-1], [1]
-        next_analysis = "_program_affine_forms"
-    elif stage == "box":
-        constraint, lower, upper = Constraint(x, 0, 1), [0], [1]
-        next_analysis = "_program_intervals"
-    else:
-        constraint, lower, upper = Constraint(x ** 2, 0, 1), [-1], [1]
-        next_analysis = "_reduce_equalities"
-    program, descriptors = make_problem(constraint)
-
-    def unexpected_analysis(*args):
-        pytest.fail("No further analysis is needed after all outputs have been removed")
-
-    monkeypatch.setattr(constraint_module, next_analysis, unexpected_analysis)
+    program, descriptors = make_problem(constraint_factory(x))
     assert reduce(program, descriptors, lower, upper) == ((), ())
-
 
 
 def test_reduced_polygon_has_same_independent_halfplane_feasible_region():

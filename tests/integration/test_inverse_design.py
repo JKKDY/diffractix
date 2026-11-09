@@ -118,7 +118,6 @@ def test_coupled_optical_gaps_keep_mechanical_clearance_at_small_scale():
     assert any(entry.label == "output clearance" for entry in solution.constraints)
 
 
-
 @pytest.mark.parametrize("use_jit", [False, True])
 def test_ray_bundle_array_residual_recovers_analytical_focus(use_jit):
     length, radius = 0.1, 0.001
@@ -140,3 +139,49 @@ def test_ray_bundle_array_residual_recovers_analytical_focus(use_jit):
     np.testing.assert_allclose(objective.value, final.x/radius, atol=1e-12)
     assert objective.cost == pytest.approx(np.sum((positions/radius*(1-length/f))**2), abs=1e-14)
     assert solution.cost == pytest.approx(objective.cost, abs=1e-14)
+
+
+@pytest.mark.parametrize("use_jit", [False, True])
+def test_ray_bundle_array_target_and_scale_recover_nonzero_image(use_jit):
+    positions = np.array([-0.001, 0., 0.001])
+    target = positions / 2
+    scale = np.array([0.001, 0.002, 0.003])
+    focal = Parameter(0.15).variable(bounds=(0.06, 0.3))
+    solver = Solver(System(ThinLens(f=focal), Space(d=0.05),
+                           optical_input=RayBundle(x=positions, theta=np.zeros(3), n=1)))
+    solver.target(value=lambda sim: sim.final.x, target=target, scale=scale, label="image")
+    solution = solver.solve(use_jit=use_jit, options={"ftol": 1e-12})
+    assert solution.success and solution.feasible
+    # x_out = x_in*(1-L/f) = x_in/2 requires f=2L.
+    assert solution.value(focal) == pytest.approx(0.1, abs=2e-7)
+    np.testing.assert_allclose(solution.run().final.x, target, atol=2e-9)
+    objective, = solution.objectives
+    np.testing.assert_allclose(objective.value, (solution.run().final.x-target)/scale, atol=1e-12)
+    assert objective.cost == pytest.approx(solution.cost, abs=1e-14)
+    assert solution.cost < 1e-11
+
+
+
+
+def test_quick_start_workflow_focuses_a_ray_onto_the_axis():
+    """The README workflow on the current API: absolute placements, a bounded lens, one target."""
+    ray = Ray(x=0.01, theta=0.0)
+    lens = ThinLens(f=0.2)
+    lens.f.variable(bounds=(0.05, 0.5))
+    image_plane = Plane(label="Image plane")
+    system = System(optical_input=ray)
+    system.add(lens, z=0.1)
+    system.add(image_plane, z=0.2)
+    simulation = system.build()
+    initial = simulation.run()
+    assert initial[image_plane].after.x == pytest.approx(0.005)
+
+    solver = Solver(simulation)
+    solver.target(value=lambda result: result[image_plane].after.x, target=0.0, scale=0.01)
+    solution = solver.solve(method="SLSQP")
+
+    # Default SLSQP tolerances: precise to the README's printed 0.1 mm.
+    assert solution.success and solution.feasible
+    assert solution.value(lens.f) == pytest.approx(0.1, abs=5e-5)
+    assert solution.run()[image_plane].after.x == pytest.approx(0.0, abs=5e-6)
+    assert lens.f.value == 0.2

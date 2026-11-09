@@ -1,7 +1,7 @@
 """Physical-angle ray traces through compiled optical elements."""
 import numpy as np
 import pytest
-from diffractix import Interface, Parameter, Ray, Slab, Space, System, ThickLens, ThinLens
+from diffractix import FourF, Interface, Mirror, Parameter, Ray, Slab, Space, System, Telescope, ThickLens, ThinLens
 from diffractix.backend import jacobian, hessian, jit, xp
 
 
@@ -56,3 +56,36 @@ def test_planar_interface_index_derivatives_remain_finite_under_jit():
         np.testing.assert_allclose(jit(vector)(point), expected)
         np.testing.assert_allclose(jit(jacobian(vector))(point), [[-0.02*0.018/medium**2], [-0.018/medium**2]])
         np.testing.assert_allclose(jit(hessian(angle))(point), [[2*0.018/medium**3]])
+
+
+@pytest.mark.parametrize("radius", [0.2, -0.3, np.inf])
+def test_mirror_is_unfolded_with_reflective_power_and_monotonic_z(radius):
+    first, mirror, last = Space(d=0.1), Mirror(R=radius), Space(d=0.05)
+    result = System(first, mirror, last, optical_input=Ray(x=0.001, theta=0.002, n=1)).build().run()
+    height = 0.001 + 0.1 * 0.002
+    angle = 0.002 - 2 * height / radius
+    np.testing.assert_allclose(result[mirror].after.vector, [height, angle])
+    np.testing.assert_allclose(result.final.vector, [height + 0.05 * angle, angle])
+    np.testing.assert_allclose(result.z, [0, 0.1, 0.1, 0.15])
+    assert result.final.n == 1
+
+
+@pytest.mark.parametrize("composite, matrix, length", [
+    (lambda: Telescope(f1=0.1, f2=0.2), [[-2.0, 0.3], [0.0, -0.5]], 0.3),
+    (lambda: Telescope(f1=-0.05, f2=0.2), [[4.0, 0.15], [0.0, 0.25]], 0.15),
+    (lambda: FourF(f1=0.1, f2=0.2), [[-2.0, 0.0], [0.0, -0.5]], 0.6),
+], ids=["keplerian", "galilean", "four-f"])
+def test_relay_composites_trace_their_independent_matrices(composite, matrix, length):
+    element = composite()
+    source = np.array([0.001, 0.01])
+    result = System(element, optical_input=Ray(x=source[0], theta=source[1], n=1)).build().run()
+    np.testing.assert_allclose(result.final.vector, np.array(matrix) @ source, atol=1e-15)
+    assert result.z[-1] == pytest.approx(length)
+    assert result[element.leaf_elements[0]].before is result.initial
+
+
+@pytest.mark.parametrize("composite", [lambda: Telescope(f1=-0.2, f2=0.1), lambda: FourF(f1=-0.2, f2=0.1)],
+                         ids=["telescope", "four-f"])
+def test_relay_with_negative_total_spacing_is_infeasible_at_build(composite):
+    with pytest.raises(ValueError, match="unsatisfiable"):
+        System(composite(), optical_input=Ray(x=0.001, theta=0.01, n=1)).build()

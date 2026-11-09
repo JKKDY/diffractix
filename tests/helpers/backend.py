@@ -12,7 +12,9 @@ JAX_AVAILABLE = importlib.util.find_spec("jax") is not None
 
 
 def run_python(code, preference="auto", *, timeout=180):
-    env = dict(os.environ, DIFFRACTIX_BACKEND=preference, JAX_ENABLE_X64="true")
+    # JAX_ENABLE_X64 is deliberately removed: the library itself must enable 64-bit mode.
+    env = dict(os.environ, DIFFRACTIX_BACKEND=preference)
+    env.pop("JAX_ENABLE_X64", None)
     env["PYTHONPATH"] = os.pathsep.join(
         [str(ROOT / "src"), str(ROOT), env.get("PYTHONPATH", "")]
     )
@@ -85,28 +87,3 @@ def capture_problem(solver, **solve_kwargs):
         except Captured:
             pass
     return captured["problem"]
-
-
-def example_before_solve(name):
-    """Reuse the actual example's setup, stopping before optimization/reporting."""
-    import ast
-    from contextlib import redirect_stdout
-    from types import ModuleType
-
-    path = ROOT / "examples" / f"{name}.py"
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    prefix = []
-    for statement in tree.body:
-        if any(isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-               and node.func.attr == "solve" for node in ast.walk(statement)):
-            break
-        prefix.append(statement)
-    else:
-        raise AssertionError(f"No solve boundary in {path}")
-    module = ModuleType(f"_backend_test_{name}")
-    module.__file__ = str(path)
-    sys.modules[module.__name__] = module
-    # Keep example diagnostics available without corrupting the child's JSON stdout.
-    with redirect_stdout(sys.stderr):
-        exec(compile(ast.Module(body=prefix, type_ignores=[]), str(path), "exec"), module.__dict__)
-    return module.__dict__

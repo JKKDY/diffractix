@@ -122,7 +122,7 @@ class Solver:
                 raise ValueError("target must be specified when value is supplied.")
 
             scale = 1 if scale is None else scale
-            if scale == 0:
+            if np.any(scale == 0):
                 raise ValueError("scale must be nonzero.")
 
             objectives = (Objective(

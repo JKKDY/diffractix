@@ -87,7 +87,9 @@ allow backend array factory arguments and broadcasting. Public graph fields
 are real scalar only. Factories need not make complex q optimizable.
 
 overlap_with checks compatible media (absolute tolerance 1e-6) and wavelengths
-(1e-9), then returns symmetric mode overlap; identical beams yield 1. Independently
+(symmetric relative tolerance 1e-6, zero absolute tolerance). Wavelengths a,b
+are compatible when abs(a-b) <= 1e-6*max(abs(a),abs(b)). This permits numerical
+rounding, not a spectral bandwidth. It then returns symmetric mode overlap; identical beams yield 1. Independently
 check mismatched waist radii and propagation invariance in compatible lossless
 systems. GaussianBeam construction and w_R_from_q reject nonfinite q or a nonpositive
 imaginary part with ValueError, before division. No epsilon threshold is used; traced validation follows

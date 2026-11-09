@@ -55,7 +55,7 @@ def test_constructor_owns_sequence_containers_and_retains_programs():
     simulation = make_simulation()
     elements, parameters, sources, stages = [], [], list(simulation.optical_inputs), []
     descriptors = [ConstraintDescriptor(0, 0, 1, "graph", "bounded graph")]
-    deferred = [(1, Constraint(lambda context: context.theta[0], label="deferred"))]
+    deferred = [(1, Constraint(lambda result: result.final.value, label="deferred"))]
     copied = Simulation(
         element_data=elements, parameter_data=parameters,
         callable_constraints=deferred, constraint_descriptors=descriptors,
@@ -292,7 +292,7 @@ def test_summary_reconstructs_interleaved_constraint_declaration_order():
         ConstraintDescriptor(0, 0., 1., "first graph", "first"),
         ConstraintDescriptor(2, 0., 1., "last graph", "last"),
     )
-    simulation.callable_constraints = ((1, Constraint(lambda ctx: ctx.theta[0], label="middle callable")),)
+    simulation.callable_constraints = ((1, Constraint(lambda result: result.final.value, label="middle callable")),)
 
     text = str(simulation)
 

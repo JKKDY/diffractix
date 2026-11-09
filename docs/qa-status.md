@@ -90,8 +90,10 @@ been approved or implemented as a new contract.
 ## Objective, plotting and RayBundle details
 
 Value matching residual is exactly (value(result)-target)/scale. Cost sums
-weight * sum(square(residual)) across objectives. Scale defaults to one, cannot
-be zero, and target zero is valid. The matching shorthand has no weight keyword;
+weight * sum(square(residual)) across objectives. Scale defaults to one, and target zero is valid. Numerical array targets and
+scales are supported through broadcasting; any zero scale entry is rejected
+when target() is called. Incompatible shapes raise the numerical broadcasting
+error during evaluation. The matching shorthand has no weight keyword;
 use an explicit Objective to set a nondefault weight.
 
 Public plotting: result.plot(...) and diffractix.plotting.plot(result,...), both

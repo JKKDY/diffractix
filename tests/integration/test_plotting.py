@@ -79,3 +79,46 @@ def test_thick_grin_plot_keeps_boundaries_without_inventing_interior_samples():
     markers = np.asarray(ax.collections[0].get_offsets())
     np.testing.assert_allclose(markers[:, 0], boundaries_z)
     np.testing.assert_allclose(markers[:, 1], boundaries_x*1e3)
+
+
+def test_gaussian_samples_follow_analytic_envelope_and_plot_in_millimetres():
+    waist, wavelength = 3e-4, 1.064e-6
+    result = System(Space(d=0.05), optical_input=GaussianBeam.from_waist(waist, wavelength)).build().run()
+    kind, _, _, segments = sample(result)
+    assert kind == "beam"
+    (z, width), = segments
+    rayleigh = np.pi * waist**2 / wavelength
+    np.testing.assert_allclose(z[[0, -1]], [0, 0.05], atol=1e-15)
+    np.testing.assert_allclose(width, waist * np.sqrt(1 + (z / rayleigh)**2), rtol=1e-12)
+    _, ax = plot(result, show_elements=False, show_axis=False)
+    plotted = np.concatenate([np.abs(line.get_ydata()) for line in ax.lines])
+    assert plotted.max() == pytest.approx(width.max() * 1e3, rel=1e-12)
+
+
+def test_plot_without_axes_creates_and_returns_a_new_figure():
+    result = System(Space(d=0.02), optical_input=Ray(x=0.001, theta=0.01)).build().run()
+    existing = plt.figure()
+    fig, ax = plot(result)
+    assert fig is not existing and ax.figure is fig
+    assert result.plot()[0] is not fig
+
+
+@pytest.mark.parametrize("show_elements", [False, True])
+@pytest.mark.parametrize("show_axis", [False, True])
+def test_element_and_axis_overlays_are_optional(show_elements, show_axis):
+    lens = ThinLens(f=0.1, label="Objective")
+    result = System(Space(d=0.05), lens, Space(d=0.05),
+                    optical_input=Ray(x=0.001, theta=0.0)).build().run()
+    _, ax = plot(result, show_elements=show_elements, show_axis=show_axis)
+    labels = [text.get_text() for text in ax.texts]
+    assert ("Objective" in labels) is show_elements
+    axis_lines = [line for line in ax.lines
+                  if len(line.get_ydata()) and np.all(np.asarray(line.get_ydata(), dtype=float) == 0)]
+    assert bool(axis_lines) is show_axis
+
+
+@pytest.mark.parametrize("count", [5, 41, 42, 100])
+def test_bundle_plot_shows_at_most_41_rays(count):
+    result = System(Space(d=0.05), optical_input=RayBundle.parallel(radius=1e-3, count=count)).build().run()
+    _, ax = plot(result, show_elements=False, show_axis=False)
+    assert len(ax.lines) == min(count, 41)

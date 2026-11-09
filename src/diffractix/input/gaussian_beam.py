@@ -179,7 +179,9 @@ class GaussianBeam(ParaxialState):
 
         Formula: 4 * Im(1/q1) * Im(1/q2) / |(1/q1)* - (1/q2)|^2
 
-        (Requires both beams to be at the same z position and in the same n)
+        (Requires both beams to be at the same z position and in the same n.)
+        Wavelength compatibility uses symmetric relative tolerance 1e-6,
+        with no absolute tolerance.
         """
         require(
             xp.abs(self.n - other.n) <= 1e-6,
@@ -187,7 +189,8 @@ class GaussianBeam(ParaxialState):
         )
 
         require(
-            xp.abs(self.wavelength - other.wavelength) <= 1e-9,
+            xp.abs(self.wavelength - other.wavelength)
+            <= 1e-6 * xp.maximum(xp.abs(self.wavelength), xp.abs(other.wavelength)),
             "Cannot calculate overlap between beams of different wavelengths.",
         )
 

@@ -191,7 +191,9 @@ See [the graph reference](graph-reference.md) for Nodes, bindings and programs.
 Solver(simulation) or Solver(system) creates one optimization model. Add objectives
 with target() and constraints with require() before the first solve. The model
 then stays fixed. A value-matching objective uses residual (value(result)-target)/scale;
-scale defaults to one and must be nonzero. Total cost is the sum of weight times
+scale defaults to one and must be nonzero. Targets and scales may be numerical
+arrays; broadcasting follows the numerical backend, and every scale entry must
+be nonzero. Total cost is the sum of weight times
 the squared residual entries. target=0 is valid.
 
 Solution exposes x, cost, success, message, feasible, objectives, constraints,

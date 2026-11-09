@@ -219,24 +219,6 @@ def test_overlap_is_preserved_by_common_lossless_lens_and_drift():
     assert (first.q, second.q) == (0.02 + 0.04j, -0.01 + 0.06j)
 
 
-@pytest.mark.parametrize("other_arguments, message", [
-    ({"wavelength": 1e-6, "n": 1.5}, "media"),
-    ({"wavelength": 1.1e-6, "n": 1.0}, "wavelength"),
-])
-def test_overlap_rejects_concrete_incompatible_media_or_wavelength(other_arguments, message):
-    first = GaussianBeam(q=1j, wavelength=1e-6, n=1.0).numeric()
-    other = GaussianBeam(q=1j, **other_arguments).numeric()
-
-    with pytest.raises(ValueError, match=message):
-        first.overlap_with(other)
-
-
-@pytest.mark.parametrize("q", [-1j, 1.0 + 0j])
-def test_q_width_extraction_rejects_nonphysical_inverse_imaginary_part(q):
-    with pytest.raises(ValueError, match="Invalid q-parameter"):
-        GaussianBeam.w_R_from_q(q, wavelength=1e-6, n=1.0)
-
-
 def test_waist_envelope_derivatives_remain_finite_through_plane_curvature():
     width, wavelength = 0.7e-3, 1.064e-6
     rayleigh_range = np.pi * width**2 / wavelength
@@ -287,3 +269,37 @@ def test_q_validation_preserves_batched_values_and_traced_derivatives():
     np.testing.assert_allclose(beam.w, np.sqrt(-1e-6/(np.pi*np.imag(1/np.asarray(q)))))
     with pytest.raises(ValueError, match="Invalid q-parameter"):
         cls(q=xp.array([1j, -1j]), wavelength=1e-6, n=1)
+
+
+@pytest.mark.parametrize("index_offset, compatible", [(5e-7, True), (2e-6, False)])
+def test_overlap_medium_tolerance_is_one_part_per_million_and_symmetric(index_offset, compatible):
+    first = GaussianBeam.from_waist(1e-3, 1e-6, n=1.0).numeric()
+    second = GaussianBeam.from_waist(1e-3, 1e-6, n=1.0 + index_offset).numeric()
+    for left, right in ((first, second), (second, first)):
+        if compatible:
+            assert left.overlap_with(right) == pytest.approx(1.0, abs=1e-6)
+        else:
+            with pytest.raises(ValueError, match="media"):
+                left.overlap_with(right)
+
+
+@pytest.mark.parametrize("wavelength", [1e-9, 1e-6, 1e-3])
+@pytest.mark.parametrize("relative_difference,compatible", [(0.5e-6, True), (2e-6, False)])
+def test_overlap_wavelength_tolerance_is_relative_and_symmetric(wavelength, relative_difference, compatible):
+    cls = GaussianBeam.numerical_type()
+    first = cls(q=1j, wavelength=wavelength, n=1)
+    second = cls(q=1j, wavelength=wavelength*(1+relative_difference), n=1)
+    for left, right in ((first, second), (second, first)):
+        if compatible:
+            assert left.overlap_with(right) == pytest.approx(1.)
+        else:
+            with pytest.raises(ValueError, match="wavelength"):
+                left.overlap_with(right)
+
+
+def test_overlap_wavelength_tolerance_accepts_float32_rounding():
+    cls = GaussianBeam.numerical_type()
+    first = cls(q=1j, wavelength=1.064e-6, n=1)
+    rounded = cls(q=1j, wavelength=np.float32(1.064e-6), n=1)
+    assert first.overlap_with(rounded) == pytest.approx(1.)
+    assert rounded.overlap_with(first) == pytest.approx(1.)

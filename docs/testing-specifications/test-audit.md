@@ -15,7 +15,40 @@ and lifecycle contracts are explicit. The weak spots are a few untested public
 components, operator coverage, and a few tests coupled to private implementation
 order.
 
-## 1. Library bugs found (need approval before fixing)
+## Resolution status (9 November 2026, after commit `5827b78`)
+
+The maintainer fixed B1–B3 and added regression tests for each. A black-box
+re-probe confirms:
+- B1: the build error now names the user's file and line.
+- B2: `q=-1j` and `q=1.0` raise `ValueError: Invalid q-parameter` at construction.
+- B3: `Parameter(nan)` raises, while `Parameter(inf)` is still allowed.
+
+Settled answers to Q1–Q4:
+- **Q1:** a concrete invalid `q` is rejected at construction (including
+  numerical subclasses), in `w_R_from_q()`, and at build after a mutation.
+- **Q2:** NaN is rejected at construction.
+- **Q3:** GRIN in a different medium needs explicit `Interface`s on both sides.
+- **Q4:** array `target=` is supported, with numerical broadcasting.
+
+The re-probe found two new issues:
+
+- **N1 (bug, needs approval): an array `scale=` is rejected with a raw NumPy
+  error.** `solver.target(value=..., target=0.0, scale=np.array([1., 2.]))` raises
+  `ValueError: The truth value of an array with more than one element is
+  ambiguous` inside `target()`. The likely cause is the scale-is-zero check
+  running on an array. The settled residual, `(value - target) / scale` with
+  broadcasting, implies an array scale should work, checked elementwise for
+  zero. Otherwise it should be rejected with a clear message. The maintainer
+  needs to choose which.
+- **N2 (cosmetic): wrong name in the NaN error.** For an unnamed parameter the
+  new message reads "Parameter None value must not be NaN". Compile-time
+  messages use `'<parameter>'` instead.
+
+An array `target` works in a real solve (RayBundle focus recovers `f = 0.1`). An
+incompatible target shape fails at solve time with NumPy's broadcast error.
+**New coverage gap:** no test uses an array `target` or `scale`.
+
+## 1. Library bugs found (fixed in `5827b78`)
 
 ### B1. Elements passed to the `System(...)` constructor report a library call site
 
@@ -113,7 +146,7 @@ Correctly left untested, because policy is still open: binding deduplication
 across composite branches, RayBundle factory domains and empty-bundle statistics,
 and deep snapshots of binding ASTs.
 
-## 4. Questions for the maintainer
+## 4. Questions for the maintainer (answered; see Resolution status)
 
 - **Q1.** Where should a concrete invalid Gaussian `q` (`Im(q) <= 0` or `q` real)
   be rejected: at construction, at `numeric()`/build, or on property access?
@@ -124,3 +157,101 @@ and deep snapshots of binding ASTs.
   model? If so, it needs documenting.
 - **Q4.** Is an array-valued `target=` (with an array `value`) in value matching
   part of the contract?
+
+## 5. Test work completed (9 November 2026)
+
+Test and helper files only; `src/` was not touched. Only the affected files
+were run:
+- Autograd: 12 files, **405 passed**, no warnings.
+- JAX: the new operator, ray, build and inverse-design tests, plus every
+  helper-dependent backend and parity test: **93 passed**.
+
+The full suite was not rerun.
+
+**Cleanup**
+
+| # | Change |
+| --- | --- |
+| T1 | Removed three reducer tests that patched private passes. A fourth called private `_reduce_equalities`; it duplicated the public `test_contradictory_dependent_equalities_raise`, so it was deleted. The pass-order test became `test_constraints_implied_by_parameter_bounds_are_all_removed`, which asserts only the outcome. |
+| T2 | `test_invalid_models_fail_before_propagation` now expects one error type and message per case. The relay test checks the generated-gap value (0.05 − 2d) instead of `len >= 1`. `simulation.run([])` now matches its message. |
+| T3 | `run_python` removes `JAX_ENABLE_X64` from the child environment, so float64 assertions now check the library's own setting. |
+| T5 | `tests/README.md` updated; dead `example_before_solve()` removed. |
+| T6 | `test_full_callbacks...` parameter renamed `wrap_in_jit`, with a docstring. Legacy `ctx.theta` lambdas in the Simulation fixtures replaced. |
+
+Deliberately left alone:
+- T4: private-pass coupling. The build-level counterparts exist in integration.
+- T6b: the Simulation tests that assign attributes after construction.
+- T7: formatting.
+
+**Coverage added**
+
+| Gap | New tests |
+| --- | --- |
+| 1 | `unit/graph/test_operations.py`: all 21 operations, checking value, gradient and Hessian against NumPy formulas. Each runs through the interpreter, `precompile` and `compile_graph`, eagerly and under JIT, with constant-operand variants. |
+| 2 | `integration/test_ray.py`: Mirror unfolded propagation (three radii); Keplerian, Galilean and FourF traces; negative total spacing failing build. |
+| 4 | `integration/test_system_build.py`: explicit ABCD, GRIN and Space `n` must match the incoming medium; a variable `n` becomes one continuity equality. |
+| 6 | `integration/test_plotting.py`: Gaussian envelope samples against analytic `w(z)` and the plot's millimetre scale; `ax=None`; the `show_elements` and `show_axis` toggles; the 41-ray cap. |
+| 7 | `unit/graph/test_compile.py`: NaN, bool, complex and str mutations on unbounded Parameters. |
+| 8 | `unit/input/test_gaussian_beam.py`: `overlap_with` just inside and just outside its tolerances. |
+| 9 | `unit/simulation/test_result.py`: guard that `at`/`after`/`z_at`/`z_after` stay absent. |
+| Q4 | `integration/test_inverse_design.py`: an array `target=` solved per ray, with the residual and cost checked against the formula. |
+
+Gaps 3 and 5 were covered by the maintainer's own regression tests in `5827b78`.
+Array `scale=` is untested pending N1.
+
+**New question for the library chat**
+
+- **Q5.** `overlap_with` checks wavelength with an absolute tolerance of 1e-9 m
+  (1 nm). That is about 0.1% at 1 µm, and beams 0.5 nm apart overlap silently.
+  Is an absolute nanometre tolerance intended, or should it be relative? The
+  new test encodes the currently documented values (`inputs.md`).
+
+## 6. Final consolidation pass (9 November 2026)
+
+I reviewed all 778 test functions by responsibility, after the maintainer's
+N1, N2 and Q5 changes, which came with their own tests. The whole suite
+collects 1,418 cases with no errors. Only the affected files were run, and
+they pass: Autograd 683 (670 + the 13 other inverse-design cases), JAX 393.
+
+**Redundancies removed or merged**
+
+| File | Change |
+| --- | --- |
+| `unit/backend/test_helpers.py` | Deleted. It only tested the dead `example_before_solve` helper. |
+| `unit/graph/test_construction.py` | `test_sigmoid` and `test_reverse_scalar_math` deleted; their values are now in `test_operations.py`. `test_unary_operations` became a structural check over all 14 unary builders (node type and operand identity). Section headers corrected. |
+| `unit/elements/test_elements.py` | `test_abcd_matrix_override_rejects_wrong_shape` deleted; it was a subset of the atomic-rejection test. The three single-assert GRIN tests became `test_grin_declaration`. The Mirror, ThinLens and Plane "no constraint" tests became one parametrized test. |
+| `unit/composites/test_composites.py` | Four `_structure` tests became one parametrized child-order test. Three `_can_be_variable` tests were deleted: generic base behaviour, already covered by `core`/`composites/test_base.py` and the wiring tests. The two spacing tests are covered by the reassignment and aggregate-matrix tests. The Slab and ThickLens ambient tests became one test parametrized over both. |
+| `unit/input/test_gaussian_beam.py` | The old incompatible-overlap test and `w_R_from_q` rejection test are subsets of the newer tolerance and invalid-`q` tests. The combined tolerance test was reduced to the medium tolerance (symmetric); wavelength is covered by the relative-tolerance test. |
+| `unit/solver/test_callbacks.py` | The empty-constraint test checks only derivative shapes. "No propagation for parameter-only models" stays only in `test_execution_regressions.py`, where it covers eager and JIT. |
+| `integration/test_inverse_design.py` | My array-target test was removed; the maintainer's array target-and-scale test covers it. |
+
+**Happy paths added**
+
+- `test_quick_start_workflow_focuses_a_ray_onto_the_axis`: the README workflow on
+  the current API, with default solver settings. It is precise to the README's
+  printed 0.1 mm, and the declaration is left unchanged.
+- `test_gaussian_beam_focused_by_thin_lens_follows_the_abcd_q_law`: a Gaussian
+  beam through Space → ThinLens → Space in a System, compared at every boundary
+  against the analytic `q` law.
+- `test_converging_bundle_reaches_a_common_focus_through_the_system`: a factory
+  bundle built and run end to end.
+
+**Still deliberately not changed**
+
+- T4: system unit tests use private build passes. Accepted white-box testing,
+  with public counterparts in integration.
+- T6b: Simulation tests assign attributes after construction.
+- T7: formatting of some integration files.
+
+None of these affect correctness or coverage.
+
+**Full-suite verification:** the complete runs after this pass found no failures,
+errors or warnings.
+
+| Backend | Passed | Skipped | Time |
+| --- | ---: | ---: | ---: |
+| Autograd | 1,414 | 4 | 48 s |
+| JAX | 1,416 | 2 | 105 s |
+
+The skips are the absent IPOPT and NLopt packages, plus two JAX-only checks
+under Autograd. This matches the earlier baseline.

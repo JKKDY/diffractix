@@ -154,6 +154,17 @@ def test_compilation_defensively_rejects_mutated_parameter_bounds(variable, fiel
         compile_graph((parameter,))
 
 
+@pytest.mark.parametrize("variable", [False, True])
+@pytest.mark.parametrize("value,error", [
+    (np.nan, ValueError), (True, TypeError), (1j, TypeError), ("1.0", TypeError),
+])
+def test_compilation_rejects_invalid_mutated_values_on_unbounded_parameters(variable, value, error):
+    parameter = Parameter(0.5, name="unbounded", variable=variable)
+    parameter.value = value
+    with pytest.raises(error, match="unbounded"):
+        compile_graph((parameter * 2,))
+
+
 def test_infinite_fixed_optical_radius_remains_a_valid_constant():
     radius = Parameter(np.inf)
     assert compile_graph((-2.0 / radius,)).evaluate([])[0] == 0.0

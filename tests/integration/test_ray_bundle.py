@@ -53,3 +53,12 @@ def test_bundle_derivatives_match_analytical_lens_chain():
         function, reference = transform(actual), transform(expected)
         np.testing.assert_allclose(function(theta), reference(theta), atol=1e-12)
         np.testing.assert_allclose(jit(function)(theta), reference(theta), atol=1e-12)
+
+
+def test_converging_bundle_reaches_a_common_focus_through_the_system():
+    focus = 0.08
+    source = RayBundle.converging(radius=2e-3, count=7, focal_distance=focus)
+    result = System(Space(d=focus), Space(d=0.02), optical_input=source).build().run()
+    np.testing.assert_allclose(result.states[1].x, 0.0, atol=1e-15)
+    np.testing.assert_allclose(result.final.x, -0.02 * source.x / focus, atol=1e-15)
+    assert result.final.size == 7

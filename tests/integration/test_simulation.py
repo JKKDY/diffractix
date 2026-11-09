@@ -74,7 +74,7 @@ def test_custom_state_and_element_use_same_compilation_pipeline():
 def test_empty_path_and_invalid_theta_do_not_corrupt_next_run():
     p=Parameter(0.001).variable()
     simulation=System(optical_input=Ray(x=p,theta=0.01)).build()
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Expected 1"):
         simulation.run([])
     result=simulation.run([0.002])
     assert result.initial is result.final

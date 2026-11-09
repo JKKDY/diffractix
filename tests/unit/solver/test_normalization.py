@@ -233,3 +233,29 @@ def test_require_validation_is_atomic_and_chaining_preserves_entries():
 def test_entry_constructor_requires_graph_or_callable(constructor, invalid):
     with pytest.raises(TypeError, match="Node or callable"):
         constructor(invalid)
+
+
+
+@pytest.mark.parametrize("scale", [np.array([1., 0.]), np.array([[0.], [2.]]), np.array(0.)])
+def test_value_matching_rejects_any_zero_scale_entry_without_adding_objective(scale):
+    solver = make_solver()
+    with pytest.raises(ValueError, match="scale must be nonzero"):
+        solver.target(value=lambda sim: sim.final.x, target=np.array([1., 2.]), scale=scale)
+    assert solver._objectives == []
+
+
+@pytest.mark.parametrize("use_jit", [False, True])
+def test_array_matching_broadcasts_and_preserves_analytical_derivatives(use_jit):
+    from diffractix.backend import xp
+    parameter = Parameter(0.5).variable()
+    solver = Solver(System(optical_input=Ray(x=parameter, theta=0, n=1)))
+    target, scale = np.array([1., 3.]), np.array([1., 2.])
+    solver.target(value=lambda sim: sim.final.x, target=target, scale=scale)
+    callbacks = solver._build_cache(use_jit, solver.simulation.initial_values.values).callbacks
+    point = xp.array([2.])
+    # Cost = (x-1)^2 + (x-3)^2/4.
+    assert callbacks.objective(point) == pytest.approx(1.25)
+    np.testing.assert_allclose(callbacks.gradient(point), [1.5])
+    np.testing.assert_allclose(callbacks.objective_hessian(point), [[2.5]])
+    np.testing.assert_array_equal(target, [1., 3.])
+    np.testing.assert_array_equal(scale, [1., 2.])

@@ -23,8 +23,9 @@ def build_callbacks(solver):
     )
 
 
-@pytest.mark.parametrize("use_jit", [False, True])
-def test_full_callbacks_match_analytical_values_and_derivatives(use_jit):
+@pytest.mark.parametrize("wrap_in_jit", [False, True])
+def test_full_callbacks_match_analytical_values_and_derivatives(wrap_in_jit):
+    """Eager callbacks are also traceable when wrapped in jit; Solver JIT is tested in test_cache."""
     position, angle = Parameter(0.4).variable(), Parameter(0.3).variable()
     solver = Solver(System(Space(d=1), optical_input=Ray(x=position, theta=angle, n=1)))
     solver.target(Objective(position ** 2, weight=3), Objective(lambda result: result.final.x - 1, weight=2), lambda result: 7)
@@ -52,7 +53,7 @@ def test_full_callbacks_match_analytical_values_and_derivatives(use_jit):
     }
     for name, (value, arguments) in expected.items():
         function = getattr(callbacks, name)
-        if use_jit:
+        if wrap_in_jit:
             function = jit(function)
         np.testing.assert_allclose(function(*arguments), value, atol=1e-12)
 
@@ -86,11 +87,11 @@ def test_all_result_symbol_kinds_and_lazy_result_sharing(monkeypatch):
     assert len(calls) == 3
 
 
-def test_empty_constraints_have_correct_derivative_shapes_and_direct_nodes_do_not_run_simulation(monkeypatch):
+def test_empty_constraints_have_correct_derivative_shapes():
+    # Avoiding propagation for parameter-only models is tested in test_execution_regressions.
     parameter = Parameter(0.5).variable()
     solver = Solver(System(optical_input=Ray(x=parameter, theta=0, n=1)))
     solver.target(parameter - 1)
-    monkeypatch.setattr(solver.simulation, "run", lambda theta: pytest.fail("Direct nodes need no optical propagation"))
     callbacks, graph_rows, callable_rows = build_callbacks(solver)
     assert graph_rows == callable_rows == ()
     assert callbacks.objective(xp.array([2.])) == pytest.approx(1)

@@ -256,3 +256,9 @@ def test_string_result_reports_boundary_locations_and_state_values(state_kind):
     assert "x" in text and "theta" in text
     assert "States: 2" in text
     assert result[element].after is result.final
+
+
+@pytest.mark.parametrize("name", ["at", "after", "z_at", "z_after"])
+def test_removed_position_probing_accessors_stay_absent(name):
+    """Interior probing is unsupported; use indexed stage boundary views."""
+    assert not hasattr(make_result((object(),)), name)

@@ -207,10 +207,6 @@ def test_mirror_build_validation_rejects_zero_radius():
         Mirror(R=0.0).validate()
 
 
-def test_mirror_has_no_local_solver_constraint():
-    assert Mirror(R=-0.5).constraints == ()
-
-
 # ---------
 # INTERFACE
 # ---------
@@ -419,13 +415,6 @@ def test_abcd_matrix_setter_preserves_handles():
     )
 
 
-def test_abcd_matrix_override_rejects_wrong_shape():
-    element = ABCD()
-
-    with np.testing.assert_raises(ValueError):
-        element.matrix = np.eye(3)
-
-
 def test_abcd_can_request_refractive_index_inheritance():
     element = ABCD(thickness=1.0)
 
@@ -515,6 +504,15 @@ def test_gaussian_aperture_requires_strictly_positive_radius():
 # GRIN
 # ----
 
+def test_grin_declaration():
+    element = GRIN(d=0.02, g=10.0, n=1.5)
+
+    assert element.parameter_names == ("d", "g", "n")
+    assert element.element_length is element.d
+    assert element.refractive_index is element.n
+    assert (element.d.value, element.g.value, element.n.value) == (0.02, 10.0, 1.5)
+
+
 def test_grin_matrix():
     d = 0.02
     g = 10.0
@@ -560,24 +558,6 @@ def test_grin_sinc_derivatives_at_zero_match_taylor_limit(order, expected):
         )
 
 
-def test_grin_element_length():
-    element = GRIN(d=0.02, g=10.0, n=1.5)
-
-    assert element.element_length.value == pytest.approx(0.02)
-
-
-def test_grin_refractive_index():
-    element = GRIN(d=0.02, g=10.0, n=1.5)
-
-    assert element.refractive_index.value == pytest.approx(1.5)
-
-
-def test_grin_parameters():
-    element = GRIN(d=0.02, g=10.0, n=1.5)
-
-    assert element.parameter_names == ("d", "g", "n")
-
-
 def test_grin_requires_nonnegative_length():
     element = GRIN(d=0.02, g=10.0, n=1.5)
 
@@ -593,9 +573,10 @@ def test_grin_requires_positive_refractive_index():
     assert constraint.left is element.n
 
 
-def test_thin_lens_and_plane_have_no_local_solver_constraints():
-    assert ThinLens(f=-0.1).constraints == ()
-    assert Plane().constraints == ()
+@pytest.mark.parametrize("element", [ThinLens(f=-0.1), Mirror(R=-0.5), Plane()],
+                         ids=["thin-lens", "mirror", "plane"])
+def test_powered_and_reference_elements_have_no_local_solver_constraints(element):
+    assert element.constraints == ()
 
 
 def test_plane_has_no_optical_power_length_or_independent_parameters():

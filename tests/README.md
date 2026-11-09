@@ -13,9 +13,8 @@ Numerical backend configuration and explicitly selected Autograd/JAX behavior
 live in `unit/backend/`. See its [README](unit/backend/README.md)
 for process isolation, optional JAX handling, and eager-versus-traced validation.
 Comparisons spanning real optical systems and solver callbacks live in
-`integration/test_numerical_parity.py`.
-The real multi-station parity scenario lives in `integration/test_backend_parity.py`;
-it reuses the example without running optimization.
+`integration/test_numerical_parity.py`, using small self-contained cases from
+`helpers/backend_cases.py` with independent analytical expectations.
 
 Happy paths, invalid inputs, and regression cases stay beside the feature they exercise. There is no separate edge-case or regression suite.
 
@@ -39,10 +38,9 @@ $env:DIFFRACTIX_BACKEND = "jax"
 python -m pytest tests
 ```
 
-Numerical propagation fixtures explicitly use `numeric()` or `numerical_type()`;
-this does not stand in for future symbolic-source compilation into System.
-The advanced example is executed unchanged, so incompatible example usage remains
-a visible failure rather than being skipped or patched by a test helper.
+Standalone numerical propagation fixtures use `numeric()` or `numerical_type()`;
+`System` itself only accepts declarative inputs. Examples are not executed by
+pytest; `scripts/run_examples.py` runs them separately.
 
 Real IPOPT tests use `pytest.importorskip("cyipopt")`; real NLopt tests use `pytest.importorskip("nlopt")`. Missing optional packages skip only their real backend tests, not mocked adapters or the rest of the integration suite. Backend markers select real optimizer tests; unit adapter tests are selected by directory.
 

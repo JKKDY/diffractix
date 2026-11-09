@@ -21,10 +21,9 @@ from diffractix.graph import (
 )
 
 
-
-# -----------------
-# LITERAL SEMANTICS
-# -----------------
+# ----------------
+# VARIABLE BOUNDS
+# ----------------
 def test_variable_bounds_pair_matches_existing_endpoints():
     old = Parameter(5e-3).variable(lower_bound=4e-3, upper_bound=10e-3)
     new = Parameter(5e-3)
@@ -95,6 +94,9 @@ def test_variable_legacy_none_and_positional_endpoints_are_preserved():
     assert (parameter.lower_bound, parameter.upper_bound) == (-1.0, 3.0)
 
 
+# ---------------------------
+# LITERALS AND SCALAR OPERANDS
+# ---------------------------
 @pytest.mark.parametrize("node, expected", [
     (Literal(2), 2.0), (Parameter(2), 2.0),
     (Parameter(2) * 3, 6.0), (InputNode(Parameter(2)), 2.0),
@@ -159,17 +161,6 @@ def test_literal_math():
     assert a.minimum(b).value == 5
 
 
-def test_reverse_scalar_math():
-    """Raw scalars should work on the left-hand side of Node operations."""
-    x = Literal(4)
-
-    assert (2 + x).value == 6
-    assert (10 - x).value == 6
-    assert (3 * x).value == 12
-    assert (20 / x).value == 5
-    assert (2 ** x).value == 16
-
-
 def test_scalars_are_wrapped_as_literals():
     """
     Raw scalars used in expressions should become Literal nodes.
@@ -185,35 +176,17 @@ def test_scalars_are_wrapped_as_literals():
     assert expr.right.value == 2
 
 
-def test_unary_operations():
-    """Unary operators and functions should preserve operands and evaluate correctly."""
+@pytest.mark.parametrize("build", [
+    lambda x: -x, lambda x: +x, abs, lambda x: x.sigmoid(), lambda x: x.exp(), lambda x: x.log(),
+    lambda x: x.sqrt(), lambda x: x.sin(), lambda x: x.cos(), lambda x: x.tan(),
+    lambda x: x.sinh(), lambda x: x.cosh(), lambda x: x.tanh(), lambda x: x.sinc(),
+])
+def test_unary_operations_build_nodes_that_keep_their_operand(build):
+    """Values and derivatives of every operation are covered in test_operations.py."""
     x = Parameter(4, name="x")
-
-    neg = -x
-    pos = +x
-    absolute = abs(-x)
-    sigmoid = x.sigmoid()
-    exponential = x.exp()
-    logarithm = x.log()
-    square_root = x.sqrt()
-
-    assert isinstance(neg, UnaryOp)
-    assert neg.operand is x
-
-    assert neg.value == -4
-    assert pos.value == 4
-    assert absolute.value == 4
-    assert sigmoid.value == pytest.approx(1 / (1 + np.exp(-4)))
-    assert exponential.value == pytest.approx(np.exp(4))
-    assert logarithm.value == pytest.approx(np.log(4))
-    assert square_root.value == pytest.approx(2.0)
-
-
-def test_sigmoid():
-    x = Literal(0)
-
-    assert x.sigmoid().value == pytest.approx(0.5)
-
+    node = build(x)
+    assert isinstance(node, UnaryOp)
+    assert node.operand is x
 
 def test_invalid_scalar_math():
     """Non-numeric operands should fail during AST construction."""
@@ -253,7 +226,6 @@ def test_complex_expression():
     expr = -1j * x
 
     assert expr.value == -2j
-
 
 
 # -------------------
@@ -751,9 +723,10 @@ def test_comparison_repr_contains_unambiguous_relation(relation, symbol):
     assert f" {symbol} " in repr(comparison)
 
 
-
 @pytest.mark.parametrize("bounds", [{}, {"lower_bound": 0, "upper_bound": 1}])
 @pytest.mark.parametrize("variable", [False, True])
-def test_parameter_rejects_nan_at_construction(bounds, variable):
-    with pytest.raises(ValueError, match="NaN"):
-        Parameter(np.nan, name="invalid", variable=variable, **bounds)
+@pytest.mark.parametrize("name", [None, "invalid"])
+def test_parameter_rejects_nan_at_construction(bounds, variable, name):
+    with pytest.raises(ValueError, match="NaN") as error:
+        Parameter(np.nan, name=name, variable=variable, **bounds)
+    assert repr(name or "<parameter>") in str(error.value)
