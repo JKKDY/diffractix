@@ -17,9 +17,9 @@ Inputs + elements + bindings + constraints
              SimulationResult
 ```
 
-This is a reference for the current rewrite. Package imports and the
-Simulation-to-result handoff still need integration checks. The examples below
-describe the API being connected. Solver integration is the next step.
+This describes the current rewritten API. Compilation, propagation and small
+real optimization pipelines have integration tests under Autograd and JAX. See
+[QA status](qa-status.md) for current results and remaining release work.
 
 ## Define the design
 
@@ -60,7 +60,7 @@ Build performs these steps:
 4. Resolve absolute placements and insert gap Spaces.
 5. Resolve refractive indices and generate continuity constraints.
 6. Compile the optical expressions and prepare the numerical input snapshot.
-7. Normalize constraints and precompile direct graph expressions.
+7. Normalize constraints, trace callables where possible and precompile them.
 8. Store programs, lookup indices and metadata in Simulation.
 
 The source index defines the initial medium. If absent, ambient is the fallback.
@@ -93,8 +93,9 @@ Direct graph constraints are captured in a program. Unresolved Symbols fail.
 A satisfied constant constraint is omitted. An unsatisfiable or non-finite
 constant constraint fails build. A variable constraint may start unsatisfied.
 
-Context callables remain deferred for Solver tracing. Their captured Python
-state remains the user's responsibility. Positions preserve ordering between
+Build traces constraint callables with a result tracer. Traceable expressions
+are precompiled; callables with symbolic Python control flow remain deferred.
+Their captured Python state remains the user's responsibility. Positions preserve ordering between
 graph constraints and deferred callables. Add later optimization constraints
 through `Solver.require()`; Simulation has no `require()` method.
 
@@ -183,3 +184,34 @@ their indices; its `value` fields are build-time defaults, not updated run value
 the declared design, compiled model and boundary trace respectively.
 
 See [the graph reference](graph-reference.md) for Nodes, bindings and programs.
+
+
+## Solve and inspect
+
+Solver(simulation) or Solver(system) creates one optimization model. Add objectives
+with target() and constraints with require() before the first solve. The model
+then stays fixed. A value-matching objective uses residual (value(result)-target)/scale;
+scale defaults to one and must be nonzero. Total cost is the sum of weight times
+the squared residual entries. target=0 is valid.
+
+Solution exposes x, cost, success, message, feasible, objectives, constraints,
+violations, simulation, value(parameter) and run(). value() accepts only canonical
+Parameters or their direct handles. There is no Solution indexing or value_of().
+solution.simulation carries solved defaults, current parameter bounds and the full
+constraints, including ones removed only for numerical optimization. It can be
+passed to a new Solver. success is backend termination status; feasible includes
+model constraints and parameter bounds within the reporting tolerance.
+
+## Plot a result
+
+result.plot(ax=None, show_elements=True, show_axis=True) and
+from diffractix.plotting import plot; plot(result, ...) are equivalent public
+entry points. Both return (figure, axes) and do not call show() or save files.
+Matplotlib is imported lazily. Plotting supports concrete Ray, RayBundle and
+GaussianBeam results, including numerical subclasses. z is shown in metres and
+transverse quantities in millimetres. Bundles show up to 41 rays.
+
+Only known Space intervals are interpolated. Thick elements such as GRIN retain
+actual boundary states and a boundary-only region; plotting does not claim their
+interior propagation. General arbitrary-z probing is unsupported. The old at(),
+after(), z_at() and z_after() APIs are removed; use indexed stage views.

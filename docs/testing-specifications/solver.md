@@ -1,8 +1,8 @@
 # Solver package behavioral specification
 
-Prepared 8 November 2026, after the Program compiler and Solution rewrite.
+Current behavioral contract for the Program-based Solver.
 Read the current source plus graph-reference.md, system-simulation-result.md and
-numerical_backends.md. Historical examples and reports can describe removed APIs.
+numerical_backends.md. Examples awaiting migration may describe removed APIs.
 This specification distinguishes agreed contracts from observations and open policy.
 
 ## Scope and test rules
@@ -17,13 +17,12 @@ Retain regression failures; no xfail or skip to hide bugs. Optional-library
 availability skips and JAX-only transformation skips are legitimate. Shared
 numerical tests import transformations through diffractix.backend. Native
 optimizer end-to-end convergence tests belong in integration; adapter unit tests
-may use small purpose-built fake native APIs to inspect callback wiring. This
-exception to the older README's fake-module prohibition is limited to testing
-optional adapters without requiring their packages, never concealing failures.
+may use small purpose-built fake native APIs to inspect callback wiring. Such substitutes test native adapter wiring without requiring optional packages;
+they must not conceal library failures or replace real integration tests.
 
 Run the entire owned directory in separate Autograd and JAX processes if installed.
-Report collection errors, passed/failed/skipped counts, deletions/consolidations,
-new coverage, minimal reproducers and gaps in solver-results.md. Do not install
+Report collection errors, passed/failed/skipped counts, meaningful coverage
+changes, minimal reproducers and remaining gaps. Do not install
 packages or rewrite integration tests. Existing backend isolation helpers may be
 used only when needed (e.g. JAX tracing tests); avoid gratuitous subprocesses.
 
@@ -179,15 +178,11 @@ external/fixed parameters. run returns one reused optical result; result-depende
 reports share it; pure parameter reporting must not propagate. Repeated solves
 cannot retroactively change earlier Solution reports or bounds.
 
-## Legacy and ambiguity register
+## Limits
 
-context.py remains exported but is unused by the rewritten solver and depends on
-removed result at/after APIs. Do not expand its obsolete tests or modify exports;
-report its remaining presence as cleanup. Old tests import compile_ast,
-OptimizationResult, parameter_info and removed _reduce_constraints/_parameter_bounds
-methods. Replace tests with equivalent current contracts or delete if fully covered.
-Public adapters currently copy options; mutable Solver options default is an
-implementation concern, not justification to change production in this task.
-Backend independence and user callable captures follow existing documented policy;
-no new signature/type/domain restrictions may be invented. If uncertain, document
-the policy question and keep a minimal reproducer rather than codify a guess.
+The unused context.py module remains exported but is outside the rewritten
+pipeline. The active interfaces use SimulationResultTracer and result views.
+Python callable captures and shallow binding-AST snapshots retain the limits in
+../qa-status.md. Adapters copy options; Solver orchestration forwards them.
+No new signature or domain restriction should be inferred from an implementation
+detail. Record unclear policy rather than inventing an assertion.

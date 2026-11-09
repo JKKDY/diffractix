@@ -92,18 +92,15 @@ check mismatched waist radii and propagation invariance in compatible lossless
 systems. Concrete invalid q in w_R_from_q raises; traced validation follows
 backend.require's documented unchecked-runtime policy.
 
-## Coverage priorities and ambiguity
+## Coverage and limits
 
-Existing 28-conversion-case tests cover inheritance, stale init=False fields,
-symbol defaults, arrays and cache behavior; many still import graph.utils.
-Keep their intent and correct imports. Replace the None-as-mapping assumption,
-recording it rather than treating explicit None as an advertised API. Add
-Node-valued bindings, per-instance symbol/constraint isolation, subclass
-propagation, Gaussian analytical properties/overlap, and representative nested
-gradients/Jacobians/Hessians/JIT via backend wrappers. Do not duplicate all
-shared-base wrapping cases owned by Elements.
+Cover Node-valued bindings, inherited/init=False dataclass fields, cached numerical
+subclasses, per-instance constraints and symbols, numerical propagation, analytical
+Gaussian properties/overlap and representative nested differentiation/JIT.
+Shared wrapping behavior belongs in OpticalBase tests rather than repeated matrices.
 
-Unspecified: declarative state __str__/vector/NumPy interoperability before
-numeric, negative counts/focal_distance in bundle factories, empty statistics,
-and custom propagation hardcoding its public class. Document limitations rather
-than silently broadening the public contract.
+Ordinary complex/array fields remain numerical; public scalar graph fields are
+not arrays. Custom propagation that hardcodes a declarative constructor may lose
+its numerical subclass. Empty bundle construction and propagation are supported;
+factory-domain and empty-statistics validation is not yet a settled contract.
+See ../qa-status.md for the remaining policies.

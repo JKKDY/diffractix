@@ -84,8 +84,8 @@ through ElementData.element_id; never depend on live field values/equality.
 Unknown element KeyError; repeated element without occurrence ValueError;
 noninteger/bool occurrence TypeError; negative/out-of-range IndexError.
 result[element] is not numerical indexing: use result.stages[index]. Malformed
-tuple keys raise TypeError. at(element),after(element),z_at,z_after retain the
-same boundary/occurrence semantics. General interior probing is deferred.
+tuple keys raise TypeError. The old at(), after(), z_at() and z_after()
+accessors are removed; use indexed stage views. Interior probing is unsupported.
 
 Element parameter_names zipped with parameter_indices retrieve evaluated
 optical_values, including fixed and derived expressions. ParameterData.value
@@ -98,7 +98,7 @@ str(simulation) summarizes compiled layout, values, variables and constraints;
 str(result) uses result_columns on numerical states and labels/path/type for
 locations. Check informative content and side-effect freedom, not table spaces
 or global generated label numbers. Arrays must not break result formatting.
-Plotting is outside ownership and remains coupled to the old result structure.
+Plotting is outside ownership; it now uses the current result metadata.
 
 Replace obsolete constructor and removed Simulation.require tests while retaining
 single evaluation, remapped-index propagation, snapshots, custom states,
@@ -107,13 +107,9 @@ values, tuple metadata isolation, Stage views, constructor length errors,
 complex/native roots and derivative checks. Avoid depending on System.build for
 all tests; direct minimal Programs make Simulation tests focused.
 
-## Known defects and ambiguity
+## Snapshot limits
 
-Production import blockers are in the shared README; leave them unchanged.
-run references SimulationResult without an import. Add normal tests that would
-expose this, rather than injecting that global in fixtures. at(numeric_z)
-references nonexistent _probe; documentation defers probing, so report this
-legacy path instead of inventing sampling semantics. SimulationInput.construct
+SimulationInput.construct
 uses shallow replace: ordinary mutable arrays may be shared between successive
 run sources/results. Whether returned results may be mutated independently is
 not fully specified; distinguish this from the documented guarantee that

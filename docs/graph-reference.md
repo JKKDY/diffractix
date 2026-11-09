@@ -2,7 +2,7 @@
 
 For the full optical workflow, see [System, Simulation and Result](system-simulation-result.md).
 
-This document records the graph module as it exists during the compiler migration. It is a reference for future documentation, not a promise that the surrounding System and Solver APIs have already been migrated.
+This working reference describes the current Program compiler. System and Solver use it for optical propagation, objectives and constraints. See qa-status.md for current validation results and remaining policy questions.
 
 ## Structure
 
@@ -14,7 +14,8 @@ An expression is a directed graph of `Node` objects. Arithmetic creates `UnaryOp
 | `ops.py` | Operation identifiers and their backend numerical functions |
 | `relations.py` | Symbolic comparisons and control-flow errors |
 | `graph_utils.py` | Graph traversal and direct interpretation |
-| `compile.py` | Translation to programs, optimization and fusion |
+| `compile.py` | Translation to programs and optimization |
+| `program_utils.py` | Program remapping and fusion |
 | `program.py` | Operands, instructions and numerical execution |
 | `errors.py` | Graph traversal and compilation errors |
 
@@ -44,11 +45,11 @@ result = program.evaluate([4.0], bindings={"offset": 1.0})
 # result is a tuple containing 13.0
 ```
 
-`precompile(roots, bindings={})` snapshots the reachable expression structure as a `Program` with unique virtual registers. Variable parameters are recorded in `program.variables` as `id(parameter) -> local theta index`, in traversal order. Fixed parameters become constants using their current values. A bound symbol is resolved from `bindings`; a binding can be a numerical value or another `Node`, which is compiled recursively. Unbound symbols become runtime inputs, deduplicated by key in `program.runtime_symbols`.
+`precompile(roots, bindings={})` snapshots the reachable expression structure as a `Program` with unique virtual registers. Variable parameters are recorded in `program.parameter_indices` as `id(parameter) -> local theta index`, in traversal order. Fixed parameters become constants using their current values. A bound symbol is resolved from `bindings`; a binding can be a numerical value or another `Node`, which is compiled recursively. Unbound symbols become runtime inputs, deduplicated by key in `program.runtime_symbols`.
 
 `optimize(program)` folds conservatively supported constants, merges equivalent computations without reordering operands, removes unused instructions and allocates reusable registers. It returns a new program. There is currently no separate public finalization step: `compile_graph()` calls `optimize(precompile(...))`.
 
-`Program.evaluate(theta, bindings={})` accepts variable values in the program's local order and numerical runtime symbol bindings, and returns a tuple in root order. Runtime bindings are numerical inputs; expressions supplied as bindings are resolved at precompilation, not recursively evaluated by `Program.evaluate()`. The program currently requires `len(theta) == len(program.variables)`.
+`Program.evaluate(theta, bindings={})` accepts variable values in the program's local order and numerical runtime symbol bindings, and returns a tuple in root order. Runtime bindings are numerical inputs; expressions supplied as bindings are resolved at precompilation, not recursively evaluated by `Program.evaluate()`. The program currently requires `len(theta) == len(program.parameter_indices)`.
 
 A program contains `Input`, `Constant` and `Register` operands, and unary and binary instructions. Inputs index a combined sequence of theta values followed by runtime symbol values. Outputs may refer directly to inputs or constants as well as registers. `str(program)` displays its inputs, instructions and outputs.
 
@@ -60,6 +61,16 @@ A program contains `Input`, `Constant` and `Register` operands, and unary and bi
 
 `walk_ast(roots, bindings={})` traverses nodes in depth-first order, visiting each node identity once and following node-valued symbol bindings. Both utilities detect cycles. Symbols without a binding or default raise `KeyError` during interpretation; empty input handles raise `UnresolvedInputError`; unsupported nodes raise `UnsupportedNodeError`.
 
-## Migration notes
+## Canonical alignment
 
-The new compiler and interpreter are still being integrated with the rest of Diffractix. Some existing consumers still import legacy names such as `compile_ast`, `CompiledAST` and `graph.utils`; those imports do not match the current graph package. The intended later design is to precompile Simulation and Solver constraints, analyze redundancy on programs, and preserve runtime symbols for optical results. That integration and a shared canonical parameter mapping are not yet established by this module.
+System assigns one canonical theta entry per reachable variable Parameter.
+Objective and constraint programs are remapped with remap_parameters() into that
+order. Runtime Symbol indices are aligned separately before fuse(). These steps
+are part of the current Solver pipeline. Legacy compile_ast, CompiledAST and
+clone_ast APIs are removed.
+
+Precompilation validates current Parameter bounds and values, including direct
+post-construction mutations. Bounds must be real non-bool scalars, contain no
+NaN and be ordered; values must be real, non-NaN and within bounds. Infinite fixed
+optical radii remain supported. A finite initial optimization vector is required
+by Solver.solve().

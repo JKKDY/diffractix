@@ -2,7 +2,10 @@
 
 ## Local checks
 
-Use Python 3.11, 3.12, or 3.13 and a virtual environment. From the repository root:
+Use Python 3.11, 3.12, or 3.13 and a virtual environment. Python 3.14 is
+permitted by package metadata and has local test results, but is not yet in the
+CI release matrix. Local results do not establish the same release coverage.
+From the repository root:
 
 ```console
 python -m pip install -e ".[dev,jax]"
@@ -28,7 +31,9 @@ In Bash use `MPLBACKEND=Agg DIFFRACTIX_BACKEND=autograd python -m pytest tests`
 (and repeat with `jax`). An Autograd-only environment needs just `.[dev]`.
 The example runner starts a fresh process for every non-underscore-prefixed
 `examples/*.py`, forces Agg, verifies the selected backend, and rejects failed or
-infeasible optimization results. All six current examples are standalone programs.
+infeasible optimization results. Examples are standalone programs. Several still use pre-rewrite APIs and need
+migration before this release check can pass. The command above is a required
+release gate, not a claim that current examples already pass.
 Underscore-prefixed files are reserved for future helper modules.
 
 For a clean wheel check, create a separate environment, install the wheel without
@@ -70,7 +75,8 @@ On a published GitHub release, `release.yml` checks that the tag is exactly
 `v<project.version>` and points to the triggering commit. It calls the same CI
 workflow using that immutable commit SHA. Publication needs **both** the tag
 check and the entire reusable validation workflow to succeed, including every
-matrix cell, the build, and wheel verification. Only then does a separate job
+matrix cell, the build, and wheel verification. Passing local pytest alone does
+not satisfy these gates; example and wheel-script migration remains open. Only then does a separate job
 download the same validated `distributions` artifact and publish it. It does
 not check out code or rebuild the package. Normal pushes/PRs cannot publish.
 

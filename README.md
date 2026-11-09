@@ -49,7 +49,7 @@ lens.f.variable(bounds=(0.05, 0.5))
 # Place elements at absolute positions (meters)
 image_plane = Plane(label="Image plane")
 
-system = System(input=ray)
+system = System(optical_input=ray)
 system.add(lens, z=0.1)
 system.add(image_plane, z=0.2)
 
@@ -59,7 +59,7 @@ initial = simulation.run()
 # Focus the ray onto the optical axis at the image plane
 solver = Solver(simulation)
 solver.target(
-    value=lambda ctx: ctx.at(image_plane).x,
+    value=lambda result: result[image_plane].after.x,
     target=0.0,
     scale=0.01,
 )
@@ -67,8 +67,8 @@ solver.target(
 solution = solver.solve(method="SLSQP")
 optimized = solution.run()
 
-print(f"Focal length: {lens.f.value * 1e3:.1f} → {solution[lens.f] * 1e3:.1f} mm")
-print(f"Image height: {float(initial.at(image_plane).x) * 1e3:.1f} → {float(optimized.at(image_plane).x) * 1e3:.1f} mm")
+print(f"Focal length: {lens.f.value * 1e3:.1f} → {solution.value(lens.f) * 1e3:.1f} mm")
+print(f"Image height: {float(initial[image_plane].after.x) * 1e3:.1f} → {float(optimized[image_plane].after.x) * 1e3:.1f} mm")
 ```
 
 Expected output:
@@ -86,7 +86,9 @@ The system automatically inserts propagation spaces between positioned elements.
 
 Diffractix is in active development. The API and internal architecture may change before the first stable release.
 
-Documentation, examples, and visualization tools are being developed.
+Current API references are in [docs](docs/system-simulation-result.md). Plotting
+is available through result.plot(). Examples and release scripts need a separate
+migration/validation pass; see [QA status](docs/qa-status.md).
 
 ## License
 

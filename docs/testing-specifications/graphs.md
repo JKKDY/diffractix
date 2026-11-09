@@ -4,8 +4,8 @@
 
 Sources: `graph/node.py`, `graph_utils.py`, `compile.py`, `program.py`,
 `program_utils.py`, `ops.py`, `relations.py`, `errors.py`, and public exports.
-Primary documentation: `../graph-reference.md`. It still calls the parameter
-mapping `variables`; source has renamed it to `parameter_indices`.
+Primary documentation: `../graph-reference.md`. The parameter mapping is
+`program.parameter_indices`.
 Own `tests/unit/graph/` only. Include the Node base, interpreter, traversal,
 program execution, optimization, fusion and remapping.
 
@@ -92,31 +92,27 @@ similarly rewrites symbol slots and requires all existing keys. Both preserve
 outputs, constants, source programs and arithmetic. Exercise reordered indices
 and direct input outputs, not only instruction operands.
 
-## Numerical checks and existing test migration
+## Numerical checks
 
 Retain analytic arithmetic and sinc limit tests, eager/JIT values, gradients,
 Jacobians, Hessians and representative nested derivatives using backend wrappers.
 Compare optimized execution with an independent analytical expression as well
 as unoptimized execution. Test mixed real/complex and array runtime roots.
-Concrete zero-dimensional NumPy/backend scalar operands are normalized to
-constants; non-scalar arrays and active tracers must not become graph constants.
+Concrete scalar operands are normalized to constants. Concrete numerical arrays
+may also be captured as owned read-only literals. Active tracers cannot become
+graph constants.
 
-Replace old compile_ast/CompiledAST/Opcode tests with the new Program contract.
-Remove tests of deleted cloning and packed-array APIs, preserving their relevant
-snapshot and differentiation intent through Program tests.
+## Validation and limits
 
-## Ambiguities and suspected defects
-
-- Compiler currently does not defensively validate directly mutated Parameter
-  bounds/values; old tests expected it. Keep this as a reported contract gap,
-  not a claim that invalid physics or nonfinite constants are universally banned
-  (infinite optical radii are legitimate).
+- Precompilation validates directly mutated Parameter
+  bounds/values. Bounds must be real non-bool, non-NaN and ordered; values must
+  be real non-bool, non-NaN and within bounds. This is not a ban on nonfinite
+  constants: infinite optical radii remain legitimate.
 - Runtime array ownership is not promised: native tuple roots can alias bindings.
   Do not carry over old packed-array copy assertions.
 - Runtime Symbols ignore defaults by design. Direct evaluation uses defaults.
 - Optimization currently includes allocation in optimize; there is no public
   finalize. Feeding already allocated programs back into SSA-only passes is not
   documented; report this uncertainty instead of assuming idempotence.
-- remap_parameters has an apparent precedence defect; add a real regression,
-  leaving implementation unchanged. Arbitrary/sparse runtime-index maps lack an
+- Arbitrary/sparse runtime-index maps lack an
   explicit validation contract. Do not invent one.

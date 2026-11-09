@@ -26,10 +26,11 @@ add accepts elements/composites or nested iterables, preserving order and
 composite identity. Strings/bytes and non-elements fail. Validate the whole
 batch before mutating placements. Absolute z applies to one flattened addition
 only; may be a Node or real finite nonnegative scalar, not bool. Scalar invalid
-positions fail at add, not later validation. Current index is integer (not bool),
-with range 0..len inclusive; invalid type/range fails atomically. Negative and
-oversized indices differ from the historical Python-list-insertion proposal;
-record the policy conflict instead of silently legitimizing either version.
+positions fail at add, not later validation. index is an integer (not bool)
+with Python list-insertion semantics: negative indices count from the end,
+excessively negative indices clamp to zero, oversized indices append, and
+multiple added elements stay consecutive and in order. Invalid types fail
+atomically.
 
 add_input accepts one ParaxialState or one iterable containing it. Multiple
 inputs, including separate repeated add_input calls, fail. No input fails build.
@@ -55,7 +56,8 @@ constraints must survive flattening. Never mutate original constraint lists.
 Malformed constraints fail normalization during build; no backend is run.
 
 `_compile_constraints(constraints,bindings,parameter_indices)` normalizes via
-solver.constraint, splitting direct Nodes from deferred callable Constraints.
+solver.constraint, tracing supported callables and separating compiled graphs
+from deferred numerical callable Constraints.
 Store declaration positions for both to preserve interleaving and labels/bounds.
 Zero-argument normalization follows normalize_to_constraint's contract; a raw
 one-argument callable is not automatically a Constraint.
@@ -63,8 +65,10 @@ one-argument callable is not automatically a Constraint.
 Direct graphs must resolve Symbols explicitly and may not introduce variable
 Parameters outside canonical model theta. Fixed-only constraints are evaluated
 at build: satisfied omitted, violated raises 'unsatisfiable constant constraint',
-nonfinite raises clearly. Variable constraints may start unsatisfied. A deferred
-callable retains ordinary user closure semantics; System does not trace it.
+nonfinite raises clearly. Variable constraints may start unsatisfied. Build
+traces constraint callables with a result tracer: traceable ones are
+precompiled; ones with symbolic Python control flow stay deferred and retain
+ordinary user closure semantics.
 Compiled constraint programs currently have local theta mappings, which Solver
 must align later. Do not assert they already accept full canonical theta.
 
@@ -101,21 +105,12 @@ and fixed values. Optics cannot retain unresolved runtime Symbols at build.
 build passes eight products to the new Simulation constructor. Build/run must
 not mutate original parameter state, handles, constraints, bindings or arrays.
 
-## Existing tests and priorities
+## Boundaries and unresolved policy
 
-Existing tests are largely tied to _compile, ParameterInfo, location_map and
-legacy constructors. Rewrite around current passes, preserving layout algebra,
-snapshot expectations and canonical indexing checks. Add external variable
-rejection, mixed graph/callable order, constant infeasibility/nonfinite handling,
-generated gaps, source-led medium, continuity-only theta dependencies, unused
-binding exclusion, deep-copied arrays and repeat-build nonmutation.
+A source with n=None is resolved to ambient in both medium resolution and
+numerical reconstruction. System accepts declarative inputs, not generated
+numerical inputs. Compilation validates mutated Parameters (see graphs.md).
 
-## Open questions and known blockers
-
-The shared README lists production import blockers. Do not patch them in tests.
-No policy is established for a source with n=None that later reconstructs with
-None even though medium resolution uses ambient. Independently canonical
-constraint mapping and solver migration are outside this module. A shared leaf
-appearing under multiple composites can duplicate contributed binding keys;
-record this unresolved collection policy. Variable exact-zero singularities
-and direct post-construction invalid Parameter mutation need separate audit.
+A shared binding provider under separate composite branches may contribute a
+key more than once. Global recursive identity deduplication remains unresolved;
+see ../qa-status.md. Do not infer a new cross-branch guarantee from local deduplication.

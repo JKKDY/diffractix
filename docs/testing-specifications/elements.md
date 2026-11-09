@@ -114,7 +114,10 @@ boundaries without discarding meaningful analytical examples.
   field support is intended. Do not assert containers are supported parameters.
 - Arbitrary nonfinite matrix entries are not universally invalid: flat radii
   are allowed. Do not generalize finiteness rules without documentation.
-- ABCD documentation says output index; current System enforces continuity for
-  an explicit n. Leave that System policy question recorded.
+- Settled: an explicit ABCD n participates in continuity (it must match, or
+  constrain variables to match, the incoming medium). It does not change the
+  medium; only Interface declares a refractive transition. No n inherits.
+- Settled: validate() always walks required matrix/length dependencies; an empty
+  optional index aliasing a required handle does not hide it.
 - validate() does not accept bindings; context-dependent singular powers may
   evade exact-zero checks until build. Report concrete failures, do not redesign.
