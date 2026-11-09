@@ -5,10 +5,10 @@ import matplotlib.pyplot as plt
 from .sampling import sample
 
 
-def _elements(ax, z, element_info):
+def _elements(ax, z, element_data):
     labels = {}
     has_unknown_interior = False
-    for index, info in enumerate(element_info):
+    for index, info in enumerate(element_data):
         start, end = z[index:index + 2]
         if info.type_name == "Space":
             if start != end:
@@ -79,7 +79,7 @@ def plot(result, ax=None, *, show_elements=True, show_axis=True):
         positions, transverse = z, boundaries
     ax.scatter(positions, transverse * 1e3, color=color, s=8, alpha=alpha, linewidths=0, zorder=4)
 
-    unknown = _elements(ax, z, result.element_info) if show_elements else False
+    unknown = _elements(ax, z, result.element_data) if show_elements else False
     if show_axis:
         ax.axhline(0, color="#8a929b", linewidth=0.8, linestyle="--", alpha=0.65, zorder=1)
     ax.set_xlabel("Optical axis z [m]")

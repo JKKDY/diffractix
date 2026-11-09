@@ -95,7 +95,8 @@ def test_solve_optimizes_full_constraints_and_prepares_objectives(monkeypatch):
     # Isolate assembly from the reducer's separately tested proof algorithms.
     monkeypatch.setattr(solver_module, "reduce_constraints", lambda program, descriptors, **bounds: ((), ()))
     monkeypatch.setattr(solver_module, "optimize", record_optimization)
-    solver.solve()
+    from tests.helpers.backend import capture_problem
+    capture_problem(solver)
     assert len(optimized) == 2
     assert optimized[0].evaluate([0.5]) == (0.5, 0.5)
     assert optimized[1].evaluate([0.5]) == (0.25,)

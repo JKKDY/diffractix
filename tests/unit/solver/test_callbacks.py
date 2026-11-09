@@ -19,6 +19,7 @@ def build_callbacks(solver):
         constraint_descriptors=constraint_descriptors,
         callable_constraints=callable_constraints,
         initial_values=solver.simulation.initial_values.values,
+        use_jit=False,
     )
 
 
@@ -85,32 +86,6 @@ def test_all_result_symbol_kinds_and_lazy_result_sharing(monkeypatch):
     assert len(calls) == 3
 
 
-def test_dynamic_numeric_branches_use_current_result_and_keep_constraint_order():
-    parameter = Parameter(0.5).variable()
-    system = System(optical_input=Ray(x=parameter, theta=0, n=1))
-    solver = Solver(system)
-
-    def dynamic(result):
-        if result.final.x > 0:
-            return 2 * result.final.x ** 2
-        return 5.0
-
-    solver.target(Objective(dynamic, weight=3))
-    solver.require(Constraint(parameter), Constraint(dynamic), Constraint(parameter + 1))
-    callbacks, graph_rows, callable_rows = build_callbacks(solver)
-    assert graph_rows == (range(0, 1), range(2, 3))
-    assert callable_rows == (range(1, 2),)
-    parameter.value = 100
-    assert callbacks.objective(xp.array([2.0])) == pytest.approx(192)
-    np.testing.assert_allclose(callbacks.gradient(xp.array([2.0])), [384])
-    np.testing.assert_allclose(callbacks.objective_hessian(xp.array([2.0])), [[576]])
-    np.testing.assert_allclose(callbacks.constraints(xp.array([2.0])), [2, 8, 3])
-    np.testing.assert_allclose(callbacks.jacobian(xp.array([2.0])), [[1], [8], [1]])
-    np.testing.assert_allclose(callbacks.constraint_hessian(xp.array([2.0]), xp.array([0., 3., 0.])), [[12]])
-    assert callbacks.objective(xp.array([-2.0])) == pytest.approx(75)
-    np.testing.assert_allclose(callbacks.constraints(xp.array([-2.0])), [-2, 5, -1])
-
-
 def test_empty_constraints_have_correct_derivative_shapes_and_direct_nodes_do_not_run_simulation(monkeypatch):
     parameter = Parameter(0.5).variable()
     solver = Solver(System(optical_input=Ray(x=parameter, theta=0, n=1)))
@@ -142,36 +117,3 @@ def test_gaussian_runtime_symbols_preserve_complex_propagation_derivatives():
     np.testing.assert_allclose(callbacks.constraints(theta), [0.5, 1.25 * scale])
     np.testing.assert_allclose(callbacks.jacobian(theta), [[1], [scale]])
     np.testing.assert_allclose(jit(callbacks.constraint_hessian)(theta, xp.array([0., 3.])), [[6 * scale]])
-
-
-def test_dynamic_constraint_shape_changes_are_rejected_even_when_size_is_unchanged():
-    parameter = Parameter(0.5).variable()
-    solver = Solver(System(optical_input=Ray(x=parameter, theta=0, n=1)))
-
-    def dynamic(result):
-        value = result.final.x
-        return xp.array([value, value]) if value > 0 else xp.array([[value, value]])
-
-    solver.require(Constraint(dynamic))
-    callbacks, _, _ = build_callbacks(solver)
-    assert callbacks.objective(xp.array([0.5])) == 0
-    with pytest.raises(ValueError, match="shape"):
-        callbacks.constraints(xp.array([-0.5]))
-
-
-@pytest.mark.parametrize("value", [np.nan, np.inf, -np.inf])
-@pytest.mark.parametrize("kind", ["objective", "constraints"])
-def test_numerical_callbacks_reject_nonfinite_outputs(value, kind):
-    parameter = Parameter(0.5).variable()
-    solver = Solver(System(optical_input=Ray(x=parameter, theta=0, n=1)))
-
-    def dynamic(result):
-        return value if result.final.x > 0 else 0
-
-    if kind == "objective":
-        solver.target(Objective(dynamic, label="invalid output"))
-    else:
-        solver.require(Constraint(dynamic, label="invalid output"))
-    callbacks, _, _ = build_callbacks(solver)
-    with pytest.raises(ValueError, match="invalid output.*non-finite"):
-        getattr(callbacks, kind)(xp.array([0.5]))

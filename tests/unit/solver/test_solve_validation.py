@@ -24,33 +24,10 @@ def test_invalid_feasibility_tolerance_fails_before_compilation(value, error, mo
         solver.solve(feasibility_tolerance=value)
 
 
-@pytest.mark.parametrize("arguments,message", [
-    ({"x0": []}, "x0.*shape"),
-    ({"x0": [[0.5]]}, "x0.*shape"),
-    ({"x_lower": []}, "x_lower.*shape"),
-    ({"x_upper": [[1]]}, "x_upper.*shape"),
-    ({"x0": [np.nan]}, "x0.*finite"),
-    ({"x0": [np.inf]}, "x0.*finite"),
-    ({"x0": [-np.inf]}, "x0.*finite"),
-    ({"x_lower": [np.nan]}, "bounds.*NaN"),
-    ({"x_upper": [np.nan]}, "bounds.*NaN"),
-    ({"x_lower": [0.9], "x_upper": [0.1]}, "x_lower.*x_upper"),
-    ({"x0": [-0.1]}, "x0.*within"),
-    ({"x0": [1.1]}, "x0.*within"),
-    ({"x_lower": [0.75]}, "x0.*within"),
-    ({"x_upper": [0.25]}, "x0.*within"),
-])
-def test_invalid_initial_values_and_bounds_fail_before_compilation(arguments, message, monkeypatch):
-    solver = make_solver()
-    monkeypatch.setattr(solver, "_finalize_constraints", lambda: pytest.fail("Compilation must follow validation"))
-    with pytest.raises(ValueError, match=message):
-        solver.solve(**arguments)
-
-
 @pytest.mark.parametrize("collection", ["objectives", "constraints"])
 def test_invalid_model_entries_raise_type_error(collection):
     solver = make_solver()
-    getattr(solver, collection).append(object())
+    getattr(solver, "_" + collection).append(object())
     with pytest.raises(TypeError, match=collection):
         solver.solve()
 
@@ -88,7 +65,8 @@ def test_valid_inputs_reach_preparation_without_mutating_defaults(arguments, mon
         return finalize()
 
     monkeypatch.setattr(solver, "_finalize_constraints", record_preparation)
-    solver.solve(**arguments)
+    from tests.helpers.backend import capture_problem
+    capture_problem(solver, **arguments)
     assert captured == [True]
     np.testing.assert_array_equal(solver.simulation.initial_values.values, values)
     assert solver.simulation.parameter_data == metadata

@@ -28,7 +28,7 @@ def run_python(code, preference="auto", *, timeout=180):
 
 
 @lru_cache(maxsize=None)
-def numerical_results(name, group="representative"):
+def numerical_results(name, group="integration"):
     """One plain Python child per backend/group, not a nested pytest invocation."""
     result = json.loads(run_python(f'''
 import json

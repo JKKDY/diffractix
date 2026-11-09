@@ -8,11 +8,11 @@ from dataclasses import replace
 from types import ModuleType, SimpleNamespace
 import numpy as np
 import pytest
-from diffractix.solver import Backend, OptimizationResult, Solution, Solver
+from diffractix.solver import Backend, SolverResult, Solution, Solver
 from diffractix.solver.problem import Problem
 from diffractix.graph import Parameter
 from tests.helpers.optimization import make_constrained_problem, make_problem, make_scaling_problem
-from tests.helpers.simulation import make_simulation
+from diffractix import Ray, System
 
 
 def import_fake_cyipopt_backend(monkeypatch):
@@ -147,7 +147,7 @@ def import_fake_nlopt_backend(monkeypatch):
         pytest.param(None, "solve_scipy", None, None, id="default-scipy"),
     ],
 )
-def test_solver_dispatch_matrix_copies_options(
+def test_solver_dispatch_matrix_forwards_options(
     monkeypatch,
     backend,
     function_name,
@@ -157,13 +157,13 @@ def test_solver_dispatch_matrix_copies_options(
     from diffractix.solver import solver as solver_module
 
     parameter = Parameter(1.0).variable(bounds=(0.0, 2.0))
-    solver = Solver(make_simulation((parameter,))).target(parameter - 1.0)
+    solver = Solver(System(optical_input=Ray(x=parameter, theta=0, n=1))).target(parameter - 1.0)
     received = {}
 
     def solve(problem, method=None, options=None):
         received.update(problem=problem, method=method, options=options)
         numerical_x = (np.array([1.5]) - problem.scaling.x_center) / problem.scaling.x_scale
-        return OptimizationResult(
+        return SolverResult(
             x=numerical_x,
             success=True,
             cost=0.25,
@@ -185,7 +185,6 @@ def test_solver_dispatch_matrix_copies_options(
     assert isinstance(received["problem"], Problem)
     assert received["method"] == method
     assert received["options"] == ({} if options is None else options)
-    assert received["options"] is not options
     if options is not None:
         assert options == {"maxeval": 100}
 
@@ -198,12 +197,14 @@ def test_solver_dispatch_matrix_copies_options(
         ("solve_nlopt", "nlopt", "solve_nlopt", "LD_SLSQP"),
     ],
 )
+@pytest.mark.parametrize("options", [None, {"value": 1}])
 def test_lazy_backend_entry_point_matrix(
     monkeypatch,
     entry_point,
     backend_module,
     function_name,
     method,
+    options,
 ):
     import sys
     from types import ModuleType
@@ -221,14 +222,13 @@ def test_lazy_backend_entry_point_matrix(
     setattr(module, function_name, solve)
     monkeypatch.setitem(sys.modules, module_name, module)
     monkeypatch.setattr(backends, "_require_package", lambda *args: None)
-    options = {"value": 1}
-
     assert getattr(backends, entry_point)("problem", method, options) == "result"
-    assert received == {"problem": "problem", "method": method, "options": options}
+    assert received == {"problem": "problem", "method": method, "options": {} if options is None else options}
     assert received["options"] is not options
 
 
-def test_lazy_backend_reports_missing_optional_dependency(monkeypatch):
+@pytest.mark.parametrize("entry,extra", [("solve_ipopt", "ipopt"), ("solve_nlopt", "nlopt")])
+def test_lazy_backend_reports_missing_optional_dependency(monkeypatch, entry, extra):
     from diffractix.solver import backends
 
     def missing(package):
@@ -236,8 +236,8 @@ def test_lazy_backend_reports_missing_optional_dependency(monkeypatch):
 
     monkeypatch.setattr(backends, "import_module", missing)
 
-    with pytest.raises(ImportError, match=r"diffractix\[nlopt\]"):
-        backends.solve_nlopt("problem")
+    with pytest.raises(ImportError, match=rf"diffractix\[{extra}\]"):
+        getattr(backends, entry)("problem")
 
 
 def fake_result(**updates):
@@ -429,7 +429,7 @@ def test_scipy_standardizes_result(monkeypatch):
     problem = make_problem()
     result = backend.solve_scipy(problem)
 
-    assert isinstance(result, OptimizationResult)
+    assert isinstance(result, SolverResult)
     np.testing.assert_array_equal(result.x, [0.25])
     assert result.success is False
     assert result.cost == 1.5
@@ -530,7 +530,7 @@ def test_ipopt_standardizes_status_and_result(monkeypatch, status, success):
 
     result = backend.solve_ipopt(problem)
 
-    assert isinstance(result, OptimizationResult)
+    assert isinstance(result, SolverResult)
     np.testing.assert_array_equal(result.x, [0.75])
     assert result.success is success
     assert result.cost == 0.125
@@ -724,7 +724,7 @@ def test_nlopt_status_policy_and_standardized_result(
     problem = make_problem()
     result = backend.solve_nlopt(problem)
 
-    assert isinstance(result, OptimizationResult)
+    assert isinstance(result, SolverResult)
     np.testing.assert_array_equal(result.x, [0.5])
     assert result.cost == 0.25
     assert result.success is success
@@ -735,3 +735,16 @@ def test_nlopt_status_policy_and_standardized_result(
         "evaluations": 7,
     }
     assert result.scaling is problem.scaling
+
+
+
+def test_package_import_does_not_import_optional_optimization_libraries():
+    # Fresh interpreter needed: adapter tests deliberately import isolated fake APIs.
+    from tests.helpers.backend import run_python
+    assert run_python("""
+import sys
+import diffractix.solver
+assert 'cyipopt' not in sys.modules
+assert 'nlopt' not in sys.modules
+print('lazy')
+""", "autograd") == "lazy"

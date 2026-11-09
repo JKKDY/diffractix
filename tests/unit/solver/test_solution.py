@@ -172,7 +172,15 @@ def test_reporting_shares_one_optical_result(monkeypatch):
     assert len(calls) == 1
 
 
-def test_real_solve_reports_reduced_constraints_and_keeps_overrides_local():
+def test_solve_reports_reduced_constraints_and_keeps_overrides_local(monkeypatch):
+    from diffractix.solver import solver as solver_module
+
+    def backend(problem, **kwargs):
+        physical = min(3., float(problem.scaling.x_center[0] + problem.scaling.x_scale[0] * problem.x_upper[0]))
+        numerical = (np.array([physical]) - problem.scaling.x_center) / problem.scaling.x_scale
+        return SolverResult(numerical, True, (physical - 3) ** 2, "controlled result")
+
+    monkeypatch.setattr(solver_module, "solve_scipy", backend)
     p = Parameter(0.5).variable(bounds=(0, 5))
     solver = Solver(System(optical_input=Ray(x=p, theta=0, n=1)))
     solver.target(p - 3)

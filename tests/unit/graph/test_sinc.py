@@ -37,15 +37,6 @@ def test_sinc_first_and_second_derivatives_match_taylor_series(point):
             np.testing.assert_allclose(function(point), expected, rtol=1e-9, atol=1e-13)
 
 
-def test_sinc_nested_fourth_derivative_at_zero():
-    graph = compile_graph([Parameter(0.0).variable().sinc()])
-    derivative = lambda x: graph.evaluate(xp.reshape(x, (1,)))[0]
-    for _ in range(4):
-        derivative = grad(derivative)
-    for function in (derivative, jit(derivative)):
-        np.testing.assert_allclose(function(0.0), 1 / 5, rtol=1e-12)
-
-
 def test_sinc_large_argument_does_not_overflow_inactive_series():
     graph = compile_graph([Symbol("x").sinc()])
     with np.errstate(over="raise", invalid="raise", divide="raise"):

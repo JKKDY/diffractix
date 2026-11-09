@@ -6,7 +6,10 @@ import pytest
 from diffractix.graph import Literal, Parameter
 from diffractix.solver.objective import Objective
 from diffractix.solver.constraint import Constraint, normalize_to_constraint
-from tests.helpers.solver import make_solver
+from diffractix import Ray, Solver, System
+
+def make_solver():
+    return Solver(System(optical_input=Ray(x=Parameter(1).variable(), theta=0, n=1)))
 
 
 @pytest.mark.parametrize("endpoint", ["lower_bound", "upper_bound"])
@@ -31,7 +34,7 @@ def test_constraint_infinite_endpoints_and_finite_objective_weights_remain_valid
 
 
 @pytest.mark.parametrize("args, kwargs, error, message", [
-    ((), {"value": lambda ctx: 1.0}, ValueError, "target must be explicitly"),
+    ((), {"value": lambda ctx: 1.0}, ValueError, "target must be specified"),
     ((), {"value": 1.0, "target": 0}, TypeError, "value must be a callable"),
     ((), {"value": lambda ctx: 1.0, "target": 0, "scale": 0}, ValueError, "scale must be nonzero"),
     ((lambda ctx: 1.0,), {"value": lambda ctx: 1.0, "target": 0}, ValueError, "positional objectives"),
@@ -39,13 +42,13 @@ def test_constraint_infinite_endpoints_and_finite_objective_weights_remain_valid
     ((lambda ctx: 1.0,), {"scale": 2}, ValueError, "require value"),
     ((), {"label": "ambiguous"}, ValueError, "single residual"),
     ((lambda ctx: 1.0, lambda ctx: 2.0), {"label": "ambiguous"}, ValueError, "single residual"),
-    ((Objective(lambda ctx: 1.0),), {"label": "override"}, ValueError, "Objective instances"),
+    ((Objective(lambda ctx: 1.0),), {"label": "override"}, ValueError, "single residual"),
 ])
 def test_target_rejects_ambiguous_or_invalid_shorthand(args, kwargs, error, message):
-    solver, _, _ = make_solver()
+    solver = make_solver()
     with pytest.raises(error, match=message):
         solver.target(*args, **kwargs)
-    assert solver.objectives == []
+    assert solver._objectives == []
 
 
 @pytest.mark.parametrize(
@@ -118,8 +121,115 @@ def test_strict_parameter_relations_normalize_to_open_residual_bounds(
     assert constraint.upper_bound == upper_bound
 
 
-def test_empty_objective_and_constraint_collections_compile_to_empty_tuples():
-    solver, _, _ = make_solver()
 
-    assert solver._compile_objectives(solver.objectives) == ()
-    assert solver._compile_constraints(()) == ()
+@pytest.mark.parametrize("factory", [
+    lambda p: p,
+    lambda p: Objective(p, weight=2, label="explicit"),
+    lambda p: lambda: p,
+    lambda p: lambda result: result.final.x,
+])
+def test_objective_supported_forms(factory):
+    from diffractix.solver.objective import normalize_to_objective
+    p = Parameter(1)
+    entry = factory(p)
+    objective = normalize_to_objective(entry)
+    assert isinstance(objective, Objective)
+    if isinstance(entry, Objective):
+        assert objective is entry
+    if not callable(objective.evaluate):
+        assert objective.evaluate is p
+
+
+@pytest.mark.parametrize("entry", [1, None, object(), lambda: 1])
+def test_objective_invalid_entries(entry):
+    from diffractix.solver.objective import normalize_to_objective
+    with pytest.raises(TypeError):
+        normalize_to_objective(entry)
+
+
+@pytest.mark.parametrize("entry", [1, None, object(), Parameter(1), lambda result: result])
+def test_constraint_invalid_bare_entries(entry):
+    with pytest.raises(TypeError):
+        normalize_to_constraint(entry)
+
+
+def test_zero_argument_constraint_forms_and_reversed_bounds():
+    p = Parameter(1)
+    comparison = normalize_to_constraint(lambda: p >= 0)
+    explicit = normalize_to_constraint(Constraint(lambda: p, lower_bound=0, label="named"))
+    assert comparison.evaluate is explicit.evaluate is p
+    assert explicit.label == "named"
+    assert comparison.lower_bound == explicit.lower_bound == 0
+    with pytest.raises(ValueError, match="lower_bound"):
+        Constraint(p, lower_bound=2, upper_bound=1)
+    with pytest.raises(TypeError, match="Node"):
+        normalize_to_constraint(Constraint(lambda: 1))
+
+
+@pytest.mark.parametrize("function,expected", [
+    (lambda: 1, 0), (lambda value: value, 1),
+    (lambda *, required: required, None),
+    (lambda value=1: value, None), (lambda *args: args, None),
+    (lambda first, second: first + second, None),
+])
+def test_callable_arity_requires_one_unambiguous_call_form(function, expected):
+    from diffractix.solver.utils import callable_arity
+    if expected is None:
+        with pytest.raises(TypeError, match="exactly zero or one"):
+            callable_arity(function)
+    else:
+        assert callable_arity(function) == expected
+
+
+def test_callable_objects_and_bound_methods_normalize_like_functions():
+    from diffractix.solver.objective import normalize_to_objective
+    from diffractix.solver.utils import callable_arity
+
+    class Residual:
+        def __call__(self, result):
+            return result
+
+        def constant(self):
+            return Parameter(2)
+
+    entry = Residual()
+    assert callable_arity(entry) == 1
+    assert callable_arity(entry.constant) == 0
+    assert normalize_to_objective(entry).evaluate is entry
+    assert normalize_to_objective(entry.constant).evaluate.value == 2
+
+
+
+def test_value_matching_and_residual_shorthand_match_explicit_objective_derivatives():
+    from diffractix.backend import xp
+    from tests.helpers.backend import capture_problem
+    p = Parameter(0.5).variable()
+    simulation = System(optical_input=Ray(x=p, theta=0, n=1)).build()
+    solvers = [Solver(simulation) for _ in range(3)]
+    solvers[0].target(value=lambda result: result.final.x ** 2, target=0, scale=2, label="match")
+    solvers[1].target(lambda result: result.final.x ** 2 / 2, label="match")
+    solvers[2].target(Objective(lambda result: result.final.x ** 2 / 2, label="match"))
+    for solver in solvers:
+        problem = capture_problem(solver)
+        theta = xp.array([2.])
+        assert problem.objective(theta) == pytest.approx(4)
+        np.testing.assert_allclose(problem.gradient(theta), [8])
+        np.testing.assert_allclose(problem.objective_hessian(theta), [[12]])
+        assert solver._cache.objective_descriptors[0].label == "match"
+
+
+def test_require_validation_is_atomic_and_chaining_preserves_entries():
+    solver = make_solver()
+    p = Parameter(1)
+    with pytest.raises(TypeError):
+        solver.require(p >= 0, object())
+    assert solver._constraints == []
+    assert solver.require(p >= 0) is solver
+    assert len(solver._constraints) == 1
+
+
+@pytest.mark.parametrize("constructor", [Objective, Constraint])
+@pytest.mark.parametrize("invalid", [1, None, object()])
+def test_entry_constructor_requires_graph_or_callable(constructor, invalid):
+    with pytest.raises(TypeError, match="Node or callable"):
+        constructor(invalid)

@@ -1,989 +1,142 @@
-from __future__ import annotations
-
+"""Small optical inverse designs with independent analytical optima."""
 import numpy as np
-from diffractix.backend import xp
-import numpy as numpy
 import pytest
-
-from diffractix import GaussianBeam
-from diffractix.composites import Slab, ThickLens
-from diffractix.elements import Plane, Space, ThinLens
-from diffractix.graph import Parameter, Symbol
-from diffractix.solver import (
-    Backend,
-    Constraint,
-    Objective,
-    OptimizationResult,
-    Solution,
-    Solver,
-)
-from diffractix.solver.context import SolverSymbolKey, SolverSymbolKind
-from diffractix.solver.solution import DEFAULT_FEASIBILITY_TOLERANCE
-from diffractix.system import System
+from diffractix import Constraint, GaussianBeam, Interface, Parameter, Plane, Ray, RayBundle, Slab, Solver, Space, System, ThinLens
 
 
-pytestmark = pytest.mark.scipy
-
-
-def beam():
-    return GaussianBeam.from_waist(
-        w0=100e-6,
-        wavelength=1064e-9,
-    ).numeric()
-
-
-def distance_system(
-    initial=0.1,
-    *,
-    lower=0.02,
-    upper=0.4,
-):
-    distance = Parameter(
-        initial,
-        name="distance",
-        variable=True,
-        lower_bound=lower,
-        upper_bound=upper,
-    )
-    space = Space(d=distance, label="design space")
-    system = System()
-    system.add_input_beam(beam())
-    system.add(space)
-    return system, space, distance
-
-
-def solve_distance(system, target=0.2, **kwargs):
+@pytest.mark.parametrize("use_jit", [False, True])
+def test_source_angle_and_lens_focal_length_recover_known_ray_design(use_jit):
+    angle = Parameter(0.01).variable(bounds=(-0.1, 0.1))
+    focal = Parameter(0.15).variable(bounds=(0.05, 0.3))
+    lens = ThinLens(f=focal)
+    system = System(Space(d=0.1), lens, optical_input=Ray(x=0.002, theta=angle, n=1))
     solver = Solver(system)
-    solver.target(lambda context: context.z[1] - target)
-    return solver, solver.solve(Backend.SCIPY, method="SLSQP", **kwargs)
+    solver.target(value=lambda sim: sim[lens].before.x, target=0.004, scale=0.004, label="lens height")
+    solver.target(value=lambda sim: sim.final.theta, target=0, scale=0.02, label="collimated")
+    solution = solver.solve(use_jit=use_jit, options={"ftol": 1e-12, "maxiter": 100})
+    assert solution.success and solution.feasible
+    assert solution.value(angle) == pytest.approx(0.02, abs=2e-7)
+    assert solution.value(lens.f) == pytest.approx(0.2, abs=2e-6)
+    assert solution.run().final.theta == pytest.approx(0, abs=2e-8)
+    assert solution.cost < 1e-11
+    assert sum(entry.cost for entry in solution.objectives) == pytest.approx(solution.cost)
 
 
-def test_declarative_api_value_matching_solves_real_optical_system():
-    distance = Parameter(0.1).variable(bounds=(0.02, 0.4))
+@pytest.mark.parametrize("method", ["SLSQP", "trust-constr"])
+def test_gaussian_waist_position_is_optimized_through_real_propagation(method):
+    distance = Parameter(0.04).variable(bounds=(0.01, 0.15))
     space = Space(d=distance)
-    system = System(space, input=beam())
+    solver = Solver(System(space, optical_input=GaussianBeam(q=-0.08+0.03j, wavelength=1e-6, n=1)))
+    solver.target(lambda sim: sim.final.z0 / 0.08)
+    solution = solver.solve(method=method, options={"maxiter": 150})
+    assert solution.success and solution.feasible
+    assert solution.value(distance) == pytest.approx(0.08, abs=2e-6)
+    assert solution.run().final.q == pytest.approx(0.03j, abs=2e-6)
+    assert solution.run().final.w == pytest.approx(np.sqrt(1e-6 * 0.03 / np.pi), rel=1e-7)
+
+
+def test_system_composite_element_and_solver_constraints_change_physical_optimum():
+    thickness = Parameter(0.02).variable(bounds=(0.005, 0.05))
+    slab = Slab(d=thickness, n=1.5)
+    slab.require(Constraint(slab.d, upper_bound=0.03, label="composite maximum"))
+    slab.body.require(Constraint(slab.body.d, lower_bound=0.01, label="element minimum"))
+    system = System(slab, optical_input=Ray(x=0, theta=0.03, n=1))
+    system.require(Constraint(thickness, upper_bound=0.025, label="system maximum"))
     solver = Solver(system)
-    solver.target(value=lambda ctx: ctx.z_after(space), target=0.2, scale=0.2, label="length")
-
-    solution = solver.solve(Backend.SCIPY, method="SLSQP")
-
-    assert solution.success
-    assert solution.feasible
-    assert solution[distance] == pytest.approx(0.2, abs=1e-6)
-    assert solution.targets[0].objective.label == "length"
-    assert solution.targets[0].cost == pytest.approx(0.0, abs=1e-10)
-    assert distance.value == 0.1
-
-
-def test_real_optical_inverse_design_public_workflow():
-    system, space, distance = distance_system()
-    initial_value = distance.value
-    solver, solution = solve_distance(system)
-
-    assert isinstance(solution, Solution)
-    assert solution.success
-    assert solution.feasible
-    numpy.testing.assert_allclose(solution.x, [0.2], atol=1e-6)
-    assert solution[distance] == pytest.approx(0.2, abs=1e-6)
-    assert solution.run().z[-1] == pytest.approx(0.2, abs=1e-6)
-    assert solution.targets[0].value == pytest.approx(0.0, abs=1e-6)
-    assert distance.value == initial_value
-    assert distance.is_variable
-    assert solver.simulation.run().z[-1] == pytest.approx(initial_value)
-
-
-def test_real_solver_expression_uses_z_after_space():
-    system, space, distance = distance_system()
-    solver = Solver(system)
-    solver.target(lambda context: context.z_after(space) - 0.2)
-
-    solution = solver.solve(Backend.SCIPY, method="SLSQP")
-
-    assert solution.success
-    assert solution[distance] == pytest.approx(0.2, abs=1e-6)
-    assert solution.run().z_after(space) == pytest.approx(0.2, abs=1e-6)
-
-
-def test_multiple_real_design_variables_preserve_canonical_theta_order():
-    first = Parameter(0.08, name="first", variable=True, lower_bound=0.02, upper_bound=0.3)
-    second = Parameter(0.12, name="second", variable=True, lower_bound=0.02, upper_bound=0.3)
-    first_space = Space(d=first)
-    second_space = Space(d=second)
-    system = System()
-    system.add_input_beam(beam())
-    system.add((first_space, second_space))
-    solver = Solver(system)
-    solver.target(
-        lambda context: context.z[1] - 0.1,
-        lambda context: context.z[2] - 0.3,
-    )
-
-    solution = solver.solve(Backend.SCIPY, method="SLSQP")
-
-    assert solution.success
-    assert len(solution.x) == 2
-    for index, info in enumerate(solution.parameter_info):
-        assert info.parameter_index == index
-        assert solution.parameters[index].info is info
-    first_index = solver.simulation.parameter_info[id(first)].parameter_index
-    second_index = solver.simulation.parameter_info[id(second)].parameter_index
-    assert solution[first] == pytest.approx(solution.x[first_index])
-    assert solution[second] == pytest.approx(solution.x[second_index])
-    numpy.testing.assert_allclose(
-        [solution[first], solution[second]],
-        [0.1, 0.2],
-        atol=1e-5,
-    )
-
-
-def test_shared_parameter_and_dependent_expressions_remain_canonical():
-    base = Parameter(0.08, name="base", variable=True, lower_bound=0.02, upper_bound=0.2)
-    doubled = 2.0 * base
-    shifted = doubled + 3.0
-    first = Space(d=base)
-    second = Space(d=doubled)
-    system = System()
-    system.add_input_beam(beam())
-    system.add((first, second))
-    solver = Solver(system)
-    solver.target(lambda context: context.z[2] - 0.3)
-
-    solution = solver.solve(Backend.SCIPY, method="SLSQP")
-
-    assert solution.success
-    assert len(solution.x) == 1
-    assert solution[base] == pytest.approx(0.1, abs=1e-6)
-    assert solution[doubled] == pytest.approx(2.0 * solution[base])
-    assert solution[shifted] == pytest.approx(2.0 * solution[base] + 3.0)
-    assert base.value == 0.08
-
-
-def test_real_parameter_bound_becomes_active_and_is_reported():
-    system, _, distance = distance_system(upper=0.3)
-    _, solution = solve_distance(system, target=0.5)
-
-    assert solution.success
-    assert solution[distance] == pytest.approx(0.3, abs=1e-6)
-    assert solution.parameters[0].info.lower_bound == pytest.approx(0.02)
-    assert solution.parameters[0].info.upper_bound == pytest.approx(0.3)
-
-
-@pytest.mark.parametrize("variable_position", [False, True], ids=["fixed-station", "variable-station"])
-def test_generated_gap_requirement_prevents_crossing_absolute_station(variable_position):
-    distance = Parameter(0.1).variable(bounds=(0.01, 0.3))
-    position = Parameter(0.2).variable(bounds=(0.15, 0.25)) if variable_position else 0.2
-    target = Plane(label="Station")
-    system = System(Space(d=distance), input=beam())
-    system.add(target, z=position)
-    simulation = system.build()
-    solver = Solver(simulation).target(distance - 0.25)
-    if variable_position:
-        solver.target(position - 0.2)
-    else:
-        # Bounds initially imply the gap requirement; relaxing them must restore it.
-        restricted = solver.solve(method="SLSQP", x_upper=[0.15], options={"ftol": 1e-12})
-        assert restricted[distance] == pytest.approx(0.15, abs=1e-7)
-
-    solution = solver.solve(method="SLSQP", options={"ftol": 1e-12})
-
-    assert solution.success, solution.message
-    assert solution.feasible
-    assert solution[distance] == pytest.approx(0.225 if variable_position else 0.2, abs=1e-7)
-    if variable_position:
-        assert solution[position] == pytest.approx(0.225, abs=1e-7)
-        assert position.value == 0.2
-    assert len(solution.constraints) == 2
-    gap = solution.constraints[1]
-    assert gap.lower_bound == 0.0 and gap.upper_bound == np.inf
-    assert gap.value == pytest.approx(0.0, abs=1e-7)
-    assert gap.satisfied
-    assert np.all(np.diff(solution.run().z) >= -solution.feasibility_tolerance)
-    assert distance.value == 0.1
-    assert len(system.placements) == 2
-
-
-def test_real_hard_constraint_changes_the_optimum():
-    unconstrained_system, _, unconstrained_distance = distance_system(initial=0.15)
-    unconstrained = Solver(unconstrained_system)
-    unconstrained.target(unconstrained_distance - 0.05)
-    unconstrained_solution = unconstrained.solve(Backend.SCIPY, method="SLSQP")
-
-    constrained_system, _, constrained_distance = distance_system(initial=0.15)
-    constrained = Solver(constrained_system)
-    constrained.target(constrained_distance - 0.05)
-    constrained.require(constrained_distance >= 0.2)
-    constrained_solution = constrained.solve(Backend.SCIPY, method="SLSQP")
-
-    assert unconstrained_solution[unconstrained_distance] == pytest.approx(0.05, abs=1e-6)
-    assert constrained_solution[constrained_distance] == pytest.approx(0.2, abs=1e-6)
-    assert constrained_solution.success
-    assert constrained_solution.feasible
-    assert constrained_solution.violations == ()
-    assert constrained_solution.constraints[1].satisfied
-
-
-def test_simulation_requirements_join_solver_constraints_in_order():
-    system, _, distance = distance_system(initial=0.1)
-    system.require(distance >= 0.2)
-    simulation = system.build()
-    requirements_before = simulation.requirements
-    solver = Solver(simulation)
-    solver.target(distance - 0.1)
-    solver.require(distance <= 0.25)
-
-    first = solver.solve(Backend.SCIPY, method="SLSQP")
-    second = solver.solve(Backend.SCIPY, method="SLSQP")
-
-    assert first.success
-    assert first.feasible
-    assert first[distance] == pytest.approx(0.2, abs=1e-6)
-    assert tuple(result.lower_bound for result in first.constraints) == (0.2, 0.0, -numpy.inf)
-    assert tuple(result.upper_bound for result in first.constraints) == (numpy.inf, numpy.inf, 0.25)
-    assert len(first.constraints) == 3
-    assert len(second.constraints) == 3
-    assert len(solver.constraints) == 1
-    assert simulation.requirements is requirements_before
-    assert requirements_before[0].evaluate is system.requirements[0].left
-
-
-def test_simulation_requirement_appears_in_solution_violations():
-    system, _, distance = distance_system(initial=0.1)
-    system.require(distance >= 0.2)
-    simulation = system.build()
-    solver = Solver(simulation)
-    solver.target(distance - 0.15)
-    solver.require(distance <= 0.1)
-
-    solution = solver.solve(Backend.SCIPY, method="SLSQP")
-
-    assert len(solution.constraints) == 3
-    assert solution.violations
-    assert any(
-        result.lower_bound == pytest.approx(0.2)
-        for result in solution.violations
-    )
-
-
-def test_multiple_constraint_kinds_are_preserved_in_solution():
-    system, _, distance = distance_system(initial=0.18)
-    solver = Solver(system)
-    solver.target(distance - 0.3)
-    solver.require(
-        distance >= 0.1,
-        distance <= 0.3,
-        Constraint(distance, lower_bound=0.15, upper_bound=0.25),
-        distance == 0.2,
-    )
-
-    solution = solver.solve(Backend.SCIPY, method="SLSQP")
-
-    assert solution.success
-    assert solution.feasible
-    assert len(solution.constraints) == 5
-    assert all(result.satisfied for result in solution.constraints)
-    assert solution.violations == ()
-    assert solution[distance] == pytest.approx(0.2, abs=1e-6)
-
-
-def test_weighted_objectives_report_the_backend_cost():
-    system, _, distance = distance_system(initial=0.2)
-    first = Objective(distance - 0.1, weight=1.0, label="near")
-    second = Objective(distance - 0.3, weight=4.0, label="far")
-    solver = Solver(system)
-    solver.target(first, second)
-
-    solution = solver.solve(Backend.SCIPY, method="SLSQP")
-
-    assert solution.success
-    assert tuple(target.weight for target in solution.targets) == (1.0, 4.0)
-    assert tuple(target.objective.label for target in solution.targets) == ("near", "far")
-    assert sum(target.cost for target in solution.targets) == pytest.approx(solution.cost)
-
-
-def test_real_runtime_lookup_sources_reproduce_solution_run():
-    system, space, _ = distance_system()
-    reference = system.build().run(xp.array([0.2]))
-    before_w = float(reference.at(space).w)
-    desired_w = float(reference.after(space).w)
-    solver = Solver(system)
-    solver.target(
-        lambda context: context.z[1] - 0.2,
-        lambda context: context.at(space).w - before_w,
-        lambda context: context.after(space).w - desired_w,
-        lambda context: context.states[1].w - desired_w,
-    )
-
-    solution = solver.solve(Backend.SCIPY, method="SLSQP")
-    result = solution.run()
-
-    assert solution.success
-    expected = (
-        result.z[1] - 0.2,
-        result.at(space).w - reference.at(space).w,
-        result.after(space).w - desired_w,
-        result.states[1].w - desired_w,
-    )
-    numpy.testing.assert_allclose(
-        [target.value for target in solution.targets],
-        expected,
-        atol=1e-8,
-    )
-
-
-def test_dynamic_python_control_flow_survives_real_solve():
-    system, _, distance = distance_system(initial=0.1)
-    solver = Solver(system)
-
-    def target(context):
-        if context.z[1] > 0.15:
-            return distance - 0.2
-        return 2.0 * (distance - 0.2)
-
-    solver.target(target)
-    solution = solver.solve(Backend.SCIPY, method="SLSQP")
-
-    assert solution.success
-    assert solution[distance] == pytest.approx(0.2, abs=1e-6)
-    assert solution.targets[0].value == pytest.approx(0.0, abs=1e-6)
-    assert distance.value == 0.1
-
-
-def test_raw_truth_and_boolean_operators_use_dynamic_fallback():
-    system, _, distance = distance_system(initial=0.1)
-    solver = Solver(system)
-
-    def raw_and_or(context):
-        if context.z[1] and (context.z[1] > 0.0 or context.z[1] < -1.0):
-            return distance - 0.2
-        return distance + 1.0
-
-    def symbolic_not(context):
-        if not context.z[1]:
-            return distance + 1.0
-        return distance - 0.2
-
-    solver.target(raw_and_or, symbolic_not)
-    solution = solver.solve(Backend.SCIPY, method="SLSQP")
-
-    assert solution.success
-    assert solution[distance] == pytest.approx(0.2, abs=1e-6)
-    numpy.testing.assert_allclose(
-        [target.value for target in solution.targets],
-        [0.0, 0.0],
-        atol=1e-6,
-    )
-
-
-def test_unsupported_symbolic_conversion_propagates_original_error():
-    system, _, _ = distance_system()
-    solver = Solver(system)
-    solver.target(lambda context: float(context.z[1]))
-
-    with pytest.raises(RuntimeError, match="has no standalone value"):
-        solver.solve(Backend.SCIPY, method="SLSQP")
-
-
-def test_repeated_element_occurrences_resolve_independently():
-    distance = Parameter(0.1, variable=True, lower_bound=0.02, upper_bound=0.3)
-    repeated = Space(d=distance)
-    system = System()
-    system.add_input_beam(beam())
-    system.add(repeated)
-    system.add(repeated)
-    solver = Solver(system)
-    solver.target(lambda context: context.z[2] - 0.3)
-
-    solution = solver.solve(Backend.SCIPY, method="SLSQP")
-    result = solution.run()
-
-    assert solution.success
-    assert result.at(repeated, occurrence=0) is result.states[0]
-    assert result.at(repeated, occurrence=1) is result.states[1]
-    assert result.at(repeated, occurrence=0).w != pytest.approx(
-        result.at(repeated, occurrence=1).w
-    )
-
-
-def test_solver_expression_resolves_explicit_element_occurrence():
-    distance = Parameter(
-        0.1,
-        variable=True,
-        lower_bound=0.02,
-        upper_bound=0.3,
-    )
-    repeated = Space(d=distance)
-    system = System()
-    system.add_input_beam(beam())
-    system.add(repeated)
-    system.add(repeated)
-    simulation = system.build()
-    desired_distance = 0.15
-    desired_w = float(simulation.run(xp.array([desired_distance])).at(
-        repeated,
-        occurrence=1,
-    ).w)
-    solver = Solver(simulation)
-    solver.target(
-        lambda context: 1e4 * (
-            context.at(repeated, occurrence=1).w - desired_w
-        )
-    )
-
-    solution = solver.solve(Backend.SCIPY, method="SLSQP")
-
-    assert solution.success
-    assert solution[distance] == pytest.approx(desired_distance, abs=1e-6)
-    assert solution.run().at(repeated, occurrence=1).w == pytest.approx(
-        desired_w,
-        abs=1e-10,
-    )
-
-
-def test_reusing_built_simulation_produces_independent_solutions():
-    system, _, distance = distance_system()
-    simulation = system.build()
-    first = Solver(simulation)
-    second = Solver(simulation)
-    first.target(distance - 0.15)
-    second.target(distance - 0.25)
-
-    first_solution = first.solve(Backend.SCIPY, method="SLSQP")
-    second_solution = second.solve(Backend.SCIPY, method="SLSQP")
-
-    assert first_solution[distance] == pytest.approx(0.15, abs=1e-6)
-    assert second_solution[distance] == pytest.approx(0.25, abs=1e-6)
-    assert distance.value == 0.1
-    numpy.testing.assert_array_equal(simulation.initial_values, [0.1])
-
-
-def test_multiple_solves_start_from_frozen_simulation_values():
-    system, _, distance = distance_system()
-    solver = Solver(system)
-    solver.target(distance - 0.15)
-    first = solver.solve(Backend.SCIPY, method="SLSQP", options={"maxiter": 100})
-    second = solver.solve(Backend.SCIPY, method="SLSQP", options={"maxiter": 20})
-
-    assert first is not second
-    assert first[distance] == pytest.approx(0.15, abs=1e-6)
-    assert second[distance] == pytest.approx(0.15, abs=1e-6)
-    assert distance.value == 0.1
-
-
-def test_solver_accepts_system_and_prebuilt_simulation():
-    first_system, _, first_distance = distance_system()
-    second_system, _, second_distance = distance_system()
-    from_system = Solver(first_system)
-    from_simulation = Solver(second_system.build())
-    from_system.target(first_distance - 0.2)
-    from_simulation.target(second_distance - 0.2)
-
-    first = from_system.solve(Backend.SCIPY, method="SLSQP")
-    second = from_simulation.solve(Backend.SCIPY, method="SLSQP")
-
-    numpy.testing.assert_allclose(first.x, second.x, atol=1e-6)
-
-
-def test_prebuilt_simulation_uses_frozen_parameter_snapshot():
-    system, _, distance = distance_system()
-    simulation = system.build()
-    distance.value = 0.3
-    distance.fixed()
-    solver = Solver(simulation)
-    solver.target(distance - 0.2)
-
-    solution = solver.solve(Backend.SCIPY, method="SLSQP")
-
-    assert len(solution.x) == 1
-    assert solution[distance] == pytest.approx(0.2, abs=1e-6)
-    assert distance.value == 0.3
-    assert distance.is_variable is False
-
-
-def test_replacing_element_parameter_after_build_does_not_enter_frozen_simulation():
-    system, space, original = distance_system()
-    simulation = system.build()
-    replacement = Parameter(
-        0.25,
-        name="replacement",
-        variable=True,
-        lower_bound=0.02,
-        upper_bound=0.4,
-    )
-    space.d = replacement
-    solver = Solver(simulation)
-    solver.target(space.d - 0.2)
-
-    with pytest.raises(ValueError, match="not part of this Simulation"):
-        solver.solve(Backend.SCIPY, method="SLSQP")
-
-    assert id(original) in simulation.parameter_info
-    assert id(replacement) not in simulation.parameter_info
-    assert simulation.run().z[-1] == pytest.approx(0.1)
-
-
-def test_solver_rejects_model_changes_after_solving_and_preserves_solution():
-    system, _, distance = distance_system()
-    solver, solution = solve_distance(system)
-    original_targets = solution.targets
-    original_constraints = solution.constraints
-    original_cost = solution.cost
-    original_feasible = solution.feasible
-
-    original_objectives = tuple(solver.objectives)
-    original_requirements = tuple(solver.constraints)
-    with pytest.raises(RuntimeError, match="model is fixed"):
-        solver.target(distance - 0.35)
-    with pytest.raises(RuntimeError, match="model is fixed"):
-        solver.require(distance >= 0.3)
-
-    assert tuple(solver.objectives) == original_objectives
-    assert tuple(solver.constraints) == original_requirements
-
-    assert solution.targets is original_targets
-    assert solution.constraints is original_constraints
-    assert solution.cost == original_cost
-    assert solution.feasible is original_feasible
-
-
-def test_cached_solution_runtime_result_is_stable():
-    system, _, _ = distance_system()
-    _, solution = solve_distance(system)
-
-    first_run = solution.run()
-    first_targets = solution.targets
-    first_constraints = solution.constraints
-
-    assert solution.run() is first_run
-    assert solution.targets is first_targets
-    assert solution.constraints is first_constraints
-
-
-def test_infeasible_problem_returns_non_feasible_solution():
-    system, _, distance = distance_system(initial=0.15)
-    solver = Solver(system)
-    solver.target(distance - 0.15)
-    solver.require(distance >= 0.25, distance <= 0.1)
-
-    solution = solver.solve(Backend.SCIPY, method="SLSQP")
-
-    assert solution.feasible is False
-    assert solution.violations
-    assert solution.success is False
-
-
-@pytest.mark.parametrize(
-    ("tolerance", "expected"),
-    [(0.0, False), (1e-3, True)],
-)
-def test_solution_reporting_tolerance_is_independent_of_backend_options(
-    monkeypatch,
-    tolerance,
-    expected,
-):
-    from diffractix.solver import solver as solver_module
-
-    system, _, distance = distance_system(initial=0.2)
-    solver = Solver(system)
-    solver.target(distance - 0.2)
-    solver.require(distance >= 0.2005)
-
-    def solve_scipy(problem, method=None, options=None):
-        numerical_x = (xp.array([0.2]) - problem.scaling.x_center) / problem.scaling.x_scale
-        return OptimizationResult(
-            x=numerical_x,
-            success=True,
-            cost=0.0,
-            message="mocked reporting point",
-            scaling=problem.scaling,
-        )
-
-    monkeypatch.setattr(solver_module, "solve_scipy", solve_scipy)
-
-    solution = solver.solve(
-        Backend.SCIPY,
-        method="SLSQP",
-        options={"ftol": 1e-9},
-        feasibility_tolerance=tolerance,
-    )
-
-    assert solution.feasibility_tolerance == tolerance
-    assert solution.constraints[1].satisfied is expected
-
-
-def test_invalid_backend_fails_clearly_before_dispatch():
-    system, _, _ = distance_system()
-    solver = Solver(system)
-
-    with pytest.raises(ValueError, match="Unsupported backend"):
-        solver.solve("definitely-not-a-backend")
-
-
-def test_invalid_scipy_method_and_option_propagate():
-    from scipy.optimize import OptimizeWarning
-
-    system, _, distance = distance_system()
-    solver = Solver(system)
-    solver.target(distance - 0.2)
-
-    with pytest.raises(ValueError, match="Unsupported SciPy method"):
-        solver.solve(Backend.SCIPY, method="DOES_NOT_EXIST")
-
-    with pytest.warns(OptimizeWarning, match="Unknown solver options"):
-        solver.solve(
-            Backend.SCIPY,
-            method="SLSQP",
-            options={"definitely_not_an_option": 1},
-        )
-
-
-def test_negative_feasibility_tolerance_fails_cleanly():
-    system, _, distance = distance_system()
-    solver = Solver(system)
-    solver.target(distance - 0.2)
-
-    with pytest.raises(ValueError, match="non-negative"):
-        solver.solve(
-            Backend.SCIPY,
-            method="SLSQP",
-            feasibility_tolerance=-1.0,
-        )
-
-
-@pytest.mark.parametrize(
-    ("tolerance", "error"),
-    (
-        (-1.0, ValueError),
-        (np.nan, ValueError),
-        (np.inf, ValueError),
-        (-np.inf, ValueError),
-        (True, TypeError),
-        (1 + 0j, TypeError),
-        ("1e-3", TypeError),
-        (object(), TypeError),
-    ),
-)
-def test_solver_validates_feasibility_tolerance_before_compilation(
-    tolerance,
-    error,
-):
-    system, _, distance = distance_system()
-    solver = Solver(system)
-    solver.target(distance - 0.2)
-    solver._compile_constraints = lambda constraints: pytest.fail(
-        "feasibility tolerance validation must precede problem compilation"
-    )
-
-    with pytest.raises(error, match="feasibility_tolerance"):
-        solver.solve(feasibility_tolerance=tolerance)
-
-
-def test_solver_rejects_invalid_objective_entries_with_type_error():
-    system, _, _ = distance_system()
-    solver = Solver(system)
-    solver.objectives.append(object())
-
-    with pytest.raises(TypeError, match="objectives"):
-        solver.solve(Backend.SCIPY, method="SLSQP")
-
-
-def test_solver_rejects_invalid_constraint_entries_with_type_error():
-    system, _, _ = distance_system()
-    solver = Solver(system)
-    solver.constraints.append(object())
-
-    with pytest.raises(TypeError, match="constraints"):
-        solver.solve(Backend.SCIPY, method="SLSQP")
-
-
-@pytest.mark.parametrize("value", (np.nan, np.inf, -np.inf))
-def test_solver_rejects_nonfinite_objective_values(value):
-    system, _, _ = distance_system()
-    solver = Solver(system)
-
-    def objective(context):
-        return value
-
-    solver.target(objective)
-
-    with pytest.raises(ValueError, match="Objective.*non-finite"):
-        solver.solve(Backend.SCIPY, method="SLSQP")
-
-
-@pytest.mark.parametrize("value", (np.nan, np.inf, -np.inf))
-def test_solver_rejects_nonfinite_constraint_values(value):
-    system, _, distance = distance_system()
-    solver = Solver(system)
-    solver.target(distance - 0.2)
-
-    def constraint(context):
-        return value
-
-    solver.require(Constraint(constraint, lower_bound=0.0))
-
-    with pytest.raises(ValueError, match="Constraint.*non-finite"):
-        solver.solve(Backend.SCIPY, method="SLSQP")
-
-
-def test_unknown_runtime_element_error_propagates():
-    system, _, _ = distance_system()
-    missing = Space(d=0.1)
-    solver = Solver(system)
-    solver.target(lambda context: context.at(missing).w)
-
-    with pytest.raises(KeyError, match="not part of this simulation"):
-        solver.solve(Backend.SCIPY, method="SLSQP")
-
-
-def test_invalid_runtime_indices_propagate():
-    system, space, _ = distance_system()
-
-    bad_occurrence = Solver(system)
-    bad_occurrence.target(lambda context: context.at(space, occurrence=3).w)
-    with pytest.raises(IndexError, match="out of range"):
-        bad_occurrence.solve(Backend.SCIPY, method="SLSQP")
-
-    bad_state = Solver(system.build())
-    bad_state.target(lambda context: context.states[99].w)
-    with pytest.raises(IndexError):
-        bad_state.solve(Backend.SCIPY, method="SLSQP")
-
-
-def test_invalid_z_index_and_negative_occurrence_propagate():
-    system, space, _ = distance_system()
-
-    bad_z = Solver(system)
-    bad_z.target(lambda context: context.z[99])
-    with pytest.raises(IndexError):
-        bad_z.solve(Backend.SCIPY, method="SLSQP")
-
-    negative_occurrence = Solver(system.build())
-    negative_occurrence.target(
-        lambda context: context.at(space, occurrence=-1).w
-    )
-    with pytest.raises(IndexError, match="out of range"):
-        negative_occurrence.solve(Backend.SCIPY, method="SLSQP")
-
-
-def test_direct_runtime_symbol_is_rejected_before_backend():
-    system, _, _ = distance_system()
-    solver = Solver(system)
-    solver.target(Symbol(SolverSymbolKey(SolverSymbolKind.Z, index=0)))
-
-    with pytest.raises(ValueError, match="no compile context"):
-        solver.solve(Backend.SCIPY, method="SLSQP")
-
-
-def test_external_variable_is_rejected_but_external_fixed_is_constant():
-    system, _, distance = distance_system()
-    external_variable = Parameter(0.3, name="external").variable()
-    invalid = Solver(system)
-    invalid.target(distance - external_variable)
-
-    with pytest.raises(ValueError, match="not part of this Simulation"):
-        invalid.solve(Backend.SCIPY, method="SLSQP")
-
-    external_fixed = Parameter(0.25, name="external fixed")
-    valid = Solver(system.build())
-    valid.target(distance - external_fixed)
-    solution = valid.solve(Backend.SCIPY, method="SLSQP")
-    assert solution[distance] == pytest.approx(0.25, abs=1e-6)
-
-
-def test_user_exception_is_not_swallowed_and_retry_is_clean():
-    system, _, distance = distance_system()
-    solver = Solver(system)
-
-    def broken(context):
-        raise RuntimeError("user failure")
-
-    solver.target(broken)
-    with pytest.raises(RuntimeError, match="user failure"):
-        solver.solve(Backend.SCIPY, method="SLSQP")
-
-    solver.objectives.clear()
-    solver.target(distance - 0.2)
-    solution = solver.solve(Backend.SCIPY, method="SLSQP")
-    assert solution.success
-    assert solution[distance] == pytest.approx(0.2, abs=1e-6)
-
-
-def test_constraint_exception_is_not_swallowed_and_retry_is_clean():
-    system, _, distance = distance_system()
-    solver = Solver(system)
-
-    def broken(context):
-        raise RuntimeError("constraint failure")
-
-    solver.require(Constraint(broken, lower_bound=0.0))
-    with pytest.raises(RuntimeError, match="constraint failure"):
-        solver.solve(Backend.SCIPY, method="SLSQP")
-
-    solver.constraints.clear()
-    solver.target(distance - 0.2)
-    solver.require(distance >= 0.05)
-    solution = solver.solve(Backend.SCIPY, method="SLSQP")
-
-    assert solution.success
-    assert solution.feasible
-    assert solution[distance] == pytest.approx(0.2, abs=1e-6)
-
-
-def test_backend_exception_does_not_poison_solver_retry(monkeypatch):
-    from diffractix.solver import solver as solver_module
-
-    system, _, distance = distance_system()
-    solver = Solver(system)
-    solver.target(distance - 0.2)
-    calls = 0
-
-    def flaky_backend(problem, method=None, options=None):
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            raise RuntimeError("backend failure")
-        numerical_x = (xp.array([0.2]) - problem.scaling.x_center) / problem.scaling.x_scale
-        return OptimizationResult(
-            x=numerical_x,
-            success=True,
-            cost=problem.objective(numerical_x),
-            message="recovered",
-            scaling=problem.scaling,
-        )
-
-    monkeypatch.setattr(solver_module, "solve_scipy", flaky_backend)
-
-    with pytest.raises(RuntimeError, match="backend failure"):
-        solver.solve(Backend.SCIPY, method="SLSQP")
-
-    solution = solver.solve(Backend.SCIPY, method="SLSQP")
-
-    assert calls == 2
-    assert solution.success
-    assert solution.message == "recovered"
-    assert solution[distance] == pytest.approx(0.2)
-
-
-def test_empty_optimization_problem_should_have_a_clear_contract():
-    focal_length = Parameter(0.1, variable=True)
-    system = System()
-    system.add_input_beam(beam())
-    system.add(ThinLens(f=focal_length))
-    solver = Solver(system)
-
-    with pytest.raises(ValueError, match="objective|constraint|empty"):
-        solver.solve(Backend.SCIPY, method="SLSQP")
-
-
-def test_no_variables_should_raise_clear_solver_error():
-    system = System()
-    system.add_input_beam(beam())
-    system.add(Space(d=0.1))
-    solver = Solver(system)
-    solver.target(lambda context: 1.0)
-
-    with pytest.raises(ValueError, match="variable"):
-        solver.solve(Backend.SCIPY, method="SLSQP")
-
-
-def test_dynamic_constraint_shape_change_should_be_rejected_early():
-    system, _, distance = distance_system(initial=0.1)
-    solver = Solver(system)
-    solver.target(distance - 0.2)
-
-    def changing_shape(context):
-        if context.z[1] > 0.15:
-            return xp.stack([context.z[1], context.z[1]])
-        return distance
-
-    solver.require(Constraint(changing_shape, lower_bound=0.0))
-
-    with pytest.raises(ValueError, match="shape"):
-        solver.solve(Backend.SCIPY, method="SLSQP")
-
-
-@pytest.mark.parametrize("method", ["SLSQP", "trust-constr"])
-@pytest.mark.parametrize("composite_type", [Slab, ThickLens])
-@pytest.mark.filterwarnings("ignore:Output seems independent of input\\.:UserWarning")
-def test_composite_continuity_has_no_zero_equality_rows_at_scipy(
-    monkeypatch, composite_type, method,
-):
-    from diffractix.solver.backends import scipy as scipy_backend
-
-    thickness = Parameter(0.010).variable(bounds=(0.003, 0.020))
-    kwargs = {"R1": 0.1, "R2": -0.1} if composite_type is ThickLens else {}
-    optic = composite_type(d=thickness, n=1.5, **kwargs)
-    simulation = System(Space(d=0.02), optic, Space(d=0.02), input=beam()).build()
-    requirements = simulation.requirements
-    continuity = [c for c in requirements if c.lower_bound == c.upper_bound == 0.0]
-    assert continuity
-    before = simulation.run()
-    solver = Solver(simulation)
-    solver.target((thickness - 0.018) / 0.01)
-    solver.require(Constraint(lambda ctx: ctx.z_after(optic.back), upper_bound=0.035))
-    minimize = scipy_backend.minimize
-    calls = []
-
-    def inspected_minimize(*args, **kwargs):
-        constraints = kwargs["constraints"]
-        assert len(constraints) == 1
-        constraint, = constraints
-        assert numpy.all(constraint.lb != constraint.ub)
-        assert numpy.all(numpy.any(constraint.jac(args[1]) != 0, axis=1))
-        calls.append(constraints)
-        return minimize(*args, **kwargs)
-
-    monkeypatch.setattr(scipy_backend, "minimize", inspected_minimize)
-    options = {"ftol": 1e-12} if method == "SLSQP" else {"gtol": 1e-10}
-    solution = solver.solve(method=method, options=options)
-
-    assert len(calls) == 1
-    assert solution.success, solution.message
-    assert solution.feasible
-    assert solution[thickness] == pytest.approx(0.015, abs=2e-6)
-    assert solution._result.iterations > 1
-    assert simulation.requirements is requirements
-    assert len(solution.constraints) == len(requirements) + 1
-    numpy.testing.assert_array_equal(simulation.run().q, before.q)
-    numpy.testing.assert_array_equal(simulation.run().z, before.z)
-
-
-@pytest.mark.parametrize("method", ["SLSQP", "trust-constr"])
-@pytest.mark.filterwarnings("ignore:Output seems independent of input\\.:UserWarning")
-def test_context_bound_independent_indices_still_enforce_physical_continuity(monkeypatch, method):
-    from diffractix.solver.backends import scipy as scipy_backend
-
-    required = Parameter(1.2).variable(bounds=(1.0, 2.0))
-    source = GaussianBeam.from_waist(w0=100e-6, wavelength=1064e-9, n=1.2)
-    source.n = Symbol("ambient_n")
-    system = System(
-        Space(d=0.01, n=Symbol("required_n")),
-        input=source, ambient_n=1.2, ambient_n_variable=True,
-    )
-    system.ambient_n.bound(lower_bound=1.0, upper_bound=2.0)
-    system.add_context("required_n", required)
-    solver = Solver(system)
-    solver.target(system.ambient_n - 1.2, required - 1.8)
-    minimize = scipy_backend.minimize
-    calls = []
-
-    def inspected_minimize(*args, **kwargs):
-        constraint, = kwargs["constraints"]
-        numpy.testing.assert_array_equal(constraint.lb, constraint.ub)
-        jacobian = constraint.jac(args[1])
-        assert jacobian.shape == (1, 2)
-        assert numpy.linalg.matrix_rank(jacobian) == 1
-        calls.append(constraint)
-        return minimize(*args, **kwargs)
-
-    monkeypatch.setattr(scipy_backend, "minimize", inspected_minimize)
-    options = {"ftol": 1e-12} if method == "SLSQP" else {"gtol": 1e-10}
-    solution = solver.solve(method=method, options=options)
-
-    assert len(calls) == 1
-    assert solution.success, solution.message
-    assert solution.feasible
-    assert solution[system.ambient_n] == pytest.approx(1.5, abs=1e-6)
-    assert solution[required] == pytest.approx(solution[system.ambient_n], abs=1e-9)
-    continuity = [r for r in solution.constraints if r.lower_bound == r.upper_bound == 0.0]
+    solver.target(value=lambda sim: sim.final.x, target=0.001, scale=0.001)
+    solver.require(Constraint(lambda sim: sim.final.x, upper_bound=0.0004, label="output limit"))
+    solution = solver.solve(options={"ftol": 1e-12})
+    assert solution.success and solution.feasible
+    # Two planar interfaces conserve n*theta: glass angle = 0.03/1.5.
+    assert solution.value(thickness) == pytest.approx(0.02, abs=1e-7)
+    assert solution.run().final.x == pytest.approx(0.0004, abs=2e-9)
+    labels = [entry.label for entry in solution.constraints]
+    assert labels.index("system maximum") < labels.index("composite maximum") < labels.index("element minimum") < labels.index("output limit")
+    assert solution.run().final.n == pytest.approx(1)
+
+
+def test_independent_indices_remain_continuous_during_optimization():
+    upstream = Parameter(1.2).variable(bounds=(1, 2))
+    incoming = Parameter(1.2).variable(bounds=(1, 2))
+    interface = Interface(n1=incoming, n2=1)
+    solver = Solver(System(interface, optical_input=Ray(x=0, theta=0.01, n=upstream)))
+    solver.target(upstream - 1.6, incoming - 1.1)
+    solution = solver.solve(options={"ftol": 1e-12})
+    assert solution.success and solution.feasible
+    assert solution.value(upstream) == pytest.approx(1.35, abs=1e-6)
+    assert solution.value(incoming) == pytest.approx(1.35, abs=1e-6)
+    continuity = [entry for entry in solution.constraints if entry.lower_bound == entry.upper_bound == 0]
     assert len(continuity) == 1
-    assert continuity[0].satisfied
+    assert abs(continuity[0].value) < 1e-9
+
+
+def test_repeated_space_occurrence_traces_longitudinal_and_state_quantities():
+    distance = Parameter(0.03).variable(bounds=(0.01, 0.2))
+    repeated = Space(d=distance)
+    solver = Solver(System(repeated, repeated, optical_input=Ray(x=0, theta=0.02, n=1)))
+    solver.target(lambda sim: sim[repeated, 1].z_end / 0.2 - 1)
+    solver.require(Constraint(lambda sim: sim[repeated, 0].after.x, upper_bound=0.003))
+    solution = solver.solve()
+    assert solution.success and solution.feasible
+    assert solution.value(distance) == pytest.approx(0.1, abs=1e-7)
+    result = solution.run()
+    assert result[repeated, 1].after.x == pytest.approx(0.004, abs=1e-8)
+    assert result[repeated, 1].z_start == pytest.approx(0.1, abs=1e-7)
+    with pytest.raises(ValueError, match="occurrence"):
+        result[repeated]
+
+
+def test_generated_gap_constraint_prevents_optimized_element_crossing_station():
+    distance = Parameter(0.05).variable(bounds=(0.01, 0.2))
+    upstream, station = Space(d=distance), Plane()
+    system = System(upstream, optical_input=Ray(x=0, theta=0.01, n=1))
+    system.add(station, z=0.1)
+    solver = Solver(system).target(distance / 0.2 - 1)
+    solution = solver.solve(options={"ftol": 1e-12})
+    assert solution.success and solution.feasible
+    assert solution.value(distance) == pytest.approx(0.1, abs=1e-7)
+    assert solution.run()[station].z_start == pytest.approx(0.1)
+    assert solution.run().z[-1] == pytest.approx(0.1)
+    assert min(np.diff(solution.run().z)) >= -1e-9
+
+
+def test_coupled_optical_gaps_keep_mechanical_clearance_at_small_scale():
+    first = Parameter(0.006).variable(bounds=(0.004, 0.01))
+    middle = Parameter(0.008).variable(bounds=(0.005, 0.014))
+    output = Space(d=0.025 - first - middle)
+    solver = Solver(System(Space(d=first), Space(d=middle), output,
+                           optical_input=Ray(x=0, theta=0.01, n=1)))
+    solver.target((first - 0.01) / 0.01, (middle - 0.014) / 0.01)
+    solver.require(Constraint(output.d, lower_bound=0.004, label="output clearance"))
+    solution = solver.solve(options={"ftol": 1e-12})
+    assert solution.success and solution.feasible
+    assert solution.value(first) == pytest.approx(0.0085, abs=1e-7)
+    assert solution.value(middle) == pytest.approx(0.0125, abs=1e-7)
+    result = solution.run()
+    assert result[output].z_end - result[output].z_start == pytest.approx(0.004, abs=1e-8)
+    assert result.final.x == pytest.approx(0.00025, abs=1e-9)
+    assert any(entry.label == "output clearance" for entry in solution.constraints)
+
+
+
+@pytest.mark.parametrize("use_jit", [False, True])
+def test_ray_bundle_array_residual_recovers_analytical_focus(use_jit):
+    length, radius = 0.1, 0.001
+    positions = np.array([-radius, 0., radius])
+    focal = Parameter(0.15).variable(bounds=(0.05, 0.3))
+    solver = Solver(System(ThinLens(f=focal), Space(d=length),
+                           optical_input=RayBundle(x=positions, theta=np.zeros(3), n=1)))
+    solver.target(lambda sim: sim.final.x / radius, label="bundle focus")
+    solution = solver.solve(use_jit=use_jit, options={"ftol": 1e-12, "maxiter": 100})
+    assert solution.success and solution.feasible
+    f = solution.value(focal)
+    assert f == pytest.approx(length, abs=1e-7)
+    final = solution.run().final
+    np.testing.assert_allclose(final.x, positions * (1-length/f), atol=1e-12)
+    np.testing.assert_allclose(final.theta, -positions/f, atol=1e-12)
+    np.testing.assert_allclose(final.x, np.zeros(3), atol=1e-9)
+    objective, = solution.objectives
+    assert objective.value.shape == (3,)
+    np.testing.assert_allclose(objective.value, final.x/radius, atol=1e-12)
+    assert objective.cost == pytest.approx(np.sum((positions/radius*(1-length/f))**2), abs=1e-14)
+    assert solution.cost == pytest.approx(objective.cost, abs=1e-14)

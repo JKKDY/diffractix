@@ -11,10 +11,10 @@ from diffractix.solver import solver as solver_module
 def test_whole_solver_callbacks_jit_and_nested_derivatives(monkeypatch):
     distance = Parameter(0.03).variable(bounds=(0.01, 0.06))
     space = Space(d=distance)
-    simulation = System(space, input=GaussianBeam.from_waist(0.0005, 1.064e-6).numeric()).build()
+    simulation = System(space, optical_input=GaussianBeam.from_waist(0.0005, 1.064e-6)).build()
     solver = Solver(simulation)
-    solver.target(lambda ctx: ctx.after(space).w * 1000)
-    solver.require(Constraint(lambda ctx: ctx.after(space).w * 1000,
+    solver.target(lambda ctx: ctx[space].after.w * 1000)
+    solver.require(Constraint(lambda ctx: ctx[space].after.w * 1000,
                               lower_bound=0.1, upper_bound=2.0))
     captured = {}
 
@@ -70,7 +70,7 @@ def test_gaussian_concrete_domain_validation_remains_active():
         first.overlap_with(GaussianBeam(q=1j, wavelength=1e-6, n=1.5).numeric())
     with pytest.raises(ValueError, match='wavelength'):
         first.overlap_with(GaussianBeam(q=1j, wavelength=2e-6, n=1.0).numeric())
-    with pytest.raises(Exception, match='Invalid q'):
+    with pytest.raises(ValueError, match='Invalid q'):
         GaussianBeam.w_R_from_q(-1j, 1e-6, 1.0)
 
 
@@ -88,11 +88,11 @@ def test_jit_propagation_preserves_python_and_custom_states(kind):
         def propagate(self, A, B, C, D, n):
             return CustomState(A*self.x + B*self.theta, C*self.x + D*self.theta)
 
-    source = (Ray(x=0.001, theta=0.02).numeric({"ambient_n": 1.0}) if kind == 'ray' else
-              RayBundle(x=np.array([0.001, 0.002]), theta=np.array([0.02, -0.01])).numeric({"ambient_n": 1.0})
+    source = (Ray(x=0.001, theta=0.02) if kind == 'ray' else
+              RayBundle(x=np.array([0.001, 0.002]), theta=np.array([0.02, -0.01]))
               if kind == 'bundle' else CustomState(0.001, 0.02))
     distance = Parameter(0.03).variable()
-    simulation = System(ABCD(A=1, B=distance, C=0, D=1), input=source).build()
+    simulation = System(ABCD(A=1, B=distance, C=0, D=1), optical_input=source).build()
 
     def values(theta):
         result = simulation.run(theta)
@@ -115,7 +115,7 @@ def test_complex_optical_derivatives_against_central_differences():
     focal_length = Parameter(0.12).variable()
     simulation = System(Space(d=distance), ThinLens(f=focal_length),
                         GaussianAperture(a=0.001), Space(d=0.04),
-                        input=GaussianBeam.from_waist(0.0005, 1.064e-6).numeric()).build()
+                        optical_input=GaussianBeam.from_waist(0.0005, 1.064e-6)).build()
 
     def values(theta):
         state = simulation.run(theta).final
@@ -124,7 +124,9 @@ def test_complex_optical_derivatives_against_central_differences():
     def cost(theta):
         return xp.sum(values(theta)**2)
 
-    theta = np.array([0.03, 0.12])
+    theta = simulation.initial_values.values
+    indices = simulation.optics_program.parameter_indices
+    theta[indices[id(distance)]], theta[indices[id(focal_length)]] = 0.03, 0.12
     step = 1e-6
     differences = np.eye(2) * step
     numerical_jacobian = np.stack([(values(theta+d) - values(theta-d))/(2*step)

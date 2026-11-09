@@ -46,7 +46,7 @@ def test_preparation_rejects_unregistered_parameters_and_unresolved_symbols():
     solver.require(Parameter(1).variable() >= 0)
     with pytest.raises(ValueError, match="Missing required Parameter"):
         solver._finalize_constraints()
-    solver.constraints.clear()
+    solver, _, _ = make_solver()
     solver.require(Symbol("missing") >= 0)
     with pytest.raises(ValueError, match="missing"):
         solver._finalize_constraints()

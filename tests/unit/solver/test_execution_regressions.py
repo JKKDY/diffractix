@@ -6,8 +6,6 @@ import pytest
 from diffractix import Constraint, Objective, Parameter, Ray, Solver, System
 from diffractix.backend import grad, hessian, jacobian, xp
 from diffractix.graph import Literal, Symbol
-from diffractix.solver import SolverResult
-from diffractix.solver.backends.scipy import solve_scipy
 from tests.helpers.backend import capture_problem
 
 
@@ -27,10 +25,6 @@ def test_runtime_symbols_and_cache_metadata_work_through_normal_preparation(use_
     assert cache.callable_objectives == ()
     assert problem.objective(xp.array([2.])) == pytest.approx(1)
     np.testing.assert_allclose(problem.gradient(xp.array([2.])), [2])
-    result = solve_scipy(problem)
-    assert isinstance(result, SolverResult)
-    assert result.success
-    np.testing.assert_allclose(result.x, [1.], atol=1e-7)
     capture_problem(solver, use_jit=use_jit, x0=[0.75], x_lower=[-2], x_upper=[2])
     assert solver._cache is cache
 

@@ -60,7 +60,7 @@ def sample(result):
         boundaries = boundaries[:, indices]
 
     segments = []
-    for index, info in enumerate(result.element_info):
+    for index, info in enumerate(result.element_data):
         length = z[index + 1] - z[index]
         if info.type_name != "Space" or length == 0:
             continue

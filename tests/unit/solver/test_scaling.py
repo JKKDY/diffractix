@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from diffractix.solver import OptimizationResult
+from diffractix.solver import SolverResult
 from diffractix.solver.problem import Problem, Scaling
 from tests.helpers.optimization import make_problem, make_scaling_problem
 
@@ -14,7 +14,7 @@ def test_unconstrained_scaling_preserves_empty_callbacks_and_result_round_trip()
     scaling = problem.scaling
     assert isinstance(scaling, Scaling)
     raw = object()
-    result = OptimizationResult(
+    result = SolverResult(
         x=np.array([1.5]),
         success=True,
         cost=2.25,
@@ -114,7 +114,7 @@ def test_variable_constraint_scaling_result_returns_physical_coordinates():
     problem = make_scaling_problem()
     y = np.array([0.5, -1.0 / 3.0])
     raw = {"x": y.copy(), "diagnostic": "backend coordinates"}
-    result = OptimizationResult(y.copy(), True, 15.0, "done", raw=raw, scaling=problem.scaling)
+    result = SolverResult(y.copy(), True, 15.0, "done", raw=raw, scaling=problem.scaling)
 
     physical = problem.scaling.unscale(result)
 
@@ -155,3 +155,29 @@ def test_scaling_mixed_unbounded_and_zero_width_dimensions_owns_immutable_metada
     for values in (scaling.x_center, scaling.x_scale, scaling.constraint_center, scaling.constraint_scale):
         with pytest.raises(ValueError, match="read-only"):
             values[0] = 0.0
+
+
+
+def test_scaling_rejects_wrong_constraint_jacobian_shape():
+    from dataclasses import replace
+    with pytest.raises(ValueError, match="Jacobian.*shape"):
+        replace(make_scaling_problem(), jacobian=lambda x: np.zeros((2, 2)), scaling=None)
+
+
+@pytest.mark.parametrize("direction", ["scale", "unscale"])
+def test_scaling_rejects_unsupported_objects(direction):
+    with pytest.raises(TypeError, match="Cannot"):
+        getattr(make_problem().scaling, direction)(object())
+
+
+def test_finite_large_width_does_not_overflow_and_empty_constraints_skip_jacobian():
+    from dataclasses import replace
+
+    def unexpected_jacobian(x):
+        pytest.fail("No Jacobian needed for empty constraints")
+
+    problem = replace(make_problem(), x0=np.array([0.]),
+                      x_lower=np.array([-1e308]), x_upper=np.array([1e308]),
+                      jacobian=unexpected_jacobian, scaling=None)
+    np.testing.assert_allclose(problem.scaling.x_scale, [1e308])
+    assert problem.scaling.constraint_scale.shape == (0,)

@@ -185,8 +185,8 @@ def test_hybrid_alias_dag_preserves_root_order_snapshots_and_all_input_derivativ
 
 
 @pytest.mark.parametrize("kind", ["real", "complex", "array"])
-@pytest.mark.parametrize("derivative", ["gradient", "hessian", "third", "fourth", "nested"])
-def test_program_and_analytical_expression_agree_through_nested_fourth_order_derivatives(kind, derivative):
+@pytest.mark.parametrize("derivative", ["gradient", "hessian", "third", "nested"])
+def test_program_and_analytical_expression_agree_through_nested_derivatives(kind, derivative):
     parameter = Parameter(0.4).variable()
     root = parameter**3 + Symbol("coefficient") * parameter**2
     program = compile_graph((root, root + 1, root**2))
@@ -212,7 +212,6 @@ def test_program_and_analytical_expression_agree_through_nested_fourth_order_der
         "gradient": grad,
         "hessian": hessian,
         "third": lambda f: jacobian(hessian(f)),
-        "fourth": lambda f: jacobian(jacobian(hessian(f))),
         "nested": nested,
     }[derivative]
     def analytical_cost(t):

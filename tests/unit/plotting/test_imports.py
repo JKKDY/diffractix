@@ -14,7 +14,7 @@ sys.meta_path.insert(0, NoMatplotlib())
 import diffractix
 from diffractix.plotting import plot
 assert not any(name == "matplotlib" or name.startswith("matplotlib.") for name in sys.modules)
-result = diffractix.System(input=diffractix.Ray(x=0.0, theta=0.0)).build().run()
+result = diffractix.System(optical_input=diffractix.Ray(x=0.0, theta=0.0)).build().run()
 assert result.source.x == 0.0
 for render in (result.plot, lambda: plot(result)):
     try:

@@ -673,3 +673,26 @@ def test_reduction_stops_when_an_earlier_pass_removes_every_output(stage, monkey
 
     monkeypatch.setattr(constraint_module, next_analysis, unexpected_analysis)
     assert reduce(program, descriptors, lower, upper) == ((), ())
+
+
+
+def test_reduced_polygon_has_same_independent_halfplane_feasible_region():
+    # Port of the legacy AST reducer's geometric regression, using Program outputs.
+    x, y = Parameter(0.5).variable(), Parameter(0.5).variable()
+    program, descriptors, _ = prepare_constraints((
+        x >= 0, y >= 0, x + y <= 2,
+        2 * x + 2 * y <= 4, x <= 3,
+    ), tracer=None, bindings={})
+    indices, active = reduce_constraints(
+        program, descriptors, parameter_lower=[-10, -10], parameter_upper=[10, 10],
+    )
+    assert len(indices) < len(descriptors)
+    mapping = program.parameter_indices
+    for first in (-1., 0., 0.5, 1., 2., 2.5, 3.):
+        for second in (-1., 0., 0.5, 1., 2., 2.5, 3.):
+            theta = [0., 0.]
+            theta[mapping[id(x)]], theta[mapping[id(y)]] = first, second
+            values = program.evaluate(theta)
+            actual = all(d.lower_bound <= values[i] <= d.upper_bound for i, d in zip(indices, active))
+            expected = first >= 0 and second >= 0 and first + second <= 2
+            assert actual == expected, (first, second)
