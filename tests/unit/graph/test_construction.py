@@ -749,3 +749,11 @@ def test_comparison_repr_contains_unambiguous_relation(relation, symbol):
     comparison = Comparison(relation, x, Literal(2.0))
 
     assert f" {symbol} " in repr(comparison)
+
+
+
+@pytest.mark.parametrize("bounds", [{}, {"lower_bound": 0, "upper_bound": 1}])
+@pytest.mark.parametrize("variable", [False, True])
+def test_parameter_rejects_nan_at_construction(bounds, variable):
+    with pytest.raises(ValueError, match="NaN"):
+        Parameter(np.nan, name="invalid", variable=variable, **bounds)

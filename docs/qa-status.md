@@ -5,7 +5,7 @@ API references and behavioral specifications describe the same contracts; supers
 
 ## Current baseline
 
-Latest recorded complete runs: Autograd **1304 passed, 4 skipped**; JAX **1306
+Latest recorded complete runs: Autograd **1338 passed, 4 skipped**; JAX **1340
 passed, 2 skipped**, without failures or warnings. IPOPT/NLopt native packages
 were absent. Autograd additionally skips two JAX-only checks. Explicit fourth-order
 cases were removed by scope decision; this is not an Autograd fourth-order fix.
@@ -39,6 +39,20 @@ and report them independently from test/setup migration problems.
 Package metadata permits Python >=3.11. CI/release validation currently covers
 3.11-3.13; 3.14 has successful local runs but is not yet a CI-backed release claim.
 Do not expand the CI/support matrix merely from those local results.
+
+## Validation boundaries
+
+System constructor placements and direct add() calls record their user call site,
+so build errors point to the design code. Parameter construction rejects NaN
+immediately, while valid infinite optical radii remain supported. Compilation
+still checks state mutated after construction.
+
+GaussianBeam construction and w_R_from_q reject nonfinite q and imaginary parts
+that are zero or negative, before division. Numerical subclasses use the same
+constructor check, including reconstruction at build. Valid small positive
+imaginary parts have no arbitrary epsilon cutoff. Differentiation/JIT follows
+backend.require: concrete invalid values raise, dynamically traced predicates
+remain unchecked inside compiled execution.
 
 ## Snapshot and binding policy
 

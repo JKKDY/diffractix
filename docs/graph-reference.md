@@ -22,7 +22,8 @@ An expression is a directed graph of `Node` objects. Arithmetic creates `UnaryOp
 ## Nodes
 
 - `Literal(value)` holds a numeric constant. Ordinary scalar operands in expressions are converted to literals.
-- `Parameter(value, name=None, ...)` holds a mutable real scalar. Parameters are fixed by default. `variable(...)` marks one variable; `fixed()` marks it fixed; `bound(lower_bound, upper_bound)` sets its bounds. These methods return the parameter. `variable(bounds=(lower, upper))` can also set bounds; a `None` endpoint retains the current bound.
+- `Parameter(value, name=None, ...)` holds a mutable real scalar. NaN is rejected at construction. Infinite values remain allowed within bounds
+  for optical radii. Parameters are fixed by default. `variable(...)` marks one variable; `fixed()` marks it fixed; `bound(lower_bound, upper_bound)` sets its bounds. These methods return the parameter. `variable(bounds=(lower, upper))` can also set bounds; a `None` endpoint retains the current bound.
 - `Symbol(key, default=None)` refers to an external value by a hashable key. `set_default(value)` changes its optional default. `has_default` is true when the default is not `None`. Direct interpretation uses the default when no binding is supplied; graph compilation does not automatically use it.
 - `InputNode(node)` is a stable handle whose underlying node can be replaced. It forwards attribute access and assignment to that node. An empty handle contains `None` and cannot be compiled or interpreted.
 - `UnaryOp(op, operand)` and `BinaryOp(op, left, right)` represent operations. Normal construction uses operators such as `+`, `-`, `*`, `/`, `**` and methods such as `.sin()`, `.sqrt()`, `.maximum()` and `.minimum()`.

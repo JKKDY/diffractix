@@ -58,9 +58,10 @@ class System:
 
 
     def _capture_call_site(self) -> CallSite:
-        """Capture where an element was added in user code."""
-        #Note: currently not in use, may be used later for GUI <-> code reflection  
+        """Capture the user call to add() or the variadic constructor."""
         frame = inspect.currentframe().f_back.f_back
+        if frame.f_code is System.__init__.__code__:
+            frame = frame.f_back
         filename = frame.f_code.co_filename
         lineno = frame.f_lineno
 

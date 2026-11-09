@@ -250,3 +250,40 @@ def test_waist_envelope_derivatives_remain_finite_through_plane_curvature():
     ):
         np.testing.assert_allclose(function(0.0), expected, rtol=1e-12, atol=1e-15)
         np.testing.assert_allclose(jit(function)(0.0), expected, rtol=1e-12, atol=1e-15)
+
+
+
+@pytest.mark.parametrize("q", [0, 1., -1j, 1-1j, complex(np.nan, 1), complex(0, np.nan),
+                              complex(np.inf, 1), complex(0, np.inf)])
+@pytest.mark.parametrize("entry", ["declarative", "numerical", "width"])
+def test_invalid_q_is_rejected_before_division_or_width_evaluation(q, entry):
+    with pytest.raises(ValueError, match="Invalid q-parameter"):
+        if entry == "width":
+            GaussianBeam.w_R_from_q(q, wavelength=1e-6, n=1)
+        else:
+            cls = GaussianBeam if entry == "declarative" else GaussianBeam.numerical_type()
+            cls(q=q, wavelength=1e-6, n=1)
+
+
+def test_q_validation_accepts_small_positive_rayleigh_range_without_epsilon():
+    beam = GaussianBeam(q=1e-20j, wavelength=1e-6, n=1).numeric()
+    width, radius = beam.w_R_from_q(beam.q, beam.wavelength, beam.n)
+    assert width == pytest.approx(np.sqrt(1e-26/np.pi), rel=1e-12, abs=0)
+    assert radius == np.inf
+
+
+def test_q_validation_preserves_batched_values_and_traced_derivatives():
+    cls = GaussianBeam.numerical_type()
+    def width(t):
+        return cls(q=t[0] + 1j*t[1], wavelength=1e-6, n=1).w
+    point = xp.array([0.02, 0.03])
+    reference = lambda t: xp.sqrt(1e-6/np.pi*(t[0]**2+t[1]**2)/t[1])
+    for transform in (lambda f: f, grad, hessian):
+        expected = transform(reference)(point)
+        np.testing.assert_allclose(transform(width)(point), expected, rtol=1e-11)
+        np.testing.assert_allclose(jit(transform(width))(point), expected, rtol=1e-11)
+    q = xp.array([0.01+0.02j, 0.03j])
+    beam = cls(q=q, wavelength=1e-6, n=1)
+    np.testing.assert_allclose(beam.w, np.sqrt(-1e-6/(np.pi*np.imag(1/np.asarray(q)))))
+    with pytest.raises(ValueError, match="Invalid q-parameter"):
+        cls(q=xp.array([1j, -1j]), wavelength=1e-6, n=1)

@@ -45,3 +45,12 @@ def test_wavelength_snapshot_and_source_medium_are_consistent():
     assert updated.final.wavelength==pytest.approx(1.5e-6)
     assert updated.final.n==pytest.approx(1.33)
     assert updated.final.w/first.final.w==pytest.approx(np.sqrt(1.5))
+
+
+
+@pytest.mark.parametrize("q", [-1j, 1., 0.])
+def test_build_rejects_source_q_mutated_after_construction(q):
+    source = GaussianBeam(q=1j, wavelength=1e-6, n=1)
+    source.q = q
+    with pytest.raises(ValueError, match="Invalid q-parameter"):
+        System(Space(d=0.1), optical_input=source).build()

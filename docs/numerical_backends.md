@@ -44,8 +44,8 @@ simulator or PyTree registration.
 
 ## Current verification
 
-Latest recorded full-suite results, 9 November 2026: Autograd 1304 passed,
-4 skipped; JAX 1306 passed, 2 skipped; no failures or warnings. Explicit
+Latest recorded full-suite results, 9 November 2026: Autograd 1338 passed,
+4 skipped; JAX 1340 passed, 2 skipped; no failures or warnings. Explicit
 fourth-order tests were removed as outside current release scope, not fixed in
 the numerical library. See [QA status](qa-status.md) for remaining release work.
 

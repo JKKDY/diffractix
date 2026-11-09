@@ -29,6 +29,13 @@ def _require_positive(**values):
         require(xp.all(xp.isfinite(value) & (value > 0)), f"{name} must be finite and positive.")
 
 
+def _require_q(q):
+    require(
+        xp.all(xp.isfinite(q) & (xp.imag(q) > 0)),
+        "Invalid q-parameter: q must be finite with a positive imaginary part.",
+    )
+
+
 
 def _curvature(inv_q_real):
     plane = xp.abs(inv_q_real) < 1e-16
@@ -58,6 +65,9 @@ class GaussianBeam(ParaxialState):
         "R",
         "gouy_phase",
     )
+
+    def __post_init__(self):
+        _require_q(self.q)
 
     def propagate(self, A, B, C, D, n) -> 'GaussianBeam':
         q = (A * self.q + B) / (C * self.q + D)
@@ -209,6 +219,7 @@ class GaussianBeam(ParaxialState):
 
         Math: 1/q = 1/R - i * (lambda / (pi * n * w^2))
         """
+        _require_q(q)
         inv_q = 1.0 / q
 
         # need to use np.real/imag to ensure autograd compatibility
@@ -220,12 +231,6 @@ class GaussianBeam(ParaxialState):
 
         # Beam waist 
         # Im(1/q) = - lambda / (pi * n * w^2)  =>  w = sqrt( -lambda / (pi * n * Im(1/q)) )        
-        # safety check: q.imag should always be negative for a valid Gaussian beam (forward propagation)
-        require(
-            inv_q_imag <= -1e-16,
-            "Invalid q-parameter: Imaginary part of 1/q must be negative for a physical Gaussian beam."
-        )
-
         w_sq = -wavelength / (np.pi * n * inv_q_imag)
         w = xp.sqrt(w_sq)
         return w, R

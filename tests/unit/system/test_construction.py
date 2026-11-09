@@ -86,7 +86,7 @@ def test_ambient_parameter_identity_and_rebinding_are_preserved():
 def test_invalid_ambient_domain_does_not_replace_existing_binding(value):
     system = System()
     original = system.ambient_n
-    with pytest.raises(ValueError, match="finite and positive"):
+    with pytest.raises(ValueError, match="NaN" if np.isnan(value) else "finite and positive"):
         system.set_ambient_n(value)
     assert system.ambient_n is original and system.bindings[AMBIENT_N.key] is original
 
@@ -331,3 +331,17 @@ def test_summary_describes_design_without_resolving_or_mutating_it():
     assert "Focus" in text and "ThinLens" in text and "VAR" in text
     assert "Constraints: 1" in text and "Ray" in text
     assert system.placements == before and system.system_constraints[0] is constraint
+
+
+
+def test_variadic_constructor_records_user_call_site_and_build_error_location():
+    import inspect
+    line = inspect.currentframe().f_lineno + 1
+    system = System(ThinLens(f=0), Plane(), optical_input=Ray(x=0, theta=0, n=1))
+    sites = [placement.call_site for placement in system.placements]
+    filename = test_variadic_constructor_records_user_call_site_and_build_error_location.__code__.co_filename
+    assert all(site.file == filename and site.line == line for site in sites)
+    assert all(site.call_index == 0 for site in sites)
+    with pytest.raises(ValueError) as error:
+        system.build()
+    assert f"{filename}:{line}" in str(error.value)

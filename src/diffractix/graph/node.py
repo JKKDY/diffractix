@@ -320,6 +320,8 @@ class Parameter(Node):
     ):
         if isinstance(value, bool) or not isinstance(value, Real):
             raise TypeError("Parameter value must be a real scalar.")
+        if math.isnan(value):
+            raise ValueError(f"Parameter {name!r} value must not be NaN.")
 
         self.value = float(value)
         self.name = name
