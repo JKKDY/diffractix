@@ -5,8 +5,6 @@ gaps and two focal lengths so that the beam arriving at the second fiber matches
 its mode, while the package stays short. All lengths are in metres.
 """
 
-from time import perf_counter
-
 from diffractix import (
     CompositeElement, Constraint, GaussianBeam, Node, Plane, Solver, Space, System, ThinLens,
 )
@@ -96,9 +94,7 @@ for package in (lens1, lens2):
                    upper_bound=LENS_CLEAR_DIAMETER / 4, label=f"{package.label} aperture clearance"),
     )
 
-start = perf_counter()
 solution = solver.solve(method="SLSQP")
-elapsed = perf_counter() - start
 optimized = solution.run()
 
 
@@ -117,7 +113,7 @@ def row(label, before, after, scale=1.0, unit=""):
 
 print(f"Optimization: success={solution.success}, feasible={solution.feasible}, "
       f"cost={solution.cost:.3e}, iterations={solution.iterations}, "
-      f"evaluations={solution.function_evaluations}, time={elapsed:.2f} s")
+      f"evaluations={solution.function_evaluations}")
 print(f"  {solution.message}")
 
 table("Design")

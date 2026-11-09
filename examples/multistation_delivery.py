@@ -13,8 +13,6 @@ The modulator crystals are modelled only as passive glass slabs (refraction, no
 modulation). All lengths are in metres; stations stay at fixed absolute positions.
 """
 
-from time import perf_counter
-
 from diffractix import (
     Constraint, GaussianBeam, Parameter, Plane, Slab, Solver, Space, System, ThickLens, ThinLens,
 )
@@ -230,9 +228,7 @@ for element, diameter in apertures:
         label=f"{element.label} aperture clearance",
     ))
 
-start = perf_counter()
 solution = solver.solve(method=SOLVER_METHOD, options=SOLVER_OPTIONS[SOLVER_METHOD])
-elapsed = perf_counter() - start
 optimized = solution.run()
 
 
@@ -251,8 +247,7 @@ def row(label, before, after, scale=1.0, unit=""):
 
 print(f"Optimization ({SOLVER_METHOD}): success={solution.success}, "
       f"feasible={solution.feasible}, cost={solution.cost:.3e}, "
-      f"iterations={solution.iterations}, evaluations={solution.function_evaluations}, "
-      f"time={elapsed:.2f} s")
+      f"iterations={solution.iterations}, evaluations={solution.function_evaluations}")
 print(f"  {solution.message}")
 print(f"  Design variables: {len(solution.x)}")
 

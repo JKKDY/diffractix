@@ -6,8 +6,6 @@ spacing and the second focal length, subject to a length limit and lens
 apertures. All lengths are in metres.
 """
 
-from time import perf_counter
-
 from diffractix import Constraint, GaussianBeam, Plane, Solver, Space, System, ThinLens
 
 WAVELENGTH = 1064e-9
@@ -79,9 +77,7 @@ for lens in (lens1, lens2):
         label=f"{lens.label} aperture clearance",
     ))
 
-start = perf_counter()
 solution = solver.solve(method="SLSQP")
-elapsed = perf_counter() - start
 optimized = solution.run()
 
 
@@ -100,7 +96,7 @@ def row(label, before, after, scale=1.0, unit=""):
 
 print(f"Optimization: success={solution.success}, feasible={solution.feasible}, "
       f"cost={solution.cost:.3e}, iterations={solution.iterations}, "
-      f"evaluations={solution.function_evaluations}, time={elapsed:.2f} s")
+      f"evaluations={solution.function_evaluations}")
 print(f"  {solution.message}")
 
 table("Design")
