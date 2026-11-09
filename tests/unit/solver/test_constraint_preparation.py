@@ -42,10 +42,14 @@ def test_preparation_keeps_callable_constraints_deferred_in_order():
 
 
 def test_preparation_rejects_unregistered_parameters_and_unresolved_symbols():
-    solver, _, _ = make_solver()
-    solver.require(Parameter(1).variable() >= 0)
+    # Keep the model's parameters alive: a freed Parameter's id() can be reused by
+    # the new one below, which would then look like a registered parameter.
+    solver, first, second = make_solver()
+    outsider = Parameter(1).variable()
+    solver.require(outsider >= 0)
     with pytest.raises(ValueError, match="Missing required Parameter"):
         solver._finalize_constraints()
+    assert id(outsider) not in (id(first), id(second))
     solver, _, _ = make_solver()
     solver.require(Symbol("missing") >= 0)
     with pytest.raises(ValueError, match="missing"):

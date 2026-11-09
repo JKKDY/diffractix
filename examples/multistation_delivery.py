@@ -248,7 +248,7 @@ for element, diameter in apertures:
     ))
 
 start = perf_counter()
-solution = solver.solve(method=SOLVER_METHOD, options=SOLVER_OPTIONS[SOLVER_METHOD], use_jit=True)
+solution = solver.solve(method=SOLVER_METHOD, options=SOLVER_OPTIONS[SOLVER_METHOD])
 elapsed = perf_counter() - start
 optimized = solution.run()
 

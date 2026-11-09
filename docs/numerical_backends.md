@@ -37,8 +37,8 @@ Numerical differentiation and JIT are selected through the backend/ package.
 Solver caches complete numerical callbacks for the selected execution mode.
 Changes to initial values or parameter bounds reuse that numerical core;
 constraint reduction remains outside JIT. Switching between eager and JIT modes
-rebuilds the cache. Omitting use_jit retains the previous mode, or uses eager on
-the first solve. Eager and JIT caches are not retained side by side.
+rebuilds the cache. `jit` is a bool that defaults to `True`, so a solve that
+omits it always uses JIT. Eager and JIT caches are not retained side by side.
 Graph programs are remapped and fused during preparation; there is no separate
 simulator or PyTree registration.
 
@@ -56,12 +56,14 @@ weighted constraint Hessian, and nested derivative callbacks pass explicit JIT
 tests. Python state/result objects can be created and consumed inside tracing;
 the traced function must return numerical outputs, not a `SimulationResult`.
 
-Solver JIT is opt-in through `solve(use_jit=True)`; Autograd treats JIT as an
-identity operation. Objectives and requirements are fixed once callbacks have
+Solver JIT is on by default (`solve(jit=True)`); `solve(jit=False)` runs all six
+numerical callbacks eagerly. Autograd treats JIT as an identity operation, so the
+flag only matters with JAX. Objectives and requirements are fixed once callbacks have
 been prepared. The following restrictions apply:
 
-1. Dynamic Python branches are supported by the eager numerical callable
-   fallback, but not automatically rewritten into JAX control flow. Their eager
+1. Dynamic Python branches are supported only with `jit=False` (the eager
+   numerical callable fallback); with JAX and `jit=True` they raise an error and
+   are not automatically rewritten into JAX control flow. Their eager
    values and derivatives pass under both backends away from branch boundaries.
 2. Concrete finite-value and optical-domain checks remain active during eager
    execution. Traced predicates cannot raise ordinary Python validation errors

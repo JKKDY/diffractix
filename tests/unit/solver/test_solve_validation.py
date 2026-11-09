@@ -24,6 +24,14 @@ def test_invalid_feasibility_tolerance_fails_before_compilation(value, error, mo
         solver.solve(feasibility_tolerance=value)
 
 
+@pytest.mark.parametrize("value", [None, 1, 0, "yes", 1.0])
+def test_jit_must_be_a_bool_and_is_validated_before_compilation(value, monkeypatch):
+    solver = make_solver()
+    monkeypatch.setattr(solver, "_finalize_constraints", lambda: pytest.fail("Compilation must follow validation"))
+    with pytest.raises(TypeError, match="jit must be a bool"):
+        solver.solve(jit=value)
+
+
 @pytest.mark.parametrize("collection", ["objectives", "constraints"])
 def test_invalid_model_entries_raise_type_error(collection):
     solver = make_solver()

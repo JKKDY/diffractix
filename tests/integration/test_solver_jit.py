@@ -12,7 +12,7 @@ def test_vector_optical_constraints_and_scalar_target_solve_together(use_jit):
     solver = Solver(System(Space(d=1), optical_input=Ray(x=position, theta=angle, n=1)))
     solver.target(lambda sim: sim.final.x - 1)
     solver.require(Constraint(lambda sim: sim.final.vector, lower_bound=-0.25, upper_bound=0.4))
-    solution = solver.solve(use_jit=use_jit, options={"ftol": 1e-12})
+    solution = solver.solve(jit=use_jit, options={"ftol": 1e-12})
     assert solution.success and solution.feasible
     assert solution.run().final.x == pytest.approx(0.4, abs=1e-7)
     assert solution.cost == pytest.approx(0.36, abs=1e-7)
@@ -31,7 +31,7 @@ def test_dynamic_branch_optimizes_numerical_outputs_eagerly():
         return 10.
 
     solver.target(residual)
-    solution = solver.solve(use_jit=False, options={"ftol": 1e-12})
+    solution = solver.solve(jit=False, options={"ftol": 1e-12})
     assert solution.success and solution.feasible
     assert solution.value(position) == pytest.approx(1, abs=1e-6)
     assert solution.objectives[0].cost < 1e-11
@@ -49,7 +49,7 @@ def test_jax_does_not_silently_disable_jit_for_python_branch():
 
     solver.target(residual)
     with pytest.raises(TypeError, match="boolean conversion|bool conversion"):
-        solver.solve(use_jit=True)
+        solver.solve(jit=True)
 
 
 def test_deferred_returned_node_fails_instead_of_becoming_a_live_graph():
@@ -61,7 +61,7 @@ def test_deferred_returned_node_fails_instead_of_becoming_a_live_graph():
 
     solver.target(residual)
     with pytest.raises(TypeError, match="numerical.*symbolic Node"):
-        solver.solve(use_jit=False)
+        solver.solve(jit=False)
 
 
 

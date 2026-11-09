@@ -46,7 +46,7 @@ def _integration():
     ray = Ray(x=position, theta=0.01)
     solver = Solver(System(Space(d=0.1), optical_input=ray))
     solver.target(lambda result: (result.final.x - 0.003) / 0.001)
-    solution = solver.solve(use_jit=True, options={"ftol": 1e-12})
+    solution = solver.solve(jit=True, options={"ftol": 1e-12})
     return {"graph": graph_values, "optics": optical_values,
             "solve": {"x": solution.x, "cost": solution.cost, "success": solution.success,
                       "feasible": solution.feasible, "final_x": solution.run().final.x}}

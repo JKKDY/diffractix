@@ -7,7 +7,8 @@ from dataclasses import dataclass, replace
 from typing import Callable
 
 import numpy as np
-from diffractix.backend import xp, grad, hessian, jacobian, jit, require
+from diffractix.backend import xp, grad, hessian, jacobian, require
+from diffractix.backend import jit as backend_jit
 
 from diffractix.graph import (
     Node,
@@ -99,7 +100,7 @@ class Solver:
 
         self._simulation = simulation
         self._cache = None
-        self._cache_use_jit = None
+        self._cache_jit = None
 
         self._objectives = []
         self._constraints = []
@@ -154,7 +155,7 @@ class Solver:
         method=None,
         options: dict = {},
         feasibility_tolerance: float = DEFAULT_FEASIBILITY_TOLERANCE,
-        use_jit = None,
+        jit: bool = True,
         x0=None,
         x_lower=None,
         x_upper=None,
@@ -168,6 +169,8 @@ class Solver:
             raise TypeError("feasibility_tolerance must be a real numeric scalar.")
         if not isfinite(feasibility_tolerance) or feasibility_tolerance < 0:
             raise ValueError("feasibility_tolerance must be finite and non-negative.")
+        if not isinstance(jit, (bool, np.bool_)):
+            raise TypeError("jit must be a bool.")
         if not all(isinstance(item, Objective) for item in self._objectives):
             raise TypeError("Solver objectives must contain only Objective instances.")
         if not all(isinstance(item, Constraint) for item in self._constraints):
@@ -207,10 +210,10 @@ class Solver:
             raise ValueError("x0 must lie within the parameter bounds.")
 
 
-        if self._cache is None or (use_jit is not None and self._cache_use_jit != use_jit):
-            use_jit = use_jit if use_jit is not None else False 
-            self._cache = self._build_cache(use_jit, initial_values)
-            self._cache_use_jit = use_jit
+        jit = bool(jit)
+        if self._cache is None or self._cache_jit != jit:
+            self._cache = self._build_cache(jit, initial_values)
+            self._cache_jit = jit
 
         cache = self._cache
 
@@ -318,7 +321,7 @@ class Solver:
         return program, descriptors, callables
 
 
-    def _build_cache(self, use_jit, initial_values):
+    def _build_cache(self, jit, initial_values):
         constraint_program, constraint_descriptors, callable_constraints = self._finalize_constraints()
         constraint_program = optimize(constraint_program)
 
@@ -333,7 +336,7 @@ class Solver:
             constraint_descriptors=constraint_descriptors,
             callable_constraints=callable_constraints,
             initial_values=initial_values,
-            use_jit=use_jit,
+            jit=jit,
         )
 
         return self.SolverCache(
@@ -352,7 +355,7 @@ class Solver:
     def _build_callbacks(
         self, *, objective_program, objective_descriptors, callable_objectives,
         constraint_program, constraint_descriptors, callable_constraints,
-        initial_values, use_jit,
+        initial_values, jit,
     ):
         def evaluate_callable(entry, view):
             value = entry.evaluate(view)
@@ -448,8 +451,8 @@ class Solver:
         constraint_jacobian = jacobian(constraints) if m else lambda theta: xp.zeros((0, n))
         constraint_hessian = hessian(weighted_constraints, 0) if m else lambda theta, multipliers: xp.zeros((n, n))
 
-        full_objective = jit(objective) if use_jit else objective
-        full_constraints = jit(constraints) if use_jit else constraints
+        full_objective = backend_jit(objective) if jit else objective
+        full_constraints = backend_jit(constraints) if jit else constraints
 
         def checked_objective(theta):
             return check_finite_value(full_objective(theta), "Objective cost")
@@ -459,11 +462,11 @@ class Solver:
 
         callbacks = self.Callbacks(
             objective          = checked_objective,
-            gradient           = jit(objective_gradient)  if use_jit else objective_gradient,
-            objective_hessian  = jit(objective_hessian)   if use_jit else objective_hessian,
+            gradient           = backend_jit(objective_gradient)  if jit else objective_gradient,
+            objective_hessian  = backend_jit(objective_hessian)   if jit else objective_hessian,
             constraints        = checked_constraints,
-            jacobian           = jit(constraint_jacobian) if use_jit else constraint_jacobian,
-            constraint_hessian = jit(constraint_hessian)  if use_jit else constraint_hessian,
+            jacobian           = backend_jit(constraint_jacobian) if jit else constraint_jacobian,
+            constraint_hessian = backend_jit(constraint_hessian)  if jit else constraint_hessian,
         )
 
         return callbacks, graph_constraint_rows, callable_constraint_rows

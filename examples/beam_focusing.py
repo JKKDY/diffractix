@@ -72,7 +72,7 @@ solver.require(
 )
 
 start = perf_counter()
-solution = solver.solve(method="SLSQP", use_jit=True)
+solution = solver.solve(method="SLSQP")
 elapsed = perf_counter() - start
 optimized = solution.run()
 

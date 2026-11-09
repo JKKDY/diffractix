@@ -102,10 +102,10 @@ def test_repeated_guesses_and_changed_bounds_reuse_core_and_restore_constraint(u
     solver = Solver(System(optical_input=Ray(x=parameter, theta=0, n=1)))
     solver.target(parameter - 2)
     solver.require(Constraint(parameter, upper_bound=1, label="needed after relaxation"))
-    restrictive = capture_problem(solver, use_jit=use_jit, x_upper=[0.75])
+    restrictive = capture_problem(solver, jit=use_jit, x_upper=[0.75])
     cache, callbacks = solver._cache, solver._cache.callbacks
     assert restrictive.constraints(xp.array([0.5])).shape == (0,)
-    relaxed = capture_problem(solver, use_jit=use_jit, x0=[0.6], x_upper=[3])
+    relaxed = capture_problem(solver, jit=use_jit, x0=[0.6], x_upper=[3])
     assert solver._cache is cache
     assert cache.callbacks is callbacks
     np.testing.assert_allclose(relaxed.constraints(xp.array([2.])), [2])
@@ -124,7 +124,7 @@ def test_vector_duplicates_select_rows_and_expand_hessian_weights(use_jit):
     solver.require(Constraint(vector, upper_bound=10),
                    Constraint(vector, upper_bound=4),
                    Constraint(parameter, lower_bound=-3))
-    problem = capture_problem(solver, use_jit=use_jit)
+    problem = capture_problem(solver, jit=use_jit)
     np.testing.assert_allclose(problem.constraints(xp.array([1.5])), [2.25, 4.5])
     np.testing.assert_allclose(problem.jacobian(xp.array([1.5])), [[3], [6]])
     np.testing.assert_allclose(problem.constraint_hessian(xp.array([1.5]), xp.array([3., 5.])), [[26]])
@@ -146,7 +146,7 @@ def test_jax_core_does_not_retrace_for_new_guesses_or_bounds(monkeypatch):
         return original(theta)
 
     monkeypatch.setattr(solver.simulation, "run", record)
-    capture_problem(solver, use_jit=True)
+    capture_problem(solver, jit=True)
     core = solver._cache.callbacks
 
     def evaluate_all(theta):
@@ -156,7 +156,7 @@ def test_jax_core_does_not_retrace_for_new_guesses_or_bounds(monkeypatch):
 
     evaluate_all(xp.array([0.5]))
     count = len(traces)
-    capture_problem(solver, use_jit=True, x0=[0.75], x_upper=[2])
+    capture_problem(solver, jit=True, x0=[0.75], x_upper=[2])
     assert solver._cache.callbacks is core
     evaluate_all(xp.array([0.75]))
     assert len(traces) == count
@@ -173,16 +173,19 @@ def test_model_definitions_freeze_after_preparation(operation):
         getattr(solver, operation)(entry)
 
 
-def test_changing_jit_mode_rebuilds_cache_but_none_retains_previous_mode(solver):
-    capture_problem(solver, use_jit=False)
-    eager_cache = solver._cache
-    capture_problem(solver, use_jit=True)
-    assert solver._cache is not eager_cache
-    compiled_cache = solver._cache
+def test_jit_defaults_to_true_and_changing_it_rebuilds_the_cache(solver):
+    capture_problem(solver)
+    assert solver._cache_jit is True
+    default_cache = solver._cache
     capture_problem(solver, x0=[2.])
-    assert solver._cache is compiled_cache
-    capture_problem(solver, use_jit=False)
-    assert solver._cache is not compiled_cache
+    assert solver._cache is default_cache
+    capture_problem(solver, jit=False)
+    assert solver._cache_jit is False and solver._cache is not default_cache
+    eager_cache = solver._cache
+    capture_problem(solver, jit=False, x0=[2.])
+    assert solver._cache is eager_cache
+    capture_problem(solver)
+    assert solver._cache_jit is True and solver._cache is not eager_cache
 
 
 @pytest.mark.parametrize("invalid", [None, 1, object()])

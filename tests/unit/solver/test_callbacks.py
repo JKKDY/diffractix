@@ -19,7 +19,7 @@ def build_callbacks(solver):
         constraint_descriptors=constraint_descriptors,
         callable_constraints=callable_constraints,
         initial_values=solver.simulation.initial_values.values,
-        use_jit=False,
+        jit=False,
     )
 
 

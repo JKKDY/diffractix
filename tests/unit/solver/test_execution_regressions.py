@@ -18,14 +18,14 @@ def test_runtime_symbols_and_cache_metadata_work_through_normal_preparation(use_
     parameter = Parameter(0.5).variable()
     solver = make_solver(parameter)
     solver.target(Objective(lambda result: result.final.x - 1, label="target"))
-    problem = capture_problem(solver, use_jit=use_jit, x_lower=[-3], x_upper=[3])
+    problem = capture_problem(solver, jit=use_jit, x_lower=[-3], x_upper=[3])
     cache = solver._cache
     assert cache.objective_descriptors[0].label == "target"
     assert cache.objective_program.runtime_symbols
     assert cache.callable_objectives == ()
     assert problem.objective(xp.array([2.])) == pytest.approx(1)
     np.testing.assert_allclose(problem.gradient(xp.array([2.])), [2])
-    capture_problem(solver, use_jit=use_jit, x0=[0.75], x_lower=[-2], x_upper=[2])
+    capture_problem(solver, jit=use_jit, x0=[0.75], x_lower=[-2], x_upper=[2])
     assert solver._cache is cache
 
 
@@ -35,7 +35,7 @@ def test_constraint_only_problem_has_a_differentiable_floating_objective(use_jit
     parameter = Parameter(1.5).variable()
     solver = make_solver(parameter)
     solver.require(Constraint(lambda result: result.final.x, lower_bound=1))
-    problem = capture_problem(solver, use_jit=use_jit)
+    problem = capture_problem(solver, jit=use_jit)
     assert problem.objective(xp.array([2.])) == 0
     assert np.asarray(problem.objective(xp.array([2.]))).dtype.kind == "f"
     np.testing.assert_allclose(problem.gradient(xp.array([2.])), [0])
@@ -61,7 +61,7 @@ def test_dynamic_numeric_branches_work_with_eager_execution():
 
     solver.target(Objective(residual, weight=3))
     solver.require(Constraint(constraint, upper_bound=10))
-    problem = capture_problem(solver, use_jit=False)
+    problem = capture_problem(solver, jit=False)
     parameter.value = 100
     positive, negative = xp.array([2.]), xp.array([-2.])
     assert problem.objective(positive) == pytest.approx(192)
@@ -86,7 +86,7 @@ def test_dynamic_numeric_arrays_are_flattened():
         return np.array([3., 4.])
 
     solver.require(Constraint(constraint, upper_bound=10))
-    problem = capture_problem(solver, use_jit=False)
+    problem = capture_problem(solver, jit=False)
     np.testing.assert_allclose(problem.constraints(xp.array([2.])), [1, 0])
     np.testing.assert_allclose(problem.jacobian(xp.array([2.])), [[1], [1]])
     np.testing.assert_allclose(problem.constraints(xp.array([-2.])), [3, 4])
@@ -112,7 +112,7 @@ def test_deferred_callables_reject_symbolic_nodes(kind, returned):
     else:
         solver.require(Constraint(dynamic))
     with pytest.raises(TypeError, match="numerical scalars or arrays.*symbolic Node"):
-        problem = capture_problem(solver, use_jit=False)
+        problem = capture_problem(solver, jit=False)
         problem.objective(xp.array([0.5]))
 
 
@@ -138,8 +138,8 @@ def test_requesting_jit_wraps_every_callback_even_with_deferred_callables(dynami
         wrapped.append(function)
         return function
 
-    monkeypatch.setattr(solver_module, "jit", record_jit)
-    problem = capture_problem(solver, use_jit=True)
+    monkeypatch.setattr(solver_module, "backend_jit", record_jit)
+    problem = capture_problem(solver, jit=True)
     assert len(wrapped) == 6
     theta = xp.array([2.])
     if dynamic_kind == "objective":
@@ -166,7 +166,7 @@ def test_deferred_nodes_are_rejected_when_a_later_evaluation_selects_the_branch(
         solver.target(dynamic)
     else:
         solver.require(Constraint(dynamic))
-    problem = capture_problem(solver, use_jit=False)
+    problem = capture_problem(solver, jit=False)
     callback = problem.objective if kind == "objective" else problem.constraints
     with pytest.raises(TypeError, match="symbolic Node"):
         callback(xp.array([-0.5]))
@@ -177,7 +177,7 @@ def test_traceable_callables_still_compile_nodes_and_runtime_quantities():
     solver = make_solver(parameter)
     solver.target(lambda result: parameter ** 2 + result.final.x)
     solver.require(Constraint(lambda result: 2 * parameter + result.final.x, upper_bound=10))
-    problem = capture_problem(solver, use_jit=True)
+    problem = capture_problem(solver, jit=True)
     assert solver._cache.callable_objectives == solver._cache.callable_constraints == ()
     parameter.value = 100
     assert problem.objective(xp.array([2.])) == pytest.approx(36)

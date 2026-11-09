@@ -13,7 +13,7 @@ def test_source_angle_and_lens_focal_length_recover_known_ray_design(use_jit):
     solver = Solver(system)
     solver.target(value=lambda sim: sim[lens].before.x, target=0.004, scale=0.004, label="lens height")
     solver.target(value=lambda sim: sim.final.theta, target=0, scale=0.02, label="collimated")
-    solution = solver.solve(use_jit=use_jit, options={"ftol": 1e-12, "maxiter": 100})
+    solution = solver.solve(jit=use_jit, options={"ftol": 1e-12, "maxiter": 100})
     assert solution.success and solution.feasible
     assert solution.value(angle) == pytest.approx(0.02, abs=2e-7)
     assert solution.value(lens.f) == pytest.approx(0.2, abs=2e-6)
@@ -126,7 +126,7 @@ def test_ray_bundle_array_residual_recovers_analytical_focus(use_jit):
     solver = Solver(System(ThinLens(f=focal), Space(d=length),
                            optical_input=RayBundle(x=positions, theta=np.zeros(3), n=1)))
     solver.target(lambda sim: sim.final.x / radius, label="bundle focus")
-    solution = solver.solve(use_jit=use_jit, options={"ftol": 1e-12, "maxiter": 100})
+    solution = solver.solve(jit=use_jit, options={"ftol": 1e-12, "maxiter": 100})
     assert solution.success and solution.feasible
     f = solution.value(focal)
     assert f == pytest.approx(length, abs=1e-7)
@@ -150,7 +150,7 @@ def test_ray_bundle_array_target_and_scale_recover_nonzero_image(use_jit):
     solver = Solver(System(ThinLens(f=focal), Space(d=0.05),
                            optical_input=RayBundle(x=positions, theta=np.zeros(3), n=1)))
     solver.target(value=lambda sim: sim.final.x, target=target, scale=scale, label="image")
-    solution = solver.solve(use_jit=use_jit, options={"ftol": 1e-12})
+    solution = solver.solve(jit=use_jit, options={"ftol": 1e-12})
     assert solution.success and solution.feasible
     # x_out = x_in*(1-L/f) = x_in/2 requires f=2L.
     assert solution.value(focal) == pytest.approx(0.1, abs=2e-7)

@@ -11,9 +11,9 @@ def test_bound_relaxation_restores_constraints_and_keeps_earlier_solution(use_ji
     solver = Solver(System(space, optical_input=Ray(x=0, theta=0.01, n=1)))
     solver.target(lambda sim: sim.final.x / 0.002 - 1)
     solver.require(Constraint(distance, upper_bound=0.15, label="mechanical clearance"))
-    first = solver.solve(use_jit=use_jit, x_upper=[0.1], options={"ftol": 1e-12})
+    first = solver.solve(jit=use_jit, x_upper=[0.1], options={"ftol": 1e-12})
     core = solver._cache.callbacks
-    second = solver.solve(use_jit=use_jit, x0=[0.08], x_upper=[0.3], options={"ftol": 1e-12})
+    second = solver.solve(jit=use_jit, x0=[0.08], x_upper=[0.3], options={"ftol": 1e-12})
     assert first.success and second.success and first.feasible and second.feasible
     assert solver._cache.callbacks is core
     assert first.value(distance) == pytest.approx(0.1, abs=1e-7)
