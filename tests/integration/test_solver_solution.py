@@ -49,6 +49,7 @@ def test_iteration_limit_is_distinct_from_feasibility():
     solver = Solver(System(optical_input=Ray(x=position, theta=0, n=1)))
     solver.target(lambda sim: sim.final.x ** 2 - 1)
     solution = solver.solve(options={"maxiter": 1})
+    assert solution.iterations == 1 and solution.function_evaluations >= 1
     assert not solution.success
     assert solution.feasible
     assert solution.message

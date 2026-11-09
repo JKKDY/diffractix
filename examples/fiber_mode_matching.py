@@ -116,7 +116,8 @@ def row(label, before, after, scale=1.0, unit=""):
 
 
 print(f"Optimization: success={solution.success}, feasible={solution.feasible}, "
-      f"cost={solution.cost:.3e}, time={elapsed:.2f} s")
+      f"cost={solution.cost:.3e}, iterations={solution.iterations}, "
+      f"evaluations={solution.function_evaluations}, time={elapsed:.2f} s")
 print(f"  {solution.message}")
 
 table("Design")

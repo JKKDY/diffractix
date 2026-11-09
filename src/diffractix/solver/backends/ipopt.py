@@ -10,9 +10,17 @@ from ..solution import SolverResult
 class _IpoptProblem:
     def __init__(self, problem: Problem):
         self.problem = problem
+        self.iterations = None
+        self.objective_evaluations = 0
 
     def objective(self, x):
+        self.objective_evaluations += 1
         return self.problem.objective(x)
+
+    def intermediate(self, alg_mod, iter_count, *progress):
+        """Called by IPOPT after every iteration."""
+        self.iterations = iter_count
+        return True
 
     def gradient(self, x):
         return np.asarray(self.problem.gradient(x))
@@ -77,6 +85,8 @@ def solve_ipopt(
         success=info.get("status") in (0, 1),
         cost=float(info["obj_val"]),
         message=str(message),
+        iterations=callbacks.iterations,
+        function_evaluations=callbacks.objective_evaluations,
         raw=info,
         scaling=problem.scaling
     )

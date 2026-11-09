@@ -196,8 +196,11 @@ arrays; broadcasting follows the numerical backend, and every scale entry must
 be nonzero. Total cost is the sum of weight times
 the squared residual entries. target=0 is valid.
 
-Solution exposes x, cost, success, message, feasible, objectives, constraints,
-violations, simulation, value(quantity) and run(). value() returns the solved
+Solution exposes x, cost, success, message, iterations, function_evaluations,
+feasible, objectives, constraints, violations, simulation, value(quantity) and
+run(). iterations and function_evaluations are the backend's own counts, or None
+when a backend does not report them (SciPy reports both; NLopt reports only
+evaluations; IPOPT's iterations come from its progress callback). value() returns the solved
 value of a variable Parameter (or its direct handle) and evaluates any other graph
 expression, such as a derived gap, with the interpreter. Solved values replace the
 model's variable Parameters, fixed Parameters keep their current value, and the

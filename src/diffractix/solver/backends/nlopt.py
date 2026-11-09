@@ -178,6 +178,7 @@ def solve_nlopt(
             status,
             f"NLopt terminated with status {status}.",
         ),
+        function_evaluations=optimizer.get_numevals(),
         raw={
             "status": status,
             "algorithm": optimizer.get_algorithm_name(),

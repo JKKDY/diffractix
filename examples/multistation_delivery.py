@@ -267,7 +267,9 @@ def row(label, before, after, scale=1.0, unit=""):
 
 
 print(f"Optimization ({SOLVER_METHOD}): success={solution.success}, "
-      f"feasible={solution.feasible}, cost={solution.cost:.3e}, time={elapsed:.2f} s")
+      f"feasible={solution.feasible}, cost={solution.cost:.3e}, "
+      f"iterations={solution.iterations}, evaluations={solution.function_evaluations}, "
+      f"time={elapsed:.2f} s")
 print(f"  {solution.message}")
 print(f"  Design variables: {len(solution.x)}")
 

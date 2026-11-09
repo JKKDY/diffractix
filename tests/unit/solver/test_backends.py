@@ -423,6 +423,7 @@ def test_scipy_standardizes_result(monkeypatch):
         fun=1.5,
         message="stopped",
         nit=9,
+        nfev=13,
     )
     monkeypatch.setattr(backend, "minimize", lambda *args, **kwargs: raw)
 
@@ -435,6 +436,7 @@ def test_scipy_standardizes_result(monkeypatch):
     assert result.cost == 1.5
     assert result.message == "stopped"
     assert result.iterations == 9
+    assert result.function_evaluations == 13
     assert result.raw is raw
     assert result.scaling is problem.scaling
 
@@ -506,6 +508,33 @@ def test_ipopt_rejects_method(monkeypatch):
 
     with pytest.raises(ValueError, match="does not expose alternative"):
         backend.solve_ipopt(make_problem(), method="anything")
+
+
+def test_ipopt_counts_iterations_and_objective_evaluations(monkeypatch):
+    backend, _, _ = import_fake_cyipopt_backend(monkeypatch)
+    original_problem = backend.cyipopt.Problem
+
+    class DrivingProblem(original_problem):
+        def solve(self, x0):
+            callbacks = self.kwargs["problem_obj"]
+            for iteration in range(1, 4):
+                callbacks.objective(np.asarray(x0))
+                callbacks.objective(np.asarray(x0))  # e.g. a line-search trial
+                assert callbacks.intermediate(None, iteration, 0.5, 0.1) is True
+            return super().solve(x0)
+
+    backend.cyipopt.Problem = DrivingProblem
+    result = backend.solve_ipopt(make_problem())
+
+    assert result.iterations == 3
+    assert result.function_evaluations == 6
+
+
+def test_ipopt_without_progress_callbacks_reports_unknown_iterations_and_no_evaluations(monkeypatch):
+    backend, _, _ = import_fake_cyipopt_backend(monkeypatch)
+    result = backend.solve_ipopt(make_problem())
+    assert result.iterations is None
+    assert result.function_evaluations == 0
 
 
 @pytest.mark.parametrize(("status", "success"), [(0, True), (1, True), (-1, False)])
@@ -734,6 +763,8 @@ def test_nlopt_status_policy_and_standardized_result(
         "algorithm": "fake algorithm",
         "evaluations": 7,
     }
+    assert result.function_evaluations == 7
+    assert result.iterations is None
     assert result.scaling is problem.scaling
 
 

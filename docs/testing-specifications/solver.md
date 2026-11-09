@@ -161,10 +161,12 @@ Prefer captured backend Problems in unit tests; optical end-to-end solves later.
 ## Solution and SolverResult (solution.py)
 
 SolverResult is the frozen native return container (x/success/cost/message,
-iterations/raw/scaling). No solver/result.py exists. Public imports remain through
+iterations/function_evaluations/raw/scaling; the counts are None when a backend
+does not report them). No solver/result.py exists. Public imports remain through
 diffractix.solver. Solution receives full compiled programs/descriptors, not ASTs
 or SolverContext. Public API: simulation,x,cost,success,message,feasible,
-feasibility_tolerance,objectives,constraints,violations,value(parameter),run().
+feasibility_tolerance,iterations,function_evaluations,objectives,constraints,
+violations,value(quantity),run().
 No targets/parameters/value_of/__getitem__ compatibility APIs are intended.
 Solution x owns a read-only finite canonical vector; reject shape/nonfinite values
 and invalid reporting tolerance. Original result.x mutation cannot change x.

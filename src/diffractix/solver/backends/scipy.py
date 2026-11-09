@@ -79,6 +79,7 @@ def solve_scipy(
         cost=float(res.fun),
         message=str(res.message),
         iterations=getattr(res, "nit", None),
+        function_evaluations=getattr(res, "nfev", None),
         raw=res,
         scaling=problem.scaling
     )

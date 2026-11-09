@@ -30,6 +30,7 @@ def test_gaussian_waist_position_is_optimized_through_real_propagation(method):
     solver.target(lambda sim: sim.final.z0 / 0.08)
     solution = solver.solve(method=method, options={"maxiter": 150})
     assert solution.success and solution.feasible
+    assert solution.iterations > 0 and solution.function_evaluations > 0
     assert solution.value(distance) == pytest.approx(0.08, abs=2e-6)
     assert solution.run().final.q == pytest.approx(0.03j, abs=2e-6)
     assert solution.run().final.w == pytest.approx(np.sqrt(1e-6 * 0.03 / np.pi), rel=1e-7)

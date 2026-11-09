@@ -14,11 +14,13 @@ from diffractix.solver.solution import ParameterBoundResult
 
 
 def make_solution(*, solver=None, x=(2.,), lower=None, upper=None,
-                  success=True, tolerance=DEFAULT_FEASIBILITY_TOLERANCE):
+                  success=True, tolerance=DEFAULT_FEASIBILITY_TOLERANCE,
+                  iterations=None, function_evaluations=None):
     if solver is None:
         solver = Solver(System(optical_input=Ray(x=Parameter(0.5).variable(), theta=0, n=1)))
     cache = solver._build_cache(False, solver.simulation.initial_values.values)
-    result = SolverResult(np.array(x), success, 7.5, "stopped")
+    result = SolverResult(np.array(x), success, 7.5, "stopped",
+                          iterations=iterations, function_evaluations=function_evaluations)
     problem = SimpleNamespace(
         x_lower=np.full(len(solver.simulation.parameter_data), -np.inf) if lower is None else np.array(lower),
         x_upper=np.full(len(solver.simulation.parameter_data), np.inf) if upper is None else np.array(upper),
@@ -46,6 +48,13 @@ def test_backend_status_and_owned_x():
     assert solution.cost == 7.5
     assert solution.message == "stopped"
     assert solution.feasible
+
+
+def test_backend_performance_counts_are_reported_or_unknown():
+    reported, _ = make_solution(iterations=11, function_evaluations=14)
+    assert (reported.iterations, reported.function_evaluations) == (11, 14)
+    unknown, _ = make_solution()
+    assert unknown.iterations is None and unknown.function_evaluations is None
 
 
 @pytest.mark.parametrize("x", [(), (1., 2.), ((1.,),), 1.])

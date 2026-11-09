@@ -23,7 +23,10 @@ class SolverResult:
     success: bool
     cost: float
     message: str
+    # Iteration and objective-evaluation counts as the backend reports them;
+    # None when a backend does not provide one.
     iterations: int | None = None
+    function_evaluations: int | None = None
     raw: Any = None
     scaling: Scaling | None = None
 
@@ -128,6 +131,16 @@ class Solution:
     @property
     def message(self):
         return self._result.message
+
+    @property
+    def iterations(self):
+        """Optimizer iterations, or None if the backend does not report them."""
+        return self._result.iterations
+
+    @property
+    def function_evaluations(self):
+        """Objective evaluations, or None if the backend does not report them."""
+        return self._result.function_evaluations
 
     @property
     def feasibility_tolerance(self):
