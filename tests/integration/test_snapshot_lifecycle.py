@@ -1,7 +1,7 @@
 """Build/solve snapshots stay independent of declarative model edits."""
 import numpy as np
 import pytest
-from diffractix import Constraint, Parameter, Ray, Solver, Space, System
+from diffractix import Constraint, Parameter, Plane, Ray, Solver, Space, System
 
 
 @pytest.mark.parametrize("owner", ["system", "element"])
@@ -41,3 +41,45 @@ def test_source_and_model_mutation_cannot_change_an_existing_solution():
         solver.target(position)
     with pytest.raises(RuntimeError, match="fixed"):
         solver.require(position >= 0)
+
+
+def _weak_references_after_dropping_the_model():
+    """Build, solve, drop every user reference, and report what the results still keep alive."""
+    import gc
+    import weakref
+
+    distance = Parameter(0.05).variable(bounds=(0.01, 0.2))
+    gap = Space(d=distance)
+    system = System(gap, optical_input=Ray(x=0, theta=0.01, n=1)).add(Plane(), z=0.1)
+    simulation = system.build()
+    solver = Solver(simulation).target(distance / 0.08 - 1)
+    solution = solver.solve(options={"ftol": 1e-12})
+    references = {"parameter": weakref.ref(distance), "element": weakref.ref(gap)}
+    del distance, gap, system, solver
+    gc.collect()
+    return simulation, solution, references
+
+
+def test_simulation_keeps_the_objects_whose_ids_index_its_metadata_alive():
+    """ids are only unique among live objects, so a freed model object could be mistaken
+    for a new one. The metadata must therefore hold what it indexes."""
+    simulation, _, references = _weak_references_after_dropping_the_model()
+    assert references["parameter"]() is not None
+    assert references["element"]() is not None
+    assert simulation.parameter_data[0].parameter_id == id(references["parameter"]())
+    assert any(data.element_id == id(references["element"]()) for data in simulation.element_data)
+
+
+def test_solution_simulation_and_a_new_solver_keep_the_same_objects_alive():
+    import gc
+
+    simulation, solution, references = _weak_references_after_dropping_the_model()
+    del simulation
+    gc.collect()
+    assert references["parameter"]() is not None and references["element"]() is not None
+    assert solution.simulation.parameter_data[0].parameter is references["parameter"]()
+    reused = Solver(solution.simulation)
+    del solution
+    gc.collect()
+    assert references["parameter"]() is not None and references["element"]() is not None
+    assert reused.simulation.initial_values[references["parameter"]()] == pytest.approx(0.08, abs=1e-6)

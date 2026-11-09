@@ -440,3 +440,24 @@ def test_malformed_attached_constraint_is_rejected_during_build(owner):
     (system if owner == "system" else space).require(object())
     with pytest.raises(TypeError, match="Constraint"):
         system.build()
+
+
+def test_metadata_holds_the_parameter_and_element_objects_it_indexes_by_id():
+    """Equality and hashing of the metadata must not depend on these references."""
+    import gc
+    import weakref
+
+    distance = Parameter(0.1).variable()
+    space = Space(d=distance)
+    system = System(space, optical_input=Ray(x=0, theta=0, n=1.0))
+    program, _, _, parameters, metadata, _ = compile_optics(system)
+    references = weakref.ref(distance), weakref.ref(space)
+    held_parameters, held_metadata = parameters, metadata
+    del distance, space, system
+    gc.collect()
+    assert all(reference() is not None for reference in references)
+    assert held_parameters[0].parameter is references[0]() and held_metadata[0].element is references[1]()
+    assert hash(held_parameters[0]) == hash(ParameterData(
+        held_parameters[0].parameter_id, held_parameters[0].name, held_parameters[0].value,
+        held_parameters[0].lower_bound, held_parameters[0].upper_bound, held_parameters[0].parameter_index))
+    assert program.parameter_indices == {held_parameters[0].parameter_id: 0}

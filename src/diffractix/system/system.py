@@ -374,6 +374,7 @@ class System:
                 path=placement.path,
                 variable_parameter_ids=parameter_ids,
                 parameter_names=tuple(name for name, _ in parameters),
+                element=element,
             ))
 
         for placement in placements:
@@ -541,6 +542,7 @@ class System:
                 lower_bound=parameter.lower_bound,
                 upper_bound=parameter.upper_bound,
                 parameter_index=program.parameter_indices[pid],
+                parameter=parameter,
             )
             for pid, parameter in sorted(
                 parameters.items(),

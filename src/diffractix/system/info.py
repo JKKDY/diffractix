@@ -1,9 +1,9 @@
 from __future__ import annotations 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from numbers import Real
 
 from diffractix.core import OpticalBase
-from diffractix.graph import Node
+from diffractix.graph import Node, Parameter
 
 @dataclass(eq=False, frozen=True)
 class CallSite:
@@ -29,6 +29,9 @@ class ElementData:
     variable_parameter_ids: frozenset[int]
     parameter_names: tuple[str, ...] = ()
     parameter_indices: tuple[int, ...] = ()
+    # element_id is an id(): holding the element keeps that id from being reused
+    # by an unrelated object while this metadata exists.
+    element: OpticalBase | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -39,6 +42,9 @@ class ParameterData:
     lower_bound: float
     upper_bound: float
     parameter_index: int | None
+    # parameter_id is an id(): holding the parameter keeps that id from being
+    # reused by an unrelated Parameter while this metadata exists.
+    parameter: Parameter | None = field(default=None, repr=False, compare=False)
 
 
 
