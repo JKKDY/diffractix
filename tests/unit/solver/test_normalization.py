@@ -34,15 +34,15 @@ def test_constraint_infinite_endpoints_and_finite_objective_weights_remain_valid
 
 
 @pytest.mark.parametrize("args, kwargs, error, message", [
-    ((), {"value": lambda ctx: 1.0}, ValueError, "target must be specified"),
+    ((), {"value": lambda sim: 1.0}, ValueError, "target must be specified"),
     ((), {"value": 1.0, "target": 0}, TypeError, "value must be a callable"),
-    ((), {"value": lambda ctx: 1.0, "target": 0, "scale": 0}, ValueError, "scale must be nonzero"),
-    ((lambda ctx: 1.0,), {"value": lambda ctx: 1.0, "target": 0}, ValueError, "positional objectives"),
-    ((lambda ctx: 1.0,), {"target": 0}, ValueError, "require value"),
-    ((lambda ctx: 1.0,), {"scale": 2}, ValueError, "require value"),
+    ((), {"value": lambda sim: 1.0, "target": 0, "scale": 0}, ValueError, "scale must be nonzero"),
+    ((lambda sim: 1.0,), {"value": lambda sim: 1.0, "target": 0}, ValueError, "positional objectives"),
+    ((lambda sim: 1.0,), {"target": 0}, ValueError, "require value"),
+    ((lambda sim: 1.0,), {"scale": 2}, ValueError, "require value"),
     ((), {"label": "ambiguous"}, ValueError, "single residual"),
-    ((lambda ctx: 1.0, lambda ctx: 2.0), {"label": "ambiguous"}, ValueError, "single residual"),
-    ((Objective(lambda ctx: 1.0),), {"label": "override"}, ValueError, "single residual"),
+    ((lambda sim: 1.0, lambda sim: 2.0), {"label": "ambiguous"}, ValueError, "single residual"),
+    ((Objective(lambda sim: 1.0),), {"label": "override"}, ValueError, "single residual"),
 ])
 def test_target_rejects_ambiguous_or_invalid_shorthand(args, kwargs, error, message):
     solver = make_solver()

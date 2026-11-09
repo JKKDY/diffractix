@@ -22,7 +22,7 @@ initial = simulation.run()
 # Ask for zero ray height at the image plane.
 solver = Solver(simulation)
 solver.target(
-    value=lambda result: result[image_plane].after.x,
+    value=lambda sim: sim[image_plane].after.x,
     target=0.0,
     scale=0.01,
 )

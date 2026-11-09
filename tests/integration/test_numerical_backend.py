@@ -13,8 +13,8 @@ def test_whole_solver_callbacks_jit_and_nested_derivatives(monkeypatch):
     space = Space(d=distance)
     simulation = System(space, optical_input=GaussianBeam.from_waist(0.0005, 1.064e-6)).build()
     solver = Solver(simulation)
-    solver.target(lambda ctx: ctx[space].after.w * 1000)
-    solver.require(Constraint(lambda ctx: ctx[space].after.w * 1000,
+    solver.target(lambda sim: sim[space].after.w * 1000)
+    solver.require(Constraint(lambda sim: sim[space].after.w * 1000,
                               lower_bound=0.1, upper_bound=2.0))
     captured = {}
 

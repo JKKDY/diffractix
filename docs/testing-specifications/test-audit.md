@@ -255,3 +255,20 @@ errors or warnings.
 
 The skips are the absent IPOPT and NLopt packages, plus two JAX-only checks
 under Autograd. This matches the earlier baseline.
+
+## 7. Planned API changes and their test impact (design discussion, 9 November 2026)
+
+These are maintainer decisions or leanings, recorded so the library chat and the
+test suite stay in step. None is implemented yet, so no tests have changed for them.
+
+| # | Decision | Test impact when it lands |
+| --- | --- | --- |
+| 1 | `solve()` defaults to JIT, and the keyword becomes `jit` instead of `use_jit`. `solver.py` imports the backend function `jit` at module level, so the import needs an alias (for example `backend_jit`) to avoid shadowing it inside the solve path. | Rename about 60 `use_jit` uses across 8 test files, 2 examples and `docs/numerical_backends.md`. The test that patches `solver_module.jit` (`test_execution_regressions`) must follow the new alias. 19 integration `solve()` calls pass no flag and will run JIT-compiled on JAX, so the JAX suite will get slower. The 9 tests that need eager execution already pass `use_jit=False`. |
+| 1b | With a default of `True`, the "omit the flag to keep the previous mode" behaviour has to be redefined (today `None` keeps the last mode, and the first solve is eager). | Update `test_changing_jit_mode_rebuilds_cache_but_none_retains_previous_mode`. |
+| 4 | A callable that cannot be JIT-compiled raises an error; `jit=False` is the explicit opt-out, with no separate strict flag. This already matches the current contract on JAX. The error should say to pass `jit=False`. | Tests that match JAX's raw "boolean conversion" message should match the new hint instead. |
+| 4b | Add a `weight` option to the value-matching shorthand `target(value=...)`, and give more control over scaling. | Add tests for the weight (cost = weight · Σ residual²), including zero and invalid weights. |
+| 2 | `Solution.value(expression)`: find the expression's Parameters and Symbols and evaluate it with the interpreter at the solution. Open details: a fixed Parameter's live value may differ from the value captured at build, and an expression that depends on runtime result Symbols needs the run. | Tests for derived lengths such as `850 mm − z6 − lens6.d`, for expressions with bound Symbols, and for the two open details. |
+| 5 | Expose iteration and function-evaluation counts on `Solution`. | Test that they are reported and are positive for a real solve. |
+| 5b | Solver locking: either allow `target()`/`require()` after a solve (invalidating the cache), or keep it fixed. `Solver(solution.simulation)` already covers reuse across simulations, so a per-simulation keyed cache is only needed if one Solver must swap simulations. | Update `test_model_definitions_freeze_after_preparation` if the lock is relaxed. |
+| 3 | Thick-lens positioning (front vertex versus centre) is to be reviewed. | None yet. |
+| – | GRIN rod without explicit Interfaces: low priority; a composite could package it. | None yet. |

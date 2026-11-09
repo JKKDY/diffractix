@@ -24,17 +24,17 @@ def main():
     lens = ThinLens(f=0.2)
     lens.f.variable(bounds=(0.05, 0.5))
     target = Plane(label="Image plane")
-    system = System(input=Ray(x=0.01, theta=0.0))
+    system = System(optical_input=Ray(x=0.01, theta=0.0))
     system.add(lens, z=0.1).add(target, z=0.2)
     simulation = system.build()
-    np.testing.assert_allclose(simulation.run().at(target).x, 0.005, atol=1e-12)
+    np.testing.assert_allclose(simulation.run()[target].after.x, 0.005, atol=1e-12)
     solution = Solver(simulation).target(
-        value=lambda ctx: ctx.at(target).x, target=0.0, scale=0.01,
+        value=lambda sim: sim[target].after.x, target=0.0, scale=0.01,
     ).solve(method="SLSQP", options={"ftol": 1e-12})
     if not solution.success or not solution.feasible:
         raise RuntimeError(f"Inverse-design smoke failed: {solution.message}")
-    np.testing.assert_allclose(solution[lens.f], 0.1, atol=1e-6)
-    np.testing.assert_allclose(solution.run().at(target).x, 0.0, atol=1e-6)
+    np.testing.assert_allclose(solution.value(lens.f), 0.1, atol=1e-6)
+    np.testing.assert_allclose(solution.run()[target].after.x, 0.0, atol=1e-6)
     np.testing.assert_allclose(lens.f.value, 0.2)
     fig, ax = solution.run().plot()
     if ax.figure is not fig:

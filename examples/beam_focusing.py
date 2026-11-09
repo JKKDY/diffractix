@@ -1,109 +1,74 @@
-"""Design a Gaussian laser focusing system with a fixed workpiece position.
+"""Focus a Gaussian laser beam onto a workpiece at a fixed position.
 
-Matplotlib is included with Diffractix for the before/after plots.
+The optimizer moves a single lens and chooses its focal length so that the beam
+waist lands on the workpiece with the requested spot radius. The workpiece stays
+at the same absolute position because the working distance is defined as the
+remaining system length. All lengths are in metres.
 """
 
 from time import perf_counter
 
-from diffractix import (
-    Constraint,
-    GaussianBeam,
-    Plane,
-    Solver,
-    Space,
-    System,
-    ThinLens,
-)
+from diffractix import Constraint, GaussianBeam, Plane, Solver, Space, System, ThinLens
 
-# All lengths are in meters.
 WAVELENGTH = 1064e-9
 INPUT_RADIUS = 0.75e-3
 TARGET_WAIST_RADIUS = 30e-6
 SYSTEM_LENGTH = 150e-3
 MIN_WORKING_DISTANCE = 50e-3
 LENS_CLEAR_DIAMETER = 4e-3
-MAX_DIVERGENCE = 0.03  # Gaussian far-field half-angle, radians
+MAX_DIVERGENCE = 0.03  # Gaussian far-field half-angle in radians: paraxial limit
 DEFOCUS = 2e-3         # Workpiece positioning error to inspect
 
 
-#------
-# SETUP
-#------
-# The input beam is at a waist at the source plane. Its lens position and
-# focal length are deliberately poor starting values.
+# ------
+# DESIGN
+# ------
+# The input beam has its waist at the source. The lens position and focal
+# length start from deliberately poor values.
 source = GaussianBeam.from_waist(w0=INPUT_RADIUS, wavelength=WAVELENGTH)
-target_focus = GaussianBeam.from_waist(
-    w0=TARGET_WAIST_RADIUS, wavelength=WAVELENGTH
-).numeric()
+target_focus = GaussianBeam.from_waist(w0=TARGET_WAIST_RADIUS, wavelength=WAVELENGTH).numeric()
 
-input_gap = Space(d=60e-3, label="Source-to-lens distance")
+input_gap = Space(d=60e-3, label="Source to lens")
 input_gap.d.variable(bounds=(40e-3, None))
-
 lens = ThinLens(f=45e-3, label="Focusing lens")
 lens.f.variable(bounds=(35e-3, 110e-3))
-
-# Keep the workpiece at the same physical position when the lens moves.
-working_distance = Space(
-    d=SYSTEM_LENGTH - input_gap.d,
-    label="Working distance",
-)
+working_distance = Space(d=SYSTEM_LENGTH - input_gap.d, label="Working distance")
 workpiece = Plane(label="Workpiece")
 
-system = System(
-    input_gap,
-    lens,
-    working_distance,
-    workpiece,
-    input=source,
-)
+system = System(input_gap, lens, working_distance, workpiece, optical_input=source)
 system.require(working_distance.d >= MIN_WORKING_DISTANCE)
 
-
-#-----------
-# SIMULATION
-#-----------
 simulation = system.build()
 initial = simulation.run()
 
-# Check that the far-field Gaussian divergence stays within our chosen
-# paraxial engineering limit throughout the system.
-for i, info in enumerate(simulation.element_info, start=1):
-    simulation.require(
-        Constraint(
-            lambda ctx, i=i: ctx.states[i].divergence_angle,
-            upper_bound=MAX_DIVERGENCE,
-            label=f"Paraxial divergence after {info.label or info.path or info.type_name}",
-        )
-    )
 
-# Require a clear-aperture radius of at least twice the beam radius.
-# Clipping and lens aberrations are not included in the ideal ABCD model.
-simulation.require(
-    Constraint(
-        lambda ctx: ctx.at(lens).w,
-        upper_bound=LENS_CLEAR_DIAMETER / 4,
-        label="Focusing lens aperture clearance",
-    )
-)
-
-
-#-------
-# SOLVER
-#-------
-# The output beam must have the desired waist size, and the waist must
-# coincide with the fixed workpiece plane.
+# ------------
+# OPTIMIZATION
+# ------------
 solver = Solver(simulation)
+
+# The spot must have the target radius, and the waist must sit on the workpiece.
 solver.target(
-    value=lambda ctx: ctx.at(workpiece).w,
+    value=lambda sim: sim[workpiece].after.w,
     target=target_focus.w,
     scale=target_focus.w,
     label="Spot radius at workpiece",
 )
 solver.target(
-    value=lambda ctx: ctx.at(workpiece).z0,
+    value=lambda sim: sim[workpiece].after.z0,
     target=0.0,
     scale=target_focus.z_r,
     label="Waist position at workpiece",
+)
+
+# Only the lens changes the beam's divergence, so checking after the lens keeps
+# the whole system within the paraxial limit. The lens aperture keeps two beam
+# radii of clearance; clipping and aberrations are not modelled.
+solver.require(
+    Constraint(lambda sim: sim[lens].after.divergence_angle,
+               upper_bound=MAX_DIVERGENCE, label="Paraxial divergence after lens"),
+    Constraint(lambda sim: sim[lens].after.w,
+               upper_bound=LENS_CLEAR_DIAMETER / 4, label="Lens aperture clearance"),
 )
 
 start = perf_counter()
@@ -112,74 +77,64 @@ elapsed = perf_counter() - start
 optimized = solution.run()
 
 
-#--------
-# READOUT
-#--------
-def compare(label, before, after, scale=1.0, unit=""):
-    """Print one row of the initial-versus-optimized comparison."""
-    print(f"{label:<23} {before * scale:>12.4f} {after * scale:>12.4f} {unit}")
+# -------
+# RESULTS
+# -------
+def table(title):
+    print(f"\n{title}")
+    print(f"{'':26} {'Initial':>12} {'Optimized':>12}")
+    print("-" * 56)
 
 
-print("###### OPTIMIZATION ######")
-print(f"Success:              {solution.success}")
-print(f"Feasible:             {solution.feasible}")
-print(f"Termination:          {solution.message}")
-print(f"Final objective:      {solution.cost:.3e}")
-print(f"Solve time:           {elapsed:.3f} s")
+def row(label, before, after, scale=1.0, unit=""):
+    print(f"{label:<26} {before * scale:>12.4f} {after * scale:>12.4f} {unit}")
 
-# Iteration diagnostics are not yet exposed publicly by Solution.
-backend_result = solution._result
-print(f"Iterations:           {backend_result.iterations}")
-print(f"Function evaluations: {backend_result.raw.nfev}")
 
-print("\n\n###### DESIGN: BEFORE / AFTER ######")
-print(f"{'':23} {'Initial':>12} {'Optimized':>12}")
-print("-" * 52)
-compare("Source-to-lens distance", input_gap.d.value, solution[input_gap.d], 1e3, "mm")
-compare("Lens focal length", lens.f.value, solution[lens.f], 1e3, "mm")
-compare("Working distance", working_distance.d.value, solution[working_distance.d], 1e3, "mm")
-compare("System length", initial.z[-1], optimized.z[-1], 1e3, "mm")
-print(f"Minimum working distance: {1e3 * MIN_WORKING_DISTANCE:.1f} mm")
+def length(result, space):
+    return result[space].z_end - result[space].z_start
 
-initial_beam = initial.at(workpiece)
-focused_beam = optimized.at(workpiece)
 
-print("\n\n###### FOCUS AT WORKPIECE: BEFORE / AFTER ######")
-print(f"{'':23} {'Initial':>12} {'Optimized':>12}")
-print("-" * 52)
-compare("Spot radius", initial_beam.w, focused_beam.w, 1e6, "um")
-compare("Waist offset", initial_beam.z0, focused_beam.z0, 1e3, "mm")
-compare("Minimum waist radius", initial_beam.w0, focused_beam.w0, 1e6, "um")
-compare("Confocal parameter", initial_beam.b, focused_beam.b, 1e3, "mm")
-print(f"Target waist radius: {1e6 * target_focus.w:.4f} um")
+print(f"Optimization: success={solution.success}, feasible={solution.feasible}, "
+      f"cost={solution.cost:.3e}, time={elapsed:.2f} s")
+print(f"  {solution.message}")
 
-print("\n\n###### DEFOCUS AND MODEL CHECKS: BEFORE / AFTER ######")
-print(f"{'':23} {'Initial':>12} {'Optimized':>12}")
-print("-" * 52)
-compare("Spot at -2 mm", initial_beam.w_at_z(-DEFOCUS),
-        focused_beam.w_at_z(-DEFOCUS), 1e6, "um")
-compare("Spot at +2 mm", initial_beam.w_at_z(DEFOCUS),
-        focused_beam.w_at_z(DEFOCUS), 1e6, "um")
-compare("Lens beam radius", initial.at(lens).w, optimized.at(lens).w, 1e3, "mm")
-compare("Worst divergence", max(s.divergence_angle for s in initial.states),
-        max(s.divergence_angle for s in optimized.states), unit="rad")
-print(f"Lens beam-radius limit: {1e3 * LENS_CLEAR_DIAMETER / 4:.3f} mm")
-print(f"Divergence limit: {MAX_DIVERGENCE:.3f} rad")
+table("Design")
+row("Source to lens", input_gap.d.value, solution.value(input_gap.d), 1e3, "mm")
+row("Lens focal length", lens.f.value, solution.value(lens.f), 1e3, "mm")
+row("Working distance", length(initial, working_distance),
+    length(optimized, working_distance), 1e3, "mm")
+row("System length", initial.z[-1], optimized.z[-1], 1e3, "mm")
+print(f"Minimum working distance: {MIN_WORKING_DISTANCE * 1e3:.1f} mm")
 
-print("\n\n###### OBJECTIVES AT OPTIMUM ######")
-for result in solution.targets:
-    print(f"  {result.objective.label}: "
-          f"residual={result.value:.3e}, cost={result.cost:.3e}")
+before, after = initial[workpiece].after, optimized[workpiece].after
+table("Focus at the workpiece")
+row("Spot radius", before.w, after.w, 1e6, "um")
+row("Waist offset", before.z0, after.z0, 1e3, "mm")
+row("Waist radius", before.w0, after.w0, 1e6, "um")
+row("Confocal parameter", before.b, after.b, 1e3, "mm")
+row(f"Spot {DEFOCUS * 1e3:.0f} mm before", before.w_at_z(-DEFOCUS), after.w_at_z(-DEFOCUS), 1e6, "um")
+row(f"Spot {DEFOCUS * 1e3:.0f} mm after", before.w_at_z(DEFOCUS), after.w_at_z(DEFOCUS), 1e6, "um")
+print(f"Target waist radius: {target_focus.w * 1e6:.1f} um")
+
+table("Model checks")
+row("Beam radius at lens", initial[lens].after.w, optimized[lens].after.w, 1e3, "mm")
+row("Divergence after lens", initial[lens].after.divergence_angle,
+    optimized[lens].after.divergence_angle, unit="rad")
+print(f"Limits: radius {LENS_CLEAR_DIAMETER / 4 * 1e3:.2f} mm, divergence {MAX_DIVERGENCE} rad")
+
+print("\nObjectives at the optimum")
+for objective in solution.objectives:
+    print(f"  {objective.label}: residual={objective.value:.3e}, cost={objective.cost:.3e}")
 
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
-    fig, axes = plt.subplots(2, 1, figsize=(11, 7), sharex=True, sharey=True, layout="constrained")
-    fig.suptitle("Beam focusing", fontsize=12)
-    axes[0].set_title("Before optimization", loc="left", fontsize=11)
-    axes[1].set_title("After optimization", loc="left", fontsize=11)
+    figure, axes = plt.subplots(2, 1, figsize=(11, 7), sharex=True, sharey=True, layout="constrained")
+    figure.suptitle("Beam focusing")
     initial.plot(ax=axes[0])
     optimized.plot(ax=axes[1])
+    axes[0].set_title("Before optimization", loc="left")
+    axes[1].set_title("After optimization", loc="left")
     axes[0].set_xlabel("")
     plt.show()
