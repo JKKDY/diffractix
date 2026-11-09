@@ -131,52 +131,35 @@ stations = (
 )
 
 
-def allowance(module_length, crystal):
-    """Air on one side of a crystal centred in a fixed-length module."""
-    return (module_length - crystal.d) / 2
-
-
 # ------
 # SYSTEM
 # ------
-# Gaps are written from the absolute coordinates. A thick lens occupies its
-# thickness after its front surface, so it is subtracted from the next gap.
-working_distance = Space(d=WORKPIECE_Z - z6 - lens6.d, label="Working distance")
-lens2_to_lens3 = Space(d=z3 - z2 - lens2.d, label="Lens 2 to lens 3")
-system = System(
-    Space(d=z1, label="Input gap"),
-    lens1,
-    Space(d=AOM_Z - z1, label="To AOM"),
-    aom,
-    Space(d=allowance(AOM_EXIT_Z - AOM_Z, aom_crystal), label="AOM input allowance"),
-    aom_crystal,
-    Space(d=allowance(AOM_EXIT_Z - AOM_Z, aom_crystal), label="AOM output allowance"),
-    aom_exit,
-    Space(d=z2 - AOM_EXIT_Z, label="To lens 2"),
-    lens2,
-    lens2_to_lens3,
-    lens3,
-    Space(d=EOM_Z - z3, label="To EOM"),
-    eom,
-    Space(d=allowance(EOM_EXIT_Z - EOM_Z, eom_crystal), label="EOM input allowance"),
-    eom_crystal,
-    Space(d=allowance(EOM_EXIT_Z - EOM_Z, eom_crystal), label="EOM output allowance"),
-    eom_exit,
-    Space(d=z4 - EOM_EXIT_Z, label="To lens 4"),
-    lens4,
-    Space(d=SCANNER_Z - z4 - lens4.d, label="To scanner"),
-    scanner,
-    Space(d=z5 - SCANNER_Z, label="To lens 5"),
-    lens5,
-    Space(d=z6 - z5, label="Lens 5 to lens 6"),
-    lens6,
-    working_distance,
-    workpiece,
-    optical_input=source,
-)
+# Every element is placed at an absolute position. The air gaps between them are
+# generated automatically, and a gap that would be negative is infeasible, which
+# keeps the lenses in order. A lens position is its front surface (the default);
+# each crystal is centred (`at="center"`) in its fixed-length module.
+system = System(optical_input=source)
+system.add(lens1, z=z1)
+system.add(aom, z=AOM_Z)
+system.add(aom_crystal, z=(AOM_Z + AOM_EXIT_Z) / 2, at="center")
+system.add(aom_exit, z=AOM_EXIT_Z)
+system.add(lens2, z=z2)
+system.add(lens3, z=z3)
+system.add(eom, z=EOM_Z)
+system.add(eom_crystal, z=(EOM_Z + EOM_EXIT_Z) / 2, at="center")
+system.add(eom_exit, z=EOM_EXIT_Z)
+system.add(lens4, z=z4)
+system.add(scanner, z=SCANNER_Z)
+system.add(lens5, z=z5)
+system.add(lens6, z=z6)
+system.add(workpiece, z=WORKPIECE_Z)
+
+# Air gaps that need a minimum: these are expressions of the design variables.
+lens2_to_lens3 = z3 - z2 - lens2.d
+working_distance = WORKPIECE_Z - z6 - lens6.d
 system.require(
-    working_distance.d >= MIN_WORKING_DISTANCE,
-    lens2_to_lens3.d >= MIN_LENS_GAP,
+    working_distance >= MIN_WORKING_DISTANCE,
+    lens2_to_lens3 >= MIN_LENS_GAP,
 )
 
 simulation = system.build()
@@ -282,8 +265,8 @@ for index, (position, lens) in enumerate(zip(positions, lenses), start=1):
         row(f"Lens {index} {name}", parameter.value, solution.value(parameter), 1e3, "mm")
 row("AOM crystal thickness", aom_crystal.d.value, solution.value(aom_crystal.d), 1e3, "mm")
 row("EOM crystal thickness", eom_crystal.d.value, solution.value(eom_crystal.d), 1e3, "mm")
-row("Lens 2 to lens 3 air gap", lens2_to_lens3.d.value, solution.value(lens2_to_lens3.d), 1e3, "mm")
-row("Working distance", working_distance.d.value, solution.value(working_distance.d), 1e3, "mm")
+row("Lens 2 to lens 3 air gap", lens2_to_lens3.value, solution.value(lens2_to_lens3), 1e3, "mm")
+row("Working distance", working_distance.value, solution.value(working_distance), 1e3, "mm")
 row("Total length", initial.z[-1], optimized.z[-1], 1e3, "mm")
 print(f"Minimums: lens gap {MIN_LENS_GAP * 1e3:.0f} mm, working distance {MIN_WORKING_DISTANCE * 1e3:.0f} mm")
 

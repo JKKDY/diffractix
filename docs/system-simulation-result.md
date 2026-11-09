@@ -46,7 +46,19 @@ simulation = system.build()
 ```
 
 Element order defines the optical path. An absolute placement `z` requests a
-position; build inserts a Space for the gap. Inputs, elements and composites
+position; build inserts a Space for the gap. By default `z` is where the element's
+front goes. `add(element, z=..., at=...)` chooses another reference point:
+`"front"`, `"center"` or `"back"`; an element inside the added composite, meaning
+its front; or any length measured from the front, for example
+`at=lens.element_length / 3.5`. The middle of an inner element sits at `z0` with
+`add(composite, z=z0 - inner.element_length / 2, at=inner)`. An element that appears
+twice in the composite is an ambiguous reference and raises ValueError, as does
+using the added element itself. `at` requires `z`.
+`add` converts `z` and `at` to the position of the front, which is all the
+placement stores. Positions are exact: a front or a generated gap that comes out
+negative, even by rounding (a station at 0.3 after gaps of 0.1 and 0.2), is
+rejected or infeasible, so leave a little real room or use exactly representable
+values. Inputs, elements and composites
 can contribute Symbol bindings through their `bindings` properties. Use
 `system.bind(key, value)` for explicit System bindings. Duplicate keys fail.
 

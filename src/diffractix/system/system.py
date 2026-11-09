@@ -27,6 +27,7 @@ from .symbols import AMBIENT_N
 from .info import ElementData, ParameterData, Placement, CallSite, ResolvedPlacement
 
 
+
 class System:
     """
     Declarative description of an optical system.
@@ -110,8 +111,17 @@ class System:
         self,
         *elements: OpticalBase | Iterable[OpticalBase],
         z: Node | Real | None = None,
+        at: str | OpticalBase | Node | Real | None = None,
         index: int | None = None,
     ):
+        """Add elements, optionally at an absolute position.
+
+        `z` is the absolute position of one reference point of the element, and `at`
+        says which point: "front" (default), "center" or "back"; an element inside
+        the added composite, meaning its front; or any length from the element's
+        front, such as `lens.element_length / 3`. `at` requires `z`. The placement
+        stores the resulting position of the front.
+        """
         def flatten(items):
             for element in items:
                 if isinstance(element, (OpticalElement, CompositeElement)):
@@ -130,6 +140,8 @@ class System:
             raise ValueError("At least one element is required.")
         if len(elements) > 1 and z is not None:
             raise ValueError("An absolute position can only be set for one element.")
+        if at is not None and z is None:
+            raise ValueError("at requires an absolute position z.")
         if index is not None:
             if isinstance(index, (bool, np.bool_)):
                 raise TypeError("index must be an integer.")
@@ -145,11 +157,44 @@ class System:
             if not isinstance(z, (Node, Real)) or isinstance(z, bool):
                 raise TypeError(f"z must be a Node, Real, or None; got {type(z).__name__}.")
 
+            if isinstance(z, Real) and not np.isfinite(z):
+                raise ValueError(f"Absolute position z must be finite, got {z!r}.")
+
+            # Normalize: from here on z is where the element's front goes.
+            if isinstance(at, str):
+                points = {"front": lambda length: 0, "center": lambda length: length / 2, "back": lambda length: length}
+                if at not in points:
+                    raise ValueError(f"at must be one of {tuple(points)}, got {at!r}.")
+                at = points[at](elements[0].element_length)
+            elif isinstance(at, (OpticalElement, CompositeElement)):
+                # Length in front of `at` inside the added composite; for a nested composite
+                # that is the front of its first leaf.
+                leaves = elements[0].leaf_elements if isinstance(elements[0], CompositeElement) else ()
+                first = at.leaf_elements[:1] if isinstance(at, CompositeElement) else (at,)
+                matches = [i for i, leaf in enumerate(leaves) if first and leaf is first[0]]
+                if at is elements[0] or not matches:
+                    raise ValueError(f"{at!r} is not part of {elements[0]!r}.")
+                if len(matches) > 1:
+                    raise ValueError(
+                        f"{at!r} appears more than once in {elements[0]!r}; its position is ambiguous."
+                    )
+                at = sum(leaf.element_length for leaf in leaves[:matches[0]])
+            if at is not None:
+                if isinstance(at, bool) or not isinstance(at, (Node, Real)):
+                    raise TypeError(
+                        f'at must be "front", "center", "back", an element or a length; got {type(at).__name__}.'
+                    )
+                if isinstance(at, Real) and not np.isfinite(at):
+                    raise ValueError(f"at must be finite, got {at!r}.")
+                if not (isinstance(at, Real) and at == 0):
+                    z = z - at
             if isinstance(z, Real):
-                if not np.isfinite(z):
-                    raise ValueError(f"Absolute position z must be finite, got {z!r}.")
                 if z < 0:
-                    raise ValueError(f"Absolute position z cannot be negative, got {z!r}.")
+                    raise ValueError(
+                        f"Absolute position z cannot be negative, got {z!r}"
+                        + ("" if at is None else " for the element's front (after applying at)")
+                        + "."
+                    )
 
         for element in elements:
             dataclass_params = getattr(type(element), "__dataclass_params__", None)

@@ -323,3 +323,4 @@ def test_distinct_binding_providers_reject_duplicate_keys_even_if_values_match(s
 
     assert first.bindings == {"calibration": 1.5}
     assert second.bindings == {"calibration": second_value}
+

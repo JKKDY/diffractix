@@ -327,3 +327,4 @@ def test_string_representation_describes_element_and_parameter(kind, value, mark
     assert f"L={value:g}" in text
     assert f"x={value:g}" in text
     assert marker in text
+

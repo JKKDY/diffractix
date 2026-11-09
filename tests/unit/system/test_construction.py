@@ -345,3 +345,130 @@ def test_variadic_constructor_records_user_call_site_and_build_error_location():
     with pytest.raises(ValueError) as error:
         system.build()
     assert f"{filename}:{line}" in str(error.value)
+
+
+# ------------------------
+# REFERENCE POINT (at=)
+# ------------------------
+def test_at_requires_an_absolute_position():
+    system = System()
+    with pytest.raises(ValueError, match="at requires"):
+        system.add(Space(d=0.1), at="center")
+    assert system.placements == ()
+
+
+def test_the_placement_stores_the_position_of_the_front_after_applying_at():
+    from diffractix.composites import Telescope
+    gap = Space(d=0.04)
+    telescope = Telescope(f1=0.1, f2=0.2)
+    system = System().add(gap, z=0.1).add(gap, z=0.1, at="center").add(gap, z=0.1, at="back")
+    system.add(gap, z=0.1, at=0.01).add(telescope, z=0.5, at=telescope.lens2)
+    fronts = [placement.z for placement in system.placements]
+    assert fronts[0] == 0.1 and isinstance(fronts[0], float)   # no at: untouched
+    # A Space length is a graph value, so the shifted front is a live expression.
+    values = [front.evaluate() if hasattr(front, "evaluate") else front for front in fronts]
+    np.testing.assert_allclose(values[1:], [0.08, 0.06, 0.09, 0.2], atol=1e-12)
+
+
+@pytest.mark.parametrize("at, error, message", [
+    (True, TypeError, "at must be"),
+    (object(), TypeError, "at must be"),
+    ("middle", ValueError, "at must be one of"),
+    (("front",), TypeError, "at must be"),
+    ((Space(d=0.1), 0), TypeError, "at must be"),
+    (float("nan"), ValueError, "finite"),
+    (float("inf"), ValueError, "finite"),
+    (Space(d=0.1), ValueError, "not part of"),
+], ids=["bool", "other-type", "unknown-name", "tuple", "element-with-occurrence", "nan", "inf", "foreign-element"])
+def test_invalid_at_is_rejected_without_mutating_the_system(at, error, message):
+    system = System(Plane())
+    before = system.placements
+    with pytest.raises(error, match=message):
+        system.add(ThinLens(f=0.1), z=0.2, at=at)
+    assert system.placements == before
+
+
+class Group(CompositeElement):
+    def __init__(self, **children):
+        for name, child in children.items():
+            setattr(self, name, child)
+        super().__init__()
+
+
+def front_of(placement):
+    return placement.z.evaluate() if hasattr(placement.z, "evaluate") else placement.z
+
+
+def test_a_child_reference_is_the_length_in_front_of_it_however_deeply_nested():
+    inner = Group(b=Space(d=0.2), c=Space(d=0.3))
+    outer = Group(a=Space(d=0.1), inner=inner)
+    system = System()
+    targets = (outer.a, inner.b, inner.c, inner)   # the last is a nested composite: its first leaf
+    for target in targets:
+        system.add(outer, z=1.0, at=target)
+    np.testing.assert_allclose([front_of(p) for p in system.placements], [1.0, 0.9, 0.7, 0.9], atol=1e-12)
+
+
+def test_a_child_reference_follows_variable_lengths_and_skips_zero_length_children():
+    distance = Parameter(0.1).variable()
+    group = Group(a=Space(d=distance), lens=ThinLens(f=0.1), b=Space(d=2 * distance))
+    system = System().add(group, z=1.0, at=group.lens).add(group, z=1.0, at=group.b)
+    assert [front_of(p) for p in system.placements] == pytest.approx([0.9, 0.9])
+    distance.value = 0.2
+    assert [front_of(p) for p in system.placements] == pytest.approx([0.8, 0.8])
+
+
+def test_repeated_references_are_ambiguous():
+    shared = Space(d=0.01)
+    group = Group(first=shared, middle=Space(d=0.05), last=shared)
+    inner = Group(x=Space(d=0.02))
+    outer = Group(a=inner, b=Space(d=0.03), c=inner)   # a repeated composite repeats its first leaf
+    system = System()
+    for container, target in ((group, shared), (outer, inner)):
+        with pytest.raises(ValueError, match="more than once"):
+            system.add(container, z=0.5, at=target)
+    assert system.placements == ()
+    assert front_of(system.add(group, z=0.5, at=group.middle).placements[0]) == pytest.approx(0.49)
+
+
+@pytest.mark.parametrize("make_added, make_reference", [
+    (lambda: Group(a=Space(d=0.1)), lambda added: Space(d=0.1)),          # foreign element
+    (lambda: Group(a=Space(d=0.1)), lambda added: Group()),               # empty composite
+    (lambda: ThinLens(f=0.1), lambda added: Space(d=0.1)),                # plain element has no inside
+], ids=["foreign", "empty-composite", "plain-element"])
+def test_references_that_are_not_inside_the_added_element_are_rejected(make_added, make_reference):
+    added = make_added()
+    system = System()
+    with pytest.raises(ValueError, match="not part of"):
+        system.add(added, z=0.5, at=make_reference(added))
+    assert system.placements == ()
+
+
+def test_an_element_or_composite_cannot_be_its_own_reference():
+    from diffractix.composites import Telescope
+    gap, telescope = Space(d=0.1), Telescope(f1=0.1, f2=0.2)
+    for element in (gap, telescope):
+        with pytest.raises(ValueError, match="not part of"):
+            System().add(element, z=0.2, at=element)
+
+
+def test_at_accepts_symbolic_lengths_and_keeps_them_live():
+    reference = Parameter(0.01).variable()
+    system = System().add(Space(d=0.1), z=0.3, at=reference + 0.01)
+    front = system.placements[0].z
+    assert front.evaluate() == pytest.approx(0.28)
+    reference.value = 0.05
+    assert front.evaluate() == pytest.approx(0.24)
+
+
+@pytest.mark.parametrize("z", [0.0, -0.0, 0.2])
+def test_nonnegative_absolute_positions_are_stored_unchanged(z):
+    assert System().add(Plane(), z=z).placements[0].z == z
+
+
+@pytest.mark.parametrize("z", [-1e-17, -1e-9, -0.1])
+def test_negative_absolute_positions_are_rejected_however_small(z):
+    system = System()
+    with pytest.raises(ValueError, match="cannot be negative"):
+        system.add(Plane(), z=z)
+    assert system.placements == ()
