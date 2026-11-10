@@ -164,6 +164,8 @@ solver.require(symbolic[plane].after.x <= 0.001, label="Maximum image position")
 ```
 
 `target(*residuals)` minimizes the sum of weighted squared residual entries.
+`target(value=..., target=..., weight=2)` (and `target(residual, weight=2)`) sets the
+weight of that one objective; the default is 1.
 `Objective(expression_or_callable, weight=1.0, label=None)` sets a weight and
 label. `target(value=..., target=..., scale=..., label=...)` creates the residual
 `(value-target)/scale`. If scale is omitted, it defaults elementwise to

@@ -43,6 +43,11 @@ def test_constraint_infinite_endpoints_and_finite_objective_weights_remain_valid
     ((), {"label": "ambiguous"}, ValueError, "single residual"),
     ((lambda sim: 1.0, lambda sim: 2.0), {"label": "ambiguous"}, ValueError, "single residual"),
     ((Objective(lambda sim: 1.0),), {"label": "override"}, ValueError, "single residual"),
+    ((), {"weight": 2}, ValueError, "single residual"),
+    ((lambda sim: 1.0, lambda sim: 2.0), {"weight": 2}, ValueError, "single residual"),
+    ((Objective(lambda sim: 1.0),), {"weight": 2}, ValueError, "single residual"),
+    ((), {"value": lambda sim: 1.0, "target": 0, "weight": -1}, ValueError, "weight.*finite.*>= 0"),
+    ((lambda sim: 1.0,), {"weight": np.nan}, ValueError, "weight.*finite.*>= 0"),
 ])
 def test_target_rejects_ambiguous_or_invalid_shorthand(args, kwargs, error, message):
     solver = make_solver()
@@ -217,6 +222,26 @@ def test_value_matching_and_residual_shorthand_match_explicit_objective_derivati
         np.testing.assert_allclose(problem.gradient(theta), [8])
         np.testing.assert_allclose(problem.objective_hessian(theta), [[12]])
         assert solver._cache.objective_descriptors[0].label == "match"
+
+
+def test_weight_scales_the_cost_of_value_matching_and_single_residual_shorthand():
+    from diffractix.backend import xp
+    from tests.helpers.backend import capture_problem
+    p = Parameter(0.5).variable()
+    simulation = System(optical_input=Ray(x=p, theta=0, n=1)).build()
+    solvers = [Solver(simulation) for _ in range(4)]
+    solvers[0].target(value=p, target=1.0, scale=1.0, weight=3, label="match")
+    solvers[1].target(p - 1.0, weight=3, label="match")
+    solvers[2].target(value=lambda result: result.final.x, target=1.0, scale=1.0, weight=3)
+    solvers[3].target(Objective(p - 1.0, weight=3))
+    for solver in solvers:
+        problem = capture_problem(solver)
+        theta = xp.array([3.])
+        assert problem.objective(theta) == pytest.approx(12)   # 3 * (3 - 1) ** 2
+        np.testing.assert_allclose(problem.gradient(theta), [12])
+    assert solvers[0]._cache.objective_descriptors[0].weight == 3
+    default = Solver(simulation).target(value=p, target=1.0)
+    assert default._objectives[0].weight == 1.0
 
 
 def test_require_validation_is_atomic_and_chaining_preserves_entries():

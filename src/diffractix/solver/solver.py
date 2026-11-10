@@ -127,12 +127,16 @@ class Solver:
     def simulation(self) -> Simulation:
         return self._simulation
 
-    def target(self, *objectives, value=None, target=None, scale=None, label=None):
+    def target(self, *objectives, value=None, target=None, scale=None, weight=None, label=None):
         """Add residual objectives, or match a value to a target.
 
         `value` (a graph expression or a callable of the result) gives the residual
         `(value - target) / scale`. `scale` defaults to `abs(target)` where the target
         is not zero and to 1 where it is, so choose it yourself when the target is 0.
+
+        `weight` (default 1) multiplies the squared residual in the total cost. Like
+        `label`, it applies to `value=` or to a single residual Node or callable;
+        give an `Objective` its own weight instead.
         """
         if self._cache is not None:
             raise RuntimeError("The optimization model is fixed; create a new Solver.")
@@ -156,13 +160,13 @@ class Solver:
                 (value - target) / scale if isinstance(value, Node)
                 else lambda ctx: (value(ctx) - target) / scale
             )
-            objectives = (Objective(residual, label=label),)
+            objectives = (Objective(residual, 1.0 if weight is None else weight, label),)
         elif target is not None or scale is not None:
             raise ValueError("target and scale require value.")
-        elif label is not None:
+        elif label is not None or weight is not None:
             if len(objectives) != 1 or isinstance(objectives[0], Objective):
-                raise ValueError("label requires a single residual Node or callable.")
-            objectives = (Objective(objectives[0], label=label),)
+                raise ValueError("label and weight require a single residual Node or callable.")
+            objectives = (Objective(objectives[0], 1.0 if weight is None else weight, label),)
 
         self._objectives.extend([normalize_to_objective(objective) for objective in objectives])
         return self
