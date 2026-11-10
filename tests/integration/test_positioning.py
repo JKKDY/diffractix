@@ -207,7 +207,7 @@ def test_touching_thick_lenses_build_exactly():
     second = ThickLens(d=0.0123, n=1.5, R1=0.2, R2=-0.2)
     system = System(optical_input=source()).add(first, z=0.1).add(second, z=0.1 + 0.0123)
     result = system.build().run()
-    assert result[second.front].z_start == pytest.approx(result[first.back].z_end, abs=1e-12)
+    assert result[second.front].z_start == pytest.approx(float(result[first.back].z_end), abs=1e-12)
 
 
 def test_four_f_relay_can_be_pinned_by_its_fourier_plane():

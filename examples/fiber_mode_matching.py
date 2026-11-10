@@ -84,7 +84,7 @@ for package in (lens1, lens2):
     solver.require(sim[package.lens].after.w <= LENS_CLEAR_DIAMETER / 4,
                    label=f"{package.label} aperture clearance")
 
-solution = solver.solve(method="SLSQP")
+solution = solver.solve(method="SLSQP", options={"maxiter": 300})
 optimized = solution.run()
 
 

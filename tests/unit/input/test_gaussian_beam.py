@@ -214,7 +214,7 @@ def test_overlap_is_preserved_by_common_lossless_lens_and_drift():
     propagated_second = second.propagate(*matrix, n=1.33)
 
     assert propagated_first.overlap_with(propagated_second) == pytest.approx(
-        first.overlap_with(second), rel=1e-12,
+        float(first.overlap_with(second)), rel=1e-12,
     )
     assert (first.q, second.q) == (0.02 + 0.04j, -0.01 + 0.06j)
 

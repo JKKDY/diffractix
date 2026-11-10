@@ -65,4 +65,4 @@ def test_gaussian_beam_focused_by_thin_lens_follows_the_abcd_q_law():
     np.testing.assert_allclose(result[lens].after.q, q2, rtol=1e-12)
     np.testing.assert_allclose(result.final.q, q3, rtol=1e-12)
     np.testing.assert_allclose(result.final.w, np.sqrt(-wavelength / (np.pi * np.imag(1 / q3))), rtol=1e-12)
-    assert result[lens].before.w == pytest.approx(result[lens].after.w, rel=1e-12)
+    assert result[lens].before.w == pytest.approx(float(result[lens].after.w), rel=1e-12)
