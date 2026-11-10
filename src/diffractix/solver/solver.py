@@ -51,7 +51,7 @@ class Solver:
     """
 
     @dataclass(frozen=True)
-    class Callbacks:
+    class _Callbacks:
         objective: Callable
         gradient: Callable
         objective_hessian: Callable
@@ -62,8 +62,8 @@ class Solver:
 
 
     @dataclass
-    class SolverCache:
-        callbacks:                 Callbacks
+    class _SolverCache:
+        callbacks:                 _Callbacks
 
         objective_program:         Program
         objective_descriptors:     tuple[ObjectiveDescriptor, ...]
@@ -82,7 +82,7 @@ class Solver:
         output_indices:            tuple[int, ...] | None = None
         active_descriptors:        tuple[ConstraintDescriptor, ...] | None = None
 
-        reduced_callbacks:         Callbacks | None = None
+        reduced_callbacks:         _Callbacks | None = None
         constraint_lower:          np.ndarray | None = None
         constraint_upper:          np.ndarray | None = None
 
@@ -123,7 +123,7 @@ class Solver:
             if objectives:
                 raise ValueError("value cannot be combined with positional objectives.")
             if not (isinstance(value, Node) or callable(value)):
-                raise TypeError("value must be a graph expression or a callable accepting the solver context.")
+                raise TypeError("value must be a graph expression or a callable accepting the result.")
             if target is None:
                 raise ValueError("target must be specified when value is supplied.")
 
@@ -174,7 +174,7 @@ class Solver:
         x_upper=None,
     ) -> Solution:
         """Solve the inverse-design problem."""
-        n = len(self.simulation.optics_program.parameter_indices)
+        n = len(self.simulation._optics_program.parameter_indices)
         
         if n == 0:
             raise ValueError("Optimization problem must have at least one variable parameter.")
@@ -190,7 +190,7 @@ class Solver:
             raise TypeError("Solver constraints must contain only Constraint instances.")
         if not (
             self._objectives or self._constraints
-            or self.simulation.constraint_descriptors or self.simulation.callable_constraints
+            or self.simulation._constraint_descriptors or self.simulation._callable_constraints
         ):
             raise ValueError("Optimization problem must have at least one objective or constraint.")
 
@@ -280,7 +280,7 @@ class Solver:
     #-----------------
     def _finalize_constraints(self):
         """Align and fuse prepared constraints with the Simulation's constraints."""
-        tracer = SimulationResultTracer(self.simulation.element_data, self.simulation.optical_inputs[0].initial_state)
+        tracer = SimulationResultTracer(self.simulation.element_data, self.simulation._optical_inputs[0].initial_state)
 
         (
             solver_constraint_program, 
@@ -288,12 +288,12 @@ class Solver:
             callable_solver_constraints
         ) = prepare_constraints(self._constraints, tracer=tracer, bindings=self.simulation.bindings)
 
-        system_constraint_program = self.simulation.constraint_program
-        system_constraint_descriptors = self.simulation.constraint_descriptors
-        callable_system_constraints = self.simulation.callable_constraints
+        system_constraint_program = self.simulation._constraint_program
+        system_constraint_descriptors = self.simulation._constraint_descriptors
+        callable_system_constraints = self.simulation._callable_constraints
 
         # make both programs use the same parameter and runtime Symbol indices
-        parameter_indices = self.simulation.optics_program.parameter_indices
+        parameter_indices = self.simulation._optics_program.parameter_indices
         system_constraint_program = remap_parameters(system_constraint_program, parameter_indices)
         solver_constraint_program = remap_parameters(solver_constraint_program, parameter_indices)
 
@@ -326,11 +326,11 @@ class Solver:
 
     def _finalize_objectives(self):
         """Trace objectives and align their program with the Simulation's theta."""
-        tracer = SimulationResultTracer(self.simulation.element_data, self.simulation.optical_inputs[0].initial_state)
+        tracer = SimulationResultTracer(self.simulation.element_data, self.simulation._optical_inputs[0].initial_state)
         program, descriptors, callables = prepare_objectives(
             self._objectives, tracer=tracer, bindings=self.simulation.bindings,
         )
-        program = remap_parameters(program, self.simulation.optics_program.parameter_indices)
+        program = remap_parameters(program, self.simulation._optics_program.parameter_indices)
         return program, descriptors, callables
 
 
@@ -352,7 +352,7 @@ class Solver:
             jit=jit,
         )
 
-        return self.SolverCache(
+        return self._SolverCache(
             callbacks=callbacks,
             objective_program=objective_program,
             objective_descriptors=objective_descriptors,
@@ -473,7 +473,7 @@ class Solver:
         def checked_constraints(theta):
             return check_finite_value(full_constraints(theta), "Constraint vector")
 
-        callbacks = self.Callbacks(
+        callbacks = self._Callbacks(
             objective          = checked_objective,
             gradient           = backend_jit(objective_gradient)  if jit else objective_gradient,
             objective_hessian  = backend_jit(objective_hessian)   if jit else objective_hessian,
@@ -509,7 +509,7 @@ class Solver:
         multiplier_map = xp.asarray(np.eye(full_size)[active_rows])
         full = cache.callbacks
 
-        cache.reduced_callbacks = self.Callbacks(
+        cache.reduced_callbacks = self._Callbacks(
             objective=full.objective,
             gradient=full.gradient,
             objective_hessian=full.objective_hessian,

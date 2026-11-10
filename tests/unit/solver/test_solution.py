@@ -275,7 +275,7 @@ def two_parameter_solution(**bindings):
     for key, build in bindings.items():
         system.bind(key, build(first, second))
     solver = Solver(system)
-    indices = solver.simulation.optics_program.parameter_indices
+    indices = solver.simulation._optics_program.parameter_indices
     x = np.zeros(2)
     x[indices[id(first)]], x[indices[id(second)]] = 2., -3.
     solution, _ = make_solution(solver=solver, x=tuple(x))

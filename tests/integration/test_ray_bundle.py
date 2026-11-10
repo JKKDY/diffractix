@@ -42,7 +42,7 @@ def test_bundle_derivatives_match_analytical_lens_chain():
     d, f = Parameter(0.02).variable(), Parameter(0.1).variable()
     x, angle = xp.array([-0.001, 0.002]), xp.array([0.01, -0.02])
     simulation = System(Space(d=d), ThinLens(f=f), optical_input=RayBundle(x=x, theta=angle)).build()
-    mapping = simulation.optics_program.parameter_indices
+    mapping = simulation._optics_program.parameter_indices
     def actual(theta):
         return simulation.run(theta).final.vectors
     def expected(theta):

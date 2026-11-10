@@ -240,8 +240,8 @@ class SimulationResult:
         self.theta = xp.array(theta)
         self.parameter_data = tuple(parameter_data)
         self.element_data = tuple(element_data)
-        self.optical_stages = tuple(optical_stages)
-        self.optical_values = tuple(optical_values)
+        self._optical_stages = tuple(optical_stages)
+        self._optical_values = tuple(optical_values)
         self.z = z
         self.states = tuple(states)
 
@@ -257,7 +257,7 @@ class SimulationResult:
                 f"per element_data entry, got {len(self.states)} states and "
                 f"{len(self.element_data)} element_data entries."
             )
-        if len(self.optical_stages) != len(self.element_data):
+        if len(self._optical_stages) != len(self.element_data):
             raise ValueError("optical_stages and element_data must have the same length.")
         if len(self.theta) != len(self.parameter_data):
             raise ValueError("theta and parameter_data must have the same length.")

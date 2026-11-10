@@ -199,7 +199,7 @@ def test_generated_gaps_are_strictly_non_negative():
     distance = Parameter(0.1).variable(bounds=(0.01, 0.15))
     system = System(Space(d=distance), optical_input=source()).add(Plane(), z=0.2)
     simulation = system.build()
-    assert [entry.lower_bound for entry in simulation.constraint_descriptors] == [0, 0]
+    assert [entry.lower_bound for entry in simulation._constraint_descriptors] == [0, 0]
 
 
 def test_touching_thick_lenses_build_exactly():

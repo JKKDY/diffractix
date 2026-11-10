@@ -107,7 +107,7 @@ def test_system_callable_is_traced_at_build_and_not_retraced_by_solver():
     system.require(Constraint(constraint, label="system callable"))
     simulation = system.build()
     assert calls == [1]
-    assert simulation.callable_constraints == ()
+    assert simulation._callable_constraints == ()
     parameter.value = 0.3
     solver = Solver(simulation)
     program, descriptors, _ = solver._finalize_constraints()

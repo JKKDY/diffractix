@@ -125,7 +125,7 @@ def test_complex_optical_derivatives_against_central_differences():
         return xp.sum(values(theta)**2)
 
     theta = simulation.initial_values.values
-    indices = simulation.optics_program.parameter_indices
+    indices = simulation._optics_program.parameter_indices
     theta[indices[id(distance)]], theta[indices[id(focal_length)]] = 0.03, 0.12
     step = 1e-6
     differences = np.eye(2) * step

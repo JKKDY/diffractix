@@ -75,12 +75,12 @@ class Simulation:
     ):
         self.element_data = tuple(element_data)
         self.parameter_data = tuple(parameter_data)
-        self.callable_constraints = tuple(callable_constraints)
-        self.constraint_descriptors = tuple(constraint_descriptors)
-        self.constraint_program = constraint_program
-        self.optics_program = optics_program
-        self.optical_stages = tuple(optical_stages)
-        self.optical_inputs = tuple(optical_inputs)
+        self._callable_constraints = tuple(callable_constraints)
+        self._constraint_descriptors = tuple(constraint_descriptors)
+        self._constraint_program = constraint_program
+        self._optics_program = optics_program
+        self._optical_stages = tuple(optical_stages)
+        self._optical_inputs = tuple(optical_inputs)
         # TODO: Snapshot binding ASTs without losing their canonical theta associations.
         self.bindings = MappingProxyType(dict(bindings))
 
@@ -93,9 +93,9 @@ class Simulation:
         use as Solver objectives and constraints. It belongs to this simulation: use
         the one of the simulation you pass to the Solver.
         """
-        if len(self.optical_inputs) != 1:
+        if len(self._optical_inputs) != 1:
             raise ValueError("Simulation.symbolic requires exactly one optical input.")
-        return SimulationResultTracer(self.element_data, self.optical_inputs[0].initial_state)
+        return SimulationResultTracer(self.element_data, self._optical_inputs[0].initial_state)
 
     @cached_property
     def _initial_values(self):
@@ -107,24 +107,24 @@ class Simulation:
     @property
     def initial_values(self) -> InitialValues:
         """Return an independent editable copy of the build-time initial theta."""
-        return InitialValues(self._initial_values, self.optics_program.parameter_indices)
+        return InitialValues(self._initial_values, self._optics_program.parameter_indices)
 
     def run(self, theta=None) -> SimulationResult:
         """Evaluate the optics program once and propagate the numerical input."""
-        if len(self.optical_inputs) != 1:
+        if len(self._optical_inputs) != 1:
             raise ValueError("Simulation.run() requires exactly one optical input.")
         if theta is None:
             theta = self._initial_values
 
-        values = self.optics_program.evaluate(theta)
-        source = self.optical_inputs[0].construct(values)
+        values = self._optics_program.evaluate(theta)
+        source = self._optical_inputs[0].construct(values)
         state = source
         z = 0.0
 
         states = [state]
         positions = [z]
 
-        for step in self.optical_stages:
+        for step in self._optical_stages:
             A = values[step.matrix_indices[0][0]]
             B = values[step.matrix_indices[0][1]]
             C = values[step.matrix_indices[1][0]]
@@ -142,7 +142,7 @@ class Simulation:
             theta=theta,
             parameter_data=self.parameter_data,
             element_data=self.element_data,
-            optical_stages=self.optical_stages,
+            optical_stages=self._optical_stages,
             optical_values=values,
             z=xp.stack(positions),
             states=tuple(states),
@@ -161,13 +161,13 @@ class Simulation:
             divider = "-" * (sum(widths) + 4 * (len(widths) - 1))
             return [format_row(headers), divider, *(format_row(row) for row in rows)]
 
-        values = self.optics_program.evaluate(self._initial_values)
+        values = self._optics_program.evaluate(self._initial_values)
         has_paths = any(element.path for element in self.element_data)
         headers = ["#", "z [m]", "Type", "Label", *(["Path"] if has_paths else []), "L [m]", "n"]
         rows = []
         z = 0.0
 
-        for element, stage in zip(self.element_data, self.optical_stages):
+        for element, stage in zip(self.element_data, self._optical_stages):
             length = values[stage.length_index]
             n = values[stage.refractive_index_index]
             rows.append((
@@ -183,14 +183,14 @@ class Simulation:
 
         constraints = [
             (info.position, info.label or info.description)
-            for info in self.constraint_descriptors
+            for info in self._constraint_descriptors
         ]
         constraints.extend(
             (position, constraint.label or str(constraint))
-            for position, constraint in self.callable_constraints
+            for position, constraint in self._callable_constraints
         )
         constraints.sort(key=lambda item: item[0])
-        sources = ", ".join(type(item.initial_state).__name__ for item in self.optical_inputs) or "-"
+        sources = ", ".join(type(item.initial_state).__name__ for item in self._optical_inputs) or "-"
 
         lines = [
             "Compiled Simulation",

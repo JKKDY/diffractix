@@ -42,7 +42,7 @@ def test_stage_views_align_states_positions_and_metadata():
         assert view.z_end == result.z[index+1]
         info = result.element_data[index]
         assert info.element_id == id(element)
-        assert dict(zip(info.parameter_names, (result.optical_values[i] for i in info.parameter_indices))) == {"f": .1}
+        assert dict(zip(info.parameter_names, (result._optical_values[i] for i in info.parameter_indices))) == {"f": .1}
 
 
 def test_repeated_element_occurrences_select_distinct_boundary_pairs():
@@ -218,7 +218,7 @@ def test_malformed_subscript_tuple_is_rejected(key):
 ])
 def test_constructor_rejects_inconsistent_trace_metadata(change, message):
     source = make_result((object(),))
-    arguments = {name: getattr(source, name) for name in (
+    arguments = {name: getattr(source, "_" + name if name in ("optical_stages", "optical_values") else name) for name in (
         "theta", "parameter_data", "element_data", "optical_stages", "optical_values", "z", "states",
     )}
     arguments.update(change)
@@ -230,7 +230,7 @@ def test_result_snapshots_sequence_containers_and_theta_not_live_parameter_value
     source = make_result((object(),))
     theta = np.array([.2])
     parameters = [ParameterData(123, "f", .1, 0., 1., 0)]
-    elements, stages, states, values = list(source.element_data), list(source.optical_stages), list(source.states), [.1]
+    elements, stages, states, values = list(source.element_data), list(source._optical_stages), list(source.states), [.1]
     result = SimulationResult(theta=theta, parameter_data=parameters, element_data=elements,
                               optical_stages=stages, optical_values=values, z=source.z, states=states)
     theta[:] = .9
@@ -238,7 +238,7 @@ def test_result_snapshots_sequence_containers_and_theta_not_live_parameter_value
         sequence.clear()
     np.testing.assert_array_equal(result.theta, [.2])
     assert result.parameter_data[0].value == .1
-    assert len(result.element_data) == len(result.optical_stages) == len(result.optical_values) == 1
+    assert len(result.element_data) == len(result._optical_stages) == len(result._optical_values) == 1
     assert len(result.states) == 2
 
 

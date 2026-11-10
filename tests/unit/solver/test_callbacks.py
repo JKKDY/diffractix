@@ -33,7 +33,7 @@ def test_full_callbacks_match_analytical_values_and_derivatives(wrap_in_jit):
     callbacks, graph_rows, callable_rows = build_callbacks(solver)
     assert graph_rows == (range(0, 1), range(1, 3), range(3, 4))
     assert callable_rows == ()
-    indices = solver.simulation.optics_program.parameter_indices
+    indices = solver.simulation._optics_program.parameter_indices
     p, a = indices[id(position)], indices[id(angle)]
     theta = solver.simulation.initial_values.values
     gradient = np.empty(2)

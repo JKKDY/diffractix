@@ -48,13 +48,13 @@ def test_slab_parameter_wiring():
 @pytest.mark.parametrize("composite_type", [Slab, ThickLens])
 def test_refracting_composites_share_one_ambient_handle_on_both_surfaces(composite_type):
     default = composite_type(d=0.01, n=1.5)
-    assert default.n_ambient.node is AMBIENT_N
-    explicit = composite_type(d=0.01, n=1.5, n_ambient=1.33)
-    assert isinstance(explicit.n_ambient.node, Parameter)
+    assert default.ambient_n.node is AMBIENT_N
+    explicit = composite_type(d=0.01, n=1.5, ambient_n=1.33)
+    assert isinstance(explicit.ambient_n.node, Parameter)
     for composite in (default, explicit):
-        assert composite.front.n1.node is composite.n_ambient
-        assert composite.back.n2.node is composite.n_ambient
-    explicit.n_ambient = 1.4
+        assert composite.front.n1.node is composite.ambient_n
+        assert composite.back.n2.node is composite.ambient_n
+    explicit.ambient_n = 1.4
     assert explicit.front.n1.value == explicit.back.n2.value == pytest.approx(1.4)
 
 
@@ -174,7 +174,7 @@ def test_slab_aggregate_matrix_uses_physical_angle_and_returns_to_ambient(ambien
 def test_thick_lens_aggregate_matrix_matches_independent_surface_power(radii):
     thickness, index, ambient = 0.008, 1.52, 1.33
     first_radius, second_radius = radii
-    lens = ThickLens(d=thickness, n=index, R1=first_radius, R2=second_radius, n_ambient=ambient)
+    lens = ThickLens(d=thickness, n=index, R1=first_radius, R2=second_radius, ambient_n=ambient)
     entrance = np.array([[1.0, 0.0], [(ambient - index) / (index * first_radius), ambient / index]])
     drift = np.array([[1.0, thickness], [0.0, 1.0]])
     exit = np.array([[1.0, 0.0], [(index - ambient) / (ambient * second_radius), index / ambient]])
@@ -220,3 +220,27 @@ def test_shared_focal_parameter_has_one_degree_of_freedom_after_reassignment():
     focal_length.value = 0.15
     np.testing.assert_allclose([root.evaluate() for root in roots], [0.15, 0.45, 0.3])
     np.testing.assert_allclose(program.evaluate([0.2]), [0.2, 0.6, 0.4])
+
+
+@pytest.mark.parametrize("composite_type, kwargs", [
+    (Slab, dict(d=0.01, n=1.5)),
+    (ThickLens, dict(d=0.01, n=1.5)),
+    (Telescope, dict(f1=0.1, f2=0.2)),
+    (FourF, dict(f1=0.1, f2=0.2)),
+])
+def test_default_composite_labels_are_unique_and_explicit_labels_are_kept(composite_type, kwargs):
+    first, second = composite_type(**kwargs), composite_type(**kwargs)
+    assert first.label != second.label
+    assert first.label.startswith(composite_type.__name__)
+    named = composite_type(**kwargs, label="mine")
+    assert named.label == "mine"
+    assert all(part.label.startswith("mine") for part in named.leaf_elements)
+
+
+def test_inputs_get_unique_default_labels_but_numerical_copies_do_not():
+    from diffractix import Ray
+    first, second = Ray(x=0, theta=0, n=1), Ray(x=0, theta=0, n=1)
+    assert first.label != second.label and first.label.startswith("Ray")
+    assert Ray(x=0, theta=0, n=1, label="probe").label == "probe"
+    assert first.numeric().label == first.label
+    assert Ray.numerical_type()(x=0.0, theta=0.0, n=1.0).label is None

@@ -105,9 +105,9 @@ class Solution:
             callable_constraints=callable_constraints,
             constraint_descriptors=constraint_descriptors,
             constraint_program=constraint_program,
-            optics_program=simulation.optics_program,
-            optical_stages=simulation.optical_stages,
-            optical_inputs=simulation.optical_inputs,
+            optics_program=simulation._optics_program,
+            optical_stages=simulation._optical_stages,
+            optical_inputs=simulation._optical_inputs,
             bindings=simulation.bindings,
         )
 
@@ -175,7 +175,7 @@ class Solution:
                 f"Expected a Parameter or graph expression, got {type(quantity).__name__}."
             )
 
-        indices = self.simulation.optics_program.parameter_indices
+        indices = self.simulation._optics_program.parameter_indices
         bindings = self.simulation.bindings
         parameter_values = {pid: self.x[index] for pid, index in indices.items()}
         for node in walk_ast((quantity,), bindings):
@@ -235,8 +235,8 @@ class Solution:
     def constraints(self):
         results = []
         for position, entry, value in self._evaluate(
-            self.simulation.constraint_program, self.simulation.constraint_descriptors,
-            self.simulation.callable_constraints, "Constraint",
+            self.simulation._constraint_program, self.simulation._constraint_descriptors,
+            self.simulation._callable_constraints, "Constraint",
         ):
             margin = np.minimum(value - entry.lower_bound, entry.upper_bound - value)
             violation = np.maximum(-margin, 0.0)

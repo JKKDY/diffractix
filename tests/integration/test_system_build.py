@@ -34,8 +34,8 @@ def test_nested_composite_paths_shared_theta_and_absolute_gap():
     # The generated gap before the target depends on the relay length 2*distance.
     for value in (0.01, 0.02):
         guess[distance]=value
-        outputs=simulation.constraint_program.evaluate(guess.values)
-        gaps=[output for output,entry in zip(outputs,simulation.constraint_descriptors)
+        outputs=simulation._constraint_program.evaluate(guess.values)
+        gaps=[output for output,entry in zip(outputs,simulation._constraint_descriptors)
               if entry.lower_bound==0 and output==pytest.approx(0.05-2*value)]
         assert gaps, "generated gap constraint missing"
 
@@ -101,14 +101,14 @@ def test_explicit_element_index_must_match_incoming_medium(factory):
 def test_variable_explicit_index_becomes_a_continuity_equality(factory):
     index = Parameter(1.5).variable(bounds=(1.0, 2.0))
     simulation = System(factory(index), optical_input=Ray(x=0, theta=0, n=1)).build()
-    equalities = [entry for entry in simulation.constraint_descriptors
+    equalities = [entry for entry in simulation._constraint_descriptors
                   if entry.lower_bound == entry.upper_bound == 0]
     assert len(equalities) == 1 and "continuity" in equalities[0].label
     guess = simulation.initial_values
     for value, residual in ((1.5, 0.5), (1.0, 0.0)):
         guess[index] = value
-        outputs = simulation.constraint_program.evaluate(guess.values)
-        position = simulation.constraint_descriptors.index(equalities[0])
+        outputs = simulation._constraint_program.evaluate(guess.values)
+        position = simulation._constraint_descriptors.index(equalities[0])
         assert abs(outputs[position]) == pytest.approx(residual)
 
 
@@ -123,14 +123,14 @@ def test_requirement_order_survives_nested_and_repeated_components_without_mutat
     relay.window.body.require(Constraint(p,upper_bound=0.02,label="child"))
     original=(system.system_constraints,relay.constraints,relay.window.body.constraints)
     simulation=system.build()
-    named=[entry.label for entry in simulation.constraint_descriptors if entry.label]
+    named=[entry.label for entry in simulation._constraint_descriptors if entry.label]
     assert named[:3]==["system","composite","child"]
     assert named.count("child")==named.count("composite")==1
     assert len(simulation.parameter_data)==1
     assert len(simulation.element_data)==8
     assert (system.system_constraints,relay.constraints,relay.window.body.constraints)==original
     second=system.build()
-    assert len(second.constraint_descriptors)==len(simulation.constraint_descriptors)
+    assert len(second._constraint_descriptors)==len(simulation._constraint_descriptors)
 
 
 @pytest.mark.parametrize("variable",[False,True])
@@ -145,12 +145,12 @@ def test_negative_generated_gap_is_fixed_infeasibility_or_optimizable_constraint
             system.build()
         return
     simulation=system.build()
-    descriptors=simulation.constraint_descriptors
-    outputs=simulation.constraint_program.evaluate(simulation.initial_values.values)
+    descriptors=simulation._constraint_descriptors
+    outputs=simulation._constraint_program.evaluate(simulation.initial_values.values)
     assert any(value<entry.lower_bound for value,entry in zip(outputs,descriptors))
     guess=simulation.initial_values
     guess[upstream]=0.002
-    values=simulation.constraint_program.evaluate(guess.values)
+    values=simulation._constraint_program.evaluate(guess.values)
     assert all(entry.lower_bound<=value<=entry.upper_bound for value,entry in zip(values,descriptors))
 
 
@@ -160,7 +160,7 @@ def test_element_inspection_parameters_are_evaluated_expressions_not_live_fields
     simulation=System(element,optical_input=Ray(x=0,theta=0)).build()
     result=simulation.run([0.03])
     info=result.element_data[0]
-    parameters=dict(zip(info.parameter_names,[result.optical_values[i] for i in info.parameter_indices]))
+    parameters=dict(zip(info.parameter_names,[result._optical_values[i] for i in info.parameter_indices]))
     assert parameters["d"]==pytest.approx(0.06)
     assert "n" not in parameters
     element.d=0.9

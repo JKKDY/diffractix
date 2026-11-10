@@ -53,13 +53,13 @@ def make_simulation(roots=(), steps=(), *, source=None, field_indices=(), parame
 
 def test_constructor_owns_sequence_containers_and_retains_programs():
     simulation = make_simulation()
-    elements, parameters, sources, stages = [], [], list(simulation.optical_inputs), []
+    elements, parameters, sources, stages = [], [], list(simulation._optical_inputs), []
     descriptors = [ConstraintDescriptor(0, 0, 1, "graph", "bounded graph")]
     deferred = [(1, Constraint(lambda result: result.final.value, label="deferred"))]
     copied = Simulation(
         element_data=elements, parameter_data=parameters,
         callable_constraints=deferred, constraint_descriptors=descriptors,
-        constraint_program=simulation.constraint_program, optics_program=simulation.optics_program,
+        constraint_program=simulation._constraint_program, optics_program=simulation._optics_program,
         optical_stages=stages, optical_inputs=sources,
     )
     sources.clear()
@@ -69,13 +69,13 @@ def test_constructor_owns_sequence_containers_and_retains_programs():
     parameters.append(object())
     stages.append(object())
 
-    assert copied.optics_program is simulation.optics_program
-    assert copied.constraint_program is simulation.constraint_program
-    assert copied.element_data == copied.parameter_data == copied.optical_stages == ()
-    assert len(copied.optical_inputs) == len(copied.callable_constraints) == len(copied.constraint_descriptors) == 1
+    assert copied._optics_program is simulation._optics_program
+    assert copied._constraint_program is simulation._constraint_program
+    assert copied.element_data == copied.parameter_data == copied._optical_stages == ()
+    assert len(copied._optical_inputs) == len(copied._callable_constraints) == len(copied._constraint_descriptors) == 1
     assert all(isinstance(value, tuple) for value in (
-        copied.element_data, copied.parameter_data, copied.optical_inputs,
-        copied.optical_stages, copied.callable_constraints, copied.constraint_descriptors,
+        copied.element_data, copied.parameter_data, copied._optical_inputs,
+        copied._optical_stages, copied._callable_constraints, copied._constraint_descriptors,
     ))
 
 
@@ -91,13 +91,13 @@ def test_zero_stage_run_returns_an_independent_numerical_source():
     assert result.source.value == source.value == 3.0
     assert result.states == (result.source,)
     np.testing.assert_array_equal(result.z, [0.0])
-    assert result.optical_values == ()
+    assert result._optical_values == ()
 
 
 @pytest.mark.parametrize("count", [0, 2])
 def test_run_requires_exactly_one_optical_input(count):
     simulation = make_simulation()
-    simulation.optical_inputs = simulation.optical_inputs * count
+    simulation._optical_inputs = simulation._optical_inputs * count
 
     with pytest.raises(ValueError, match="exactly one optical input"):
         simulation.run()
@@ -116,13 +116,13 @@ def test_run_evaluates_the_program_once_and_obeys_noncontiguous_step_indices(mon
     monkeypatch.setattr(Program, "evaluate", counted)
     result = simulation.run()
 
-    assert len(calls) == 1 and calls[0][0] is simulation.optics_program
+    assert len(calls) == 1 and calls[0][0] is simulation._optics_program
     assert result.final.calls == ((30., 20., 40., 10., 1.5),)
     assert result.final.value == 237.5
     np.testing.assert_allclose(result.z, [0, .25])
-    assert result.optical_values == (10., 20., 1.5, .25, 30., 40.)
+    assert result._optical_values == (10., 20., 1.5, .25, 30., 40.)
     assert result.element_data is simulation.element_data
-    assert result.optical_stages is simulation.optical_stages
+    assert result._optical_stages is simulation._optical_stages
 
 
 def test_steps_propagate_sequentially_and_keep_zero_length_boundary_samples():
@@ -216,7 +216,7 @@ def test_native_roots_keep_wavelength_real_beside_complex_propagation_coefficien
     result = simulation.run(xp.array([.8e-6]))
 
     assert not np.iscomplexobj(result.source.wavelength)
-    assert np.iscomplexobj(result.optical_values[2])
+    assert np.iscomplexobj(result._optical_values[2])
     expected_q = .02j / (1 + (-1j*.8e-6/(np.pi*1e-6))*.02j)
     assert result.final.q == pytest.approx(expected_q)
     assert result.source.wavelength == result.final.wavelength == .8e-6
@@ -276,23 +276,23 @@ def test_source_and_optics_share_theta_with_analytical_derivatives_and_jit():
 def test_string_summary_reads_frozen_values_without_mutating_them():
     step = SimulationStep(((0, 1), (2, 3)), 4, 5)
     simulation = make_simulation((1., .1, 0., 1., .1, 1.), (step,))
-    before = simulation.optics_program.evaluate([])
+    before = simulation._optics_program.evaluate([])
 
     text = str(simulation)
 
     assert "Compiled Simulation" in text
     assert "Stage 0" in text and "CustomElement" in text
     assert "Total length: 0.1" in text and "Variables: 0" in text
-    assert simulation.optics_program.evaluate([]) == before
+    assert simulation._optics_program.evaluate([]) == before
 
 
 def test_summary_reconstructs_interleaved_constraint_declaration_order():
     simulation = make_simulation()
-    simulation.constraint_descriptors = (
+    simulation._constraint_descriptors = (
         ConstraintDescriptor(0, 0., 1., "first graph", "first"),
         ConstraintDescriptor(2, 0., 1., "last graph", "last"),
     )
-    simulation.callable_constraints = ((1, Constraint(lambda result: result.final.value, label="middle callable")),)
+    simulation._callable_constraints = ((1, Constraint(lambda result: result.final.value, label="middle callable")),)
 
     text = str(simulation)
 
@@ -316,6 +316,6 @@ def test_result_columns_are_existing_quantities_on_each_numerical_state():
 
 def test_symbolic_result_requires_exactly_one_optical_input():
     simulation = make_simulation()
-    simulation.optical_inputs = ()
+    simulation._optical_inputs = ()
     with pytest.raises(ValueError, match="exactly one optical input"):
         simulation.symbolic

@@ -87,7 +87,7 @@ def test_native_scipy_restores_partially_fixed_canonical_coordinates():
     angle = Parameter(0.1).variable(bounds=(-1, 1))
     solver = Solver(System(Space(d=1), optical_input=Ray(x=position, theta=angle, n=1)))
     solver.target(lambda sim: sim.final.x - 1)
-    indices = solver.simulation.optics_program.parameter_indices
+    indices = solver.simulation._optics_program.parameter_indices
     lower, upper = np.full(2, -1.), np.full(2, 1.)
     lower[indices[id(position)]] = upper[indices[id(position)]] = 0.2
     solution = solver.solve(x_lower=lower, x_upper=upper, options={"ftol": 1e-12})

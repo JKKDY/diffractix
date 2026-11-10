@@ -425,10 +425,10 @@ def test_build_handoff_retains_order_and_does_not_mutate_declarations():
     system = System(space, optical_input=source).require(graph_constraint, deferred)
     before_system, before_element = system.system_constraints, space.constraints
     first, second = system.build(), system.build()
-    assert [data.label for data in first.constraint_descriptors] == ["system limit", None]
-    assert [data.position for data in first.constraint_descriptors] == [0, 2]
-    assert first.callable_constraints[0][0] == 1 and first.callable_constraints[0][1] is deferred
-    assert len(first.constraint_descriptors) == len(second.constraint_descriptors)
+    assert [data.label for data in first._constraint_descriptors] == ["system limit", None]
+    assert [data.position for data in first._constraint_descriptors] == [0, 2]
+    assert first._callable_constraints[0][0] == 1 and first._callable_constraints[0][1] is deferred
+    assert len(first._constraint_descriptors) == len(second._constraint_descriptors)
     assert system.system_constraints == before_system and space.constraints == before_element
     assert space.d.node is distance and distance.value == 0.1 and distance.is_variable
 
