@@ -177,7 +177,7 @@ supported with broadcasting; every scale entry must be nonzero.
 For a bounded callable or two-sided constraint, use
 `Constraint(expression_or_callable, lower_bound=..., upper_bound=..., label=...)`.
 Bounds are inclusive; omitted bounds are infinite. Requirements can also be
-attached with `system.require(...)` and `element.require(...)` before build.
+attached with `system.require(...)` and `element.require(...)` before build; all `require` methods take `label=` to name a single comparison.
 System and element constraints are collected before Solver constraints. An
 unsatisfied variable constraint can be solved; an unsatisfiable constant fails.
 Variable Parameters used only by ordinary constraints cannot extend theta: they

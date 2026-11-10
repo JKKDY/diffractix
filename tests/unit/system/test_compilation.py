@@ -461,3 +461,28 @@ def test_metadata_holds_the_parameter_and_element_objects_it_indexes_by_id():
         held_parameters[0].parameter_id, held_parameters[0].name, held_parameters[0].value,
         held_parameters[0].lower_bound, held_parameters[0].upper_bound, held_parameters[0].parameter_index))
     assert program.parameter_indices == {held_parameters[0].parameter_id: 0}
+
+
+def test_require_label_names_a_single_comparison_on_systems_elements_and_composites():
+    distance = Parameter(0.05).variable(bounds=(0.01, 0.1))
+    space = Space(d=distance)
+    slab = Slab(d=0.01, n=1.5)
+    slab.d.variable(bounds=(0.001, 0.02))
+    system = System(space, slab, optical_input=Ray(x=0, theta=0, n=1))
+    assert system.require(distance >= 0.02, label="system limit") is system
+    space.require(distance <= 0.08, label="element limit")
+    slab.require(slab.d >= 0.005, label="composite limit")
+    labels = [entry.label for entry in system.build()._constraint_descriptors]
+    assert {"system limit", "element limit", "composite limit"} <= set(labels)
+
+
+@pytest.mark.parametrize("owner", ["system", "element"])
+def test_require_label_rejects_multiple_or_prebuilt_constraints_without_changing_state(owner):
+    distance = Parameter(0.05)
+    space = Space(d=distance)
+    target = System(space, optical_input=Ray(x=0, theta=0, n=1)) if owner == "system" else space
+    before = list(target._constraints)
+    for args in ((), (distance >= 0, distance <= 1), (Constraint(distance, lower_bound=0),)):
+        with pytest.raises(ValueError, match="label requires a single comparison"):
+            target.require(*args, label="ambiguous")
+    assert target._constraints == before

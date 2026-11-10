@@ -28,6 +28,7 @@ from .solution import DEFAULT_FEASIBILITY_TOLERANCE, Solution
 from .objective import Objective, normalize_to_objective, prepare_objectives
 from .constraint import (
     Constraint,
+    label_constraints,
     normalize_to_constraint,
     prepare_constraints,
     reduce_constraints,
@@ -175,13 +176,8 @@ class Solver:
         """Add hard optimization constraints; `label` names a single comparison."""
         if self._cache is not None:
             raise RuntimeError("The optimization model is fixed; create a new Solver.")
-        if label is not None and (len(constraints) != 1 or isinstance(constraints[0], Constraint)):
-            raise ValueError("label requires a single comparison.")
-
-        normalized = tuple(normalize_to_constraint(item) for item in constraints)
-        if label is not None:
-            normalized = (replace(normalized[0], label=label),)
-        self._constraints.extend(normalized)
+        constraints = label_constraints(constraints, label)
+        self._constraints.extend(tuple(normalize_to_constraint(item) for item in constraints))
         return self
 
     def solve(

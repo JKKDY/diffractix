@@ -301,8 +301,10 @@ class System:
             visit(placement.element)
         return tuple(constraints)
 
-    def require(self, *constraints):
-        self._constraints.extend(constraints)
+    def require(self, *constraints, label: str | None = None):
+        """Add constraints to the system; `label` names a single comparison."""
+        from diffractix.solver.constraint import label_constraints
+        self._constraints.extend(label_constraints(constraints, label))
         return self
 
 

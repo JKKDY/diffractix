@@ -135,9 +135,10 @@ class OpticalBase:
         """Constraints attached to this optical object."""
         return tuple(self._constraints)
 
-    def require(self, *constraints):
-        """Attach constraints to this optical object."""
-        self._constraints.extend(constraints)
+    def require(self, *constraints, label: str | None = None):
+        """Attach constraints to this optical object; `label` names a single comparison."""
+        from diffractix.solver.constraint import label_constraints
+        self._constraints.extend(label_constraints(constraints, label))
         return self
 
 

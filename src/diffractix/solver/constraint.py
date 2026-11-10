@@ -201,6 +201,15 @@ def normalize_to_constraint(value) -> Constraint:
     return Constraint(result, value.lower_bound, value.upper_bound, value.label)
 
 
+def label_constraints(constraints, label):
+    """Return constraints unchanged, or the single comparison as a Constraint named label."""
+    if label is None:
+        return tuple(constraints)
+    if len(constraints) != 1 or isinstance(constraints[0], Constraint):
+        raise ValueError("label requires a single comparison.")
+    return (replace(normalize_to_constraint(constraints[0]), label=label),)
+
+
 def prepare_constraints(constraints, *, tracer, bindings):
     """Trace and precompile constraints, retaining dynamic callables."""
     from diffractix.simulation.result import ResultSymbolKey
