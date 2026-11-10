@@ -186,7 +186,12 @@ Traceable callables become graph programs. Python branches depending on result
 values may fall back to numerical evaluation; a deferred callable must return a
 number or array, not a Node. Dynamic Python branches generally cannot be JIT
 compiled. Use `solver.solve(jit=False)` for those; do not expect JIT to silently
-fall back. Exceptions from user callables are not ignored.
+fall back. Under JAX such a callable fails with a `TypeError` that names `jit=False`.
+Exceptions from user callables are not ignored.
+
+Symbolic comparisons have no truth value, so a chained comparison `a < x < b`
+raises `SymbolicControlFlowError`; pass the two comparisons separately:
+`solver.require(x > a, x < b)`.
 
 ## Complete inverse-design example
 

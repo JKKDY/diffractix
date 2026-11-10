@@ -7,7 +7,9 @@ from dataclasses import dataclass, replace
 from typing import Callable
 
 import numpy as np
-from diffractix.backend import xp, grad, hessian, jacobian, require
+from contextlib import contextmanager
+
+from diffractix.backend import xp, grad, hessian, jacobian, require, tracing_errors
 from diffractix.backend import jit as backend_jit
 
 from diffractix.graph import (
@@ -32,6 +34,22 @@ from .constraint import (
 )
 from .problem import Problem
 from .optimizers import solve_ipopt, solve_nlopt, solve_scipy
+
+
+@contextmanager
+def _explain_tracing_errors(jit: bool):
+    """Add the jit=False hint to errors from callables that cannot be traced."""
+    try:
+        yield
+    except tracing_errors() as error:
+        if not jit:
+            raise
+        raise TypeError(
+            "A callable used a value that is unknown while JIT traces it (Python control "
+            "flow such as `if`, or float()/int()/np.asarray on a traced value). Pass "
+            "jit=False to solve() to evaluate it eagerly, or write the branch with "
+            f"xp.where (from diffractix.backend import xp). Original error: {str(error).splitlines()[0]}"
+        ) from error
 
 
 class Optimizer(str, Enum):
@@ -230,7 +248,8 @@ class Solver:
 
         jit = bool(jit)
         if self._cache is None or self._cache_jit != jit:
-            self._cache = self._build_cache(jit, initial_values)
+            with _explain_tracing_errors(jit):
+                self._cache = self._build_cache(jit, initial_values)
             self._cache_jit = jit
 
         cache = self._cache
@@ -265,7 +284,8 @@ class Solver:
             case Optimizer.NLOPT: solve = solve_nlopt
 
         scaled_problem = problem.scale()
-        result = solve(scaled_problem, method=method, options={} if options is None else options)
+        with _explain_tracing_errors(jit):
+            result = solve(scaled_problem, method=method, options={} if options is None else options)
         result = problem.scaling.unscale(result)
 
         return Solution(

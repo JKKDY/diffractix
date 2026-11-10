@@ -24,7 +24,9 @@ class Comparison:
 
     def __bool__(self):
         raise SymbolicControlFlowError(
-"Symbolic comparisons cannot be used as Python booleans."
+            "Symbolic comparisons cannot be used as Python booleans. A chained "
+            "comparison such as `a < x < b` is not supported; write the two "
+            "comparisons separately, e.g. solver.require(x > a, x < b)."
         )
 
     def __repr__(self):

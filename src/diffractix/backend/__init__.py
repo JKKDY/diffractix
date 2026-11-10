@@ -42,6 +42,7 @@ __all__ = [
     "hessian",
     "jit",
     "require",
+    "tracing_errors",
     "configure",
     "current_backend",
 ]
@@ -62,6 +63,8 @@ class _Backend:
     hessian: Callable[..., Any]
     jit: Callable[..., Any]
     require:Callable[[Any, str], None]
+    # Errors raised when a function uses a traced value where a concrete one is needed.
+    tracing_errors: tuple[type[BaseException], ...] = ()
 
 def configure(name: str) -> None:
     """Choose a backend before its first use; switching afterward is forbidden.
@@ -163,6 +166,11 @@ def _load_jax() -> _Backend:
         hessian=jax.hessian,
         jit=jax.jit,
         require=_jax_require,
+        tracing_errors=(
+            jax.errors.ConcretizationTypeError,
+            jax.errors.TracerArrayConversionError,
+            jax.errors.TracerIntegerConversionError,
+        ),
     )
 
 
@@ -233,6 +241,14 @@ def jit(fun: Callable[..., Any] | None = None, **kwargs: Any) -> Any:
         # Works with older JAX versions that do not support @jax.jit(options).
         return lambda f: _get_backend().jit(f, **kwargs)
     return _get_backend().jit(fun, **kwargs)
+
+
+def tracing_errors() -> tuple[type[BaseException], ...]:
+    """Exception types a function raises when JIT tracing cannot give it concrete values.
+
+    Empty under Autograd, which never traces abstractly.
+    """
+    return _get_backend().tracing_errors
 
 
 def require(condition: Any, message: str) -> None:
