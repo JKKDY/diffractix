@@ -81,7 +81,7 @@ been approved or implemented as a new contract.
   elements. It must match the incoming medium (or constrain variables to match).
   Interface alone declares a refractive transition. No explicit ABCD index means
   inheritance of the current medium.
-- solver/context.py is unused by the rewritten pipeline but remains exported.
+- solver/context.py (unused legacy module) was deleted with its exports.
   Removing it and its exports is a separate small cleanup, not a new API to test.
 - Fourth-order Autograd behavior is outside current release verification. Current
   optimizers use first/second derivatives. No workaround or blanket support promise

@@ -19,16 +19,8 @@ class OpticalElement(OpticalBase, ABC):
 
     label: str | None = None
 
-    # Static members
-    _instance_counts: ClassVar[dict[type, int]] = {}
-
     def __post_init__(self):
-        # Create a label if not explicitly set
-        if self.label is None:
-            cls = type(self)
-            num_instances = OpticalElement._instance_counts.get(cls, 0)
-            self.label = f"{cls.__name__}{num_instances + 1}"
-            OpticalElement._instance_counts[cls] = num_instances + 1
+        self._init_label(self.label)
 
 
     # ------------------

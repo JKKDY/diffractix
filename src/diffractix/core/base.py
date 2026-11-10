@@ -23,6 +23,7 @@ class OpticalBase:
     """
 
     _parameter_names: ClassVar[tuple[str, ...] | None] = None
+    _instance_counts: ClassVar[dict[type, int]] = {}
     
     def __new__(cls, *args, **kwargs):
         # use __new__ instead of __init__ so subclasses to have to call super().__init__ explicitely 
@@ -31,6 +32,22 @@ class OpticalBase:
         object.__setattr__(instance, "label", None)
         return instance
 
+    def __init__(self, label: str | None = None):
+        self._init_label(label)
+
+    def _init_label(self, label: str | None = None):
+        """Set the label, auto-numbering per class ('Slab1', 'Slab2', ...) when none is given.
+
+        A label already assigned to the instance is kept. Numerical copies
+        (internal states) are never numbered.
+        """
+        if label is None:
+            label = getattr(self, "label", None)
+        if label is None and not getattr(type(self), "_is_numerical", False):
+            count = OpticalBase._instance_counts.get(type(self), 0) + 1
+            OpticalBase._instance_counts[type(self)] = count
+            label = f"{type(self).__name__}{count}"
+        self.label = label
 
     # -------------------
     # PARAMETER DISCOVERY

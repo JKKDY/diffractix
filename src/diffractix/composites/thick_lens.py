@@ -20,19 +20,17 @@ class ThickLens(CompositeElement):
     n: Node
     R1: Node
     R2: Node
-    n_ambient: Node
+    ambient_n: Node
 
     def __init__(self, d: float, n: float, R1: float = np.inf, R2: float = np.inf,
-                 n_ambient: float | Node = AMBIENT_N, label: str = "ThickLens"):
+                 ambient_n: float | Node = AMBIENT_N, label: str | None = None):
+        super().__init__(label)
         self.d = d
         self.n = n
         self.R1 = R1
         self.R2 = R2
-        self.n_ambient = n_ambient
-        self.label = label
+        self.ambient_n = ambient_n
 
-        self.front = Interface(n1=self.n_ambient, n2=self.n, R=self.R1, label=f"{label}_front")
-        self.body = Space(d=self.d, n=self.n, label=f"{label}_body")
-        self.back = Interface(n1=self.n, n2=self.n_ambient, R=self.R2, label=f"{label}_back")
-
-        super().__init__()
+        self.front = Interface(n1=self.ambient_n, n2=self.n, R=self.R1, label=f"{self.label}_front")
+        self.body = Space(d=self.d, n=self.n, label=f"{self.label}_body")
+        self.back = Interface(n1=self.n, n2=self.ambient_n, R=self.R2, label=f"{self.label}_back")

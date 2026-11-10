@@ -48,13 +48,13 @@ resulting composition is a tuple snapshot; parameter handles remain live.
 
 ## Built-in structures and independent physics
 
-Slab(d,n,n_ambient=AMBIENT_N,label="Slab") contains front Interface, body Space,
+Slab(d,n,ambient_n=AMBIENT_N,label=None) contains front Interface, body Space,
 back Interface, with child names `front`, `body`, `back`. Its ambient symbol is
 resolved at build, not a hidden numeric 1.0. Both boundaries and body share the
 composite's stable handles. For ambient na and index n, the aggregate matrix is
 [[1,d*na/n],[0,1]], and it returns to na.
 
-ThickLens(d,n,R1=inf,R2=inf,n_ambient=AMBIENT_N,label="ThickLens") has the same
+ThickLens(d,n,R1=inf,R2=inf,ambient_n=AMBIENT_N,label=None) has the same
 front/body/back structure, with curvatures R1/R2 and index transitions. Compare
 its aggregate matrix to independently constructed refraction/drift matrices in
 the correct multiplication order. Infinite surfaces give the slab limit.

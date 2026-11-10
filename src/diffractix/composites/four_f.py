@@ -22,15 +22,13 @@ class FourF(CompositeElement):
     f1: Node
     f2: Node
 
-    def __init__(self, f1: float, f2: float, label: str = "4f_System"):
+    def __init__(self, f1: float, f2: float, label: str | None = None):
+        super().__init__(label)
         self.f1 = f1
         self.f2 = f2
-        self.label = label
 
-        self.input_space = Space(d=self.f1, label=f"{label}_In_Drift")
-        self.lens1 = ThinLens(f=self.f1, label=f"{label}_L1")
-        self.fourier_space = Space(d=self.f1 + self.f2, label=f"{label}_Fourier_Drift")
-        self.lens2 = ThinLens(f=self.f2, label=f"{label}_L2")
-        self.output_space = Space(d=self.f2, label=f"{label}_Out_Drift")
-
-        super().__init__()
+        self.input_space = Space(d=self.f1, label=f"{self.label}_In_Drift")
+        self.lens1 = ThinLens(f=self.f1, label=f"{self.label}_L1")
+        self.fourier_space = Space(d=self.f1 + self.f2, label=f"{self.label}_Fourier_Drift")
+        self.lens2 = ThinLens(f=self.f2, label=f"{self.label}_L2")
+        self.output_space = Space(d=self.f2, label=f"{self.label}_Out_Drift")

@@ -31,6 +31,7 @@ class RayBundle(ParaxialState):
     )
 
     def __post_init__(self):
+        super().__post_init__()
         if np.shape(self.x) != np.shape(self.theta):
             raise ValueError("x and theta must have matching shapes.")
         if len(np.shape(self.x)) != 1:

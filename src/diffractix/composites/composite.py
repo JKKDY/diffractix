@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
+from functools import cached_property
 
 from diffractix.core.base import OpticalBase
 from diffractix.elements.element import OpticalElement
@@ -11,7 +12,7 @@ class CompositeElement(OpticalBase, Sequence):
     Ordered collection of named optical elements.
 
     Node-annotated attributes define public composite parameters. Public
-    OpticalElement or CompositeElement attributes present when __init__ runs
+    OpticalElement or CompositeElement attributes present at first access
     define the ordered contents of the composite.
 
     Composite elements may contain other composites. Normal iteration exposes
@@ -21,36 +22,29 @@ class CompositeElement(OpticalBase, Sequence):
     # --------------
     # INITIALIZATION
     # --------------
-    def __init__(self):
-        super().__init__()
-
-        # gather constituent elements 
-        names, elements = [], []
-        for name, value in vars(self).items():
-            if not name.startswith("_") and isinstance(value, (OpticalElement, CompositeElement)):
-                names.append(name)
-                elements.append(value)
-
-        self._element_names = tuple(names)
-        self._elements = tuple(elements)
+    def __init__(self, label: str | None = None):
+        super().__init__(label)
 
     # --------------
     # ELEMENT ACCESS
     # --------------
+    @cached_property
+    def named_elements(self) -> tuple[tuple[str, OpticalElement | CompositeElement], ...]:
+        """Direct child elements paired with their attribute names, gathered on first access."""
+        return tuple(
+            (name, value) for name, value in vars(self).items()
+            if not name.startswith("_") and isinstance(value, (OpticalElement, CompositeElement))
+        )
+
     @property
     def elements(self) -> tuple[OpticalElement | CompositeElement, ...]:
         """Direct child elements in propagation order."""
-        return self._elements
+        return tuple(element for _, element in self.named_elements)
 
     @property
     def element_names(self) -> tuple[str, ...]:
         """Names of direct child elements in propagation order."""
-        return self._element_names
-
-    @property
-    def named_elements(self) -> tuple[tuple[str, OpticalElement | CompositeElement], ...]:
-        """Direct child elements paired with their attribute names."""
-        return tuple(zip(self.element_names, self.elements))
+        return tuple(name for name, _ in self.named_elements)
 
     @property
     def bindings(self):
@@ -97,13 +91,13 @@ class CompositeElement(OpticalBase, Sequence):
     # SEQUENCE INTERFACE
     # ------------------
     def __len__(self):
-        return len(self._elements)
+        return len(self.elements)
 
     def __iter__(self) -> Iterator[OpticalElement | CompositeElement]:
-        return iter(self._elements)
+        return iter(self.elements)
 
     def __getitem__(self, index):
-        return self._elements[index]
+        return self.elements[index]
 
     # -------
     # DISPLAY

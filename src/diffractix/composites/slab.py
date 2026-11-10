@@ -16,16 +16,14 @@ class Slab(CompositeElement):
 
     d: Node
     n: Node
-    n_ambient: Node
+    ambient_n: Node
 
-    def __init__(self, d: float, n: float, n_ambient: float | Node = AMBIENT_N, label: str = "Slab"):
+    def __init__(self, d: float, n: float, ambient_n: float | Node = AMBIENT_N, label: str | None = None):
+        super().__init__(label)
         self.d = d
         self.n = n
-        self.n_ambient = n_ambient
-        self.label = label
+        self.ambient_n = ambient_n
 
-        self.front = Interface(n1=self.n_ambient, n2=self.n, label=f"{label}_In")
-        self.body = Space(d=self.d, n=self.n, label=f"{label}_Body")
-        self.back = Interface(n1=self.n, n2=self.n_ambient, label=f"{label}_Out")
-
-        super().__init__()
+        self.front = Interface(n1=self.ambient_n, n2=self.n, label=f"{self.label}_In")
+        self.body = Space(d=self.d, n=self.n, label=f"{self.label}_Body")
+        self.back = Interface(n1=self.n, n2=self.ambient_n, label=f"{self.label}_Out")

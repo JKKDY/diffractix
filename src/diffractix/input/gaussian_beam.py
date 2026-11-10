@@ -67,6 +67,7 @@ class GaussianBeam(ParaxialState):
     )
 
     def __post_init__(self):
+        super().__post_init__()
         _require_q(self.q)
 
     def propagate(self, A, B, C, D, n) -> 'GaussianBeam':

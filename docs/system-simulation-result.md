@@ -168,27 +168,11 @@ result[lens].after.w
 
 ## Inspect the resolved optical system
 
-The result also carries the evaluated optical outputs and their metadata:
-
-```python
-i = 0
-element = result.element_data[i]
-step = result.optical_stages[i]
-values = result.optical_values
-
-parameters = {
-    name: values[index]
-    for name, index in zip(element.parameter_names, element.parameter_indices)
-}
-matrix = tuple(tuple(values[index] for index in row) for row in step.matrix_indices)
-length = values[step.length_index]
-outgoing_n = values[step.refractive_index_index]
-```
-
-`ElementData.parameter_indices` address optical outputs, not theta. They include
-fixed values and dependent expressions. Empty optional fields are omitted.
-Element labels and paths describe the resolved hierarchy, including generated
-Spaces; they do not reconstruct the original composite constructor arguments.
+`result.element_data` describes every resolved element (type, label, composite
+path, generated Spaces included), in propagation order. Element labels and paths
+describe the resolved hierarchy; they do not reconstruct the original composite
+constructor arguments. The evaluated optical outputs and compiled stages are
+internal.
 
 `result.theta` holds the values used for this run. `result.parameter_data` describes
 their indices; its `value` fields are build-time defaults, not updated run values.

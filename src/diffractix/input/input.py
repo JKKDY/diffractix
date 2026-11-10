@@ -37,6 +37,9 @@ class OpticalInput(OpticalBase):
 
     label: str | None = None
 
+    def __post_init__(self):
+        self._init_label(self.label)
+
     @classmethod
     def numerical_type(cls):
         """Return the cached class for direct numerical construction, including tracers.
