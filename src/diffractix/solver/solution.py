@@ -94,6 +94,7 @@ class Solution:
         self._objective_descriptors = tuple(objective_descriptors)
         self._callable_objectives = tuple(callable_objectives)
 
+        self._initial_x = tuple(info.value for info in simulation.parameter_data)
         parameters = tuple(
             replace(info, value=value, lower_bound=lower, upper_bound=upper)
             for info, value, lower, upper in zip(
@@ -271,3 +272,53 @@ class Solution:
     @property
     def feasible(self):
         return not self.violations
+
+    def __str__(self) -> str:
+        def render_table(headers, rows):
+            widths = [
+                max([len(header), *(len(row[i]) for row in rows)])
+                for i, header in enumerate(headers)
+            ]
+
+            def format_row(row):
+                return "    ".join(value.ljust(width) for value, width in zip(row, widths))
+
+            divider = "-" * (sum(widths) + 4 * (len(widths) - 1))
+            return [format_row(headers), divider, *(format_row(row) for row in rows)]
+
+        violations = self.violations
+        status = "converged" if self.success else "not converged"
+        feasibility = "feasible" if self.feasible else f"infeasible ({len(violations)} violated)"
+        counts = ", ".join(
+            f"{name}: {value}" for name, value in
+            (("iterations", self.iterations), ("function evaluations", self.function_evaluations))
+            if value is not None
+        )
+        lines = [
+            f"Solution: {status}, {feasibility}",
+            f"Cost: {self.cost:.4g}" + (f"    {counts}" if counts else ""),
+            f"Message: {self.message}",
+        ]
+
+        if self.simulation.parameter_data:
+            rows = [
+                (info.name or "-", f"{initial:.4g}", f"{value:.4g}",
+                 f"[{info.lower_bound:.4g}, {info.upper_bound:.4g}]")
+                for info, initial, value in zip(
+                    self.simulation.parameter_data, self._initial_x, self.x, strict=True)
+            ]
+            lines.extend(["", "Variables", "", *render_table(("Parameter", "Initial", "Solved", "Bounds"), rows)])
+
+        if self.objectives:
+            rows = [(entry.label or f"Objective {entry.position}", f"{entry.cost:.4g}") for entry in self.objectives]
+            lines.extend(["", "Objectives", "", *render_table(("Objective", "Cost"), rows)])
+
+        if self.constraints:
+            rows = [
+                (entry.label or entry.description, f"{float(np.min(entry.margin)):.4g}",
+                 "ok" if entry.satisfied else "VIOLATED")
+                for entry in self.constraints
+            ]
+            lines.extend(["", "Constraints", "", *render_table(("Constraint", "Margin", "Status"), rows)])
+
+        return "\n".join(lines)

@@ -358,3 +358,21 @@ def test_value_rejects_non_graph_quantities(quantity):
     solution, _, _ = two_parameter_solution()
     with pytest.raises(TypeError, match="Parameter or graph expression"):
         solution.value(quantity)
+
+
+def test_str_summarizes_status_variables_objectives_and_constraints():
+    from diffractix import Ray, Solver, Space, System, ThinLens
+    gap = Space(d=0.5)
+    gap.d.variable(bounds=(0, 1))
+    lens = ThinLens(f=0.1)
+    simulation = System(gap, lens, optical_input=Ray(x=1e-3, theta=1e-3, n=1)).build()
+    sim = simulation.symbolic
+    solver = Solver(simulation)
+    solver.target(value=sim[lens].after.x, target=0.0, label="focus")
+    solver.require(sim[lens].z_end <= 0.3, label="length")
+    solution = solver.solve()
+    text = str(solution)
+    assert text.startswith("Solution: converged, feasible")
+    for expected in ("Variables", "d", "0.5", "0.3", "Objectives", "focus", "Constraints", "length", "ok"):
+        assert expected in text
+    assert "VIOLATED" not in text
