@@ -234,7 +234,7 @@ def test_compilation_snapshots_values_membership_handles_and_binding_expressions
     system.bind("focal", expression)
     program, stages, _, parameters, metadata, _ = compile_optics(system)
     fixed.value = 9.0
-    variable.fixed().bound(0.1, 0.3)
+    variable.fixed().bounds = (0.1, 0.3)
     expression.right = Parameter(9.0)
     lens.f = 8.0
     system.bind("focal", 10.0)

@@ -135,7 +135,7 @@ def test_recursive_symbol_alias_cycle_does_not_poison_repaired_compilation():
 @pytest.mark.parametrize("variable", [False, True])
 @pytest.mark.parametrize("invalid_value", [np.nan, np.inf, -np.inf, 2.0])
 def test_compilation_defensively_rejects_mutated_bounded_parameter_values(compiler, variable, invalid_value):
-    parameter = Parameter(0.5, name="validated", variable=variable, lower_bound=0.0, upper_bound=1.0)
+    parameter = Parameter(0.5, name="validated", variable=variable, bounds=(0.0, 1.0))
     parameter.value = invalid_value
     with pytest.raises(ValueError, match="validated|parameter|Parameter"):
         compiler((parameter * 2,))
@@ -148,7 +148,7 @@ def test_compilation_defensively_rejects_mutated_bounded_parameter_values(compil
     ("lower_bound", 2.0, ValueError), ("upper_bound", -1.0, ValueError),
 ])
 def test_compilation_defensively_rejects_mutated_parameter_bounds(variable, field, value, error):
-    parameter = Parameter(0.5, name="validated", variable=variable, lower_bound=0.0, upper_bound=1.0)
+    parameter = Parameter(0.5, name="validated", variable=variable, bounds=(0.0, 1.0))
     setattr(parameter, field, value)
     with pytest.raises(error):
         compile_graph((parameter,))

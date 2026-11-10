@@ -314,8 +314,7 @@ class Parameter(Node):
         name: str | None = None,
         *,
         variable: bool = False,
-        lower_bound: float = -np.inf,
-        upper_bound: float = np.inf,
+        bounds: tuple[float | None, float | None] | None = None,
         owner: "OpticalElement | None" = None,
     ):
         if isinstance(value, bool) or not isinstance(value, Real):
@@ -326,22 +325,18 @@ class Parameter(Node):
         self.value = float(value)
         self.name = name
         self._is_variable = variable
-        self.bound(lower_bound, upper_bound)
+        self.lower_bound, self.upper_bound = -np.inf, np.inf
+        self.bounds = bounds
         self._owner = weakref.ref(owner) if owner is not None else None
 
     @property
     def is_variable(self) -> bool:
         return self._is_variable
 
-    def variable(self, lower_bound=None, upper_bound=None, *, bounds=None):
-        """Mark variable; None leaves an endpoint unchanged, infinities unbound it."""
+    def variable(self, *, bounds=None):
+        """Mark variable, optionally setting `bounds=(lower, upper)` (see `bounds`)."""
         if bounds is not None:
-            if lower_bound is not None or upper_bound is not None:
-                raise ValueError("bounds cannot be combined with lower_bound or upper_bound.")
-            lower_bound, upper_bound = bounds
-        lower_bound = self.lower_bound if lower_bound is None else lower_bound
-        upper_bound = self.upper_bound if upper_bound is None else upper_bound
-        self.bound(lower_bound, upper_bound)
+            self.bounds = bounds
         self._is_variable = True
         return self
 
@@ -364,7 +359,25 @@ class Parameter(Node):
         if lower_bound > upper_bound:
             raise ValueError("lower_bound must be <= upper_bound.")
 
-    def bound(self, lower_bound: float = -np.inf, upper_bound: float = np.inf):
+    @property
+    def bounds(self) -> tuple[float, float]:
+        """The interval `(lower, upper)`; infinities mean unbounded.
+
+        Assign `(lower, upper)` to change it. A `None` endpoint, or `None` for the
+        whole pair, keeps the current value; use `-np.inf`/`np.inf` to remove a bound.
+        """
+        return self.lower_bound, self.upper_bound
+
+    @bounds.setter
+    def bounds(self, bounds):
+        if bounds is None:
+            return
+        try:
+            lower_bound, upper_bound = bounds
+        except (TypeError, ValueError):
+            raise ValueError("bounds must be a (lower, upper) pair.") from None
+        lower_bound = self.lower_bound if lower_bound is None else lower_bound
+        upper_bound = self.upper_bound if upper_bound is None else upper_bound
         self._validate_bounds(lower_bound, upper_bound)
 
         if self.value < lower_bound or self.value > upper_bound:
@@ -375,7 +388,6 @@ class Parameter(Node):
 
         self.lower_bound = lower_bound
         self.upper_bound = upper_bound
-        return self
 
     @property
     def owner(self):

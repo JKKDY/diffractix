@@ -7,7 +7,7 @@ from diffractix import Parameter, Ray, Solver, Space, System
 
 
 def make_solver():
-    distance = Parameter(0.5).variable(lower_bound=0, upper_bound=1)
+    distance = Parameter(0.5).variable(bounds=(0, 1))
     solver = Solver(System(Space(d=distance), optical_input=Ray(x=0, theta=0, n=1)))
     solver.target(distance - 0.25)
     return solver

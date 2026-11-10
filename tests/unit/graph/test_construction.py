@@ -24,74 +24,62 @@ from diffractix.graph import (
 # ----------------
 # VARIABLE BOUNDS
 # ----------------
-def test_variable_bounds_pair_matches_existing_endpoints():
-    old = Parameter(5e-3).variable(lower_bound=4e-3, upper_bound=10e-3)
-    new = Parameter(5e-3)
-    assert new.variable(bounds=(4e-3, 10e-3)) is new
-    assert new.is_variable == old.is_variable
-    assert (new.lower_bound, new.upper_bound) == (old.lower_bound, old.upper_bound)
+def test_bounds_have_one_spelling_in_constructor_variable_and_property():
+    constructed = Parameter(5e-3, bounds=(4e-3, 10e-3))
+    marked = Parameter(5e-3)
+    assert marked.variable(bounds=(4e-3, 10e-3)) is marked and marked.is_variable
+    assigned = Parameter(5e-3)
+    assigned.bounds = (4e-3, 10e-3)
+    assert constructed.bounds == marked.bounds == assigned.bounds == (4e-3, 10e-3)
+    assert not constructed.is_variable and not assigned.is_variable
+    assert (marked.lower_bound, marked.upper_bound) == (4e-3, 10e-3)
 
 
 @pytest.mark.parametrize("bounds, expected", [
     ((None, 2.0), (0.5, 2.0)),
     ((0.0, None), (0.0, 1.5)),
     ((None, None), (0.5, 1.5)),
+    (None, (0.5, 1.5)),
     ((-np.inf, np.inf), (-np.inf, np.inf)),
 ])
-def test_variable_bounds_pair_ignores_none_and_accepts_infinite_endpoints(bounds, expected):
-    parameter = Parameter(1.0, lower_bound=0.5, upper_bound=1.5)
+def test_none_keeps_the_current_endpoint_and_infinities_remove_it(bounds, expected):
+    parameter = Parameter(1.0, bounds=(0.5, 1.5))
     parameter.variable(bounds=bounds)
-    assert (parameter.lower_bound, parameter.upper_bound) == expected
+    assert parameter.bounds == expected
+    other = Parameter(1.0, bounds=(0.5, 1.5))
+    other.bounds = bounds
+    assert other.bounds == expected
 
 
-@pytest.mark.parametrize("endpoints", [
-    {"lower_bound": 0.0}, {"upper_bound": 2.0},
-    {"lower_bound": -np.inf}, {"upper_bound": np.inf},
-    {"lower_bound": None, "upper_bound": 2.0},
-])
-def test_variable_bounds_pair_rejects_explicit_endpoints(endpoints):
+def test_variable_without_bounds_keeps_existing_bounds():
+    parameter = Parameter(1.0, bounds=(0.0, 2.0)).variable()
+    assert parameter.is_variable and parameter.bounds == (0.0, 2.0)
+
+
+def test_variable_accepts_bounds_only_by_keyword_and_has_no_endpoint_arguments():
     parameter = Parameter(1.0)
-    with pytest.raises(ValueError, match="bounds cannot be combined"):
-        parameter.variable(bounds=(0.0, 2.0), **endpoints)
-    assert not parameter.is_variable
-
-
-@pytest.mark.parametrize("endpoints", [
-    {"lower_bound": None}, {"upper_bound": None},
-    {"lower_bound": None, "upper_bound": None},
-])
-def test_variable_bounds_pair_ignores_none_endpoint_arguments(endpoints):
-    parameter = Parameter(1.0)
-    parameter.variable(bounds=(0.0, 2.0), **endpoints)
-    assert parameter.is_variable
-    assert (parameter.lower_bound, parameter.upper_bound) == (0.0, 2.0)
-
-
-def test_variable_none_bounds_argument_does_not_conflict_with_endpoints():
-    parameter = Parameter(1.0).bound(0.0, 2.0)
-    parameter.variable(bounds=None, lower_bound=-np.inf, upper_bound=np.inf)
-    assert (parameter.lower_bound, parameter.upper_bound) == (-np.inf, np.inf)
+    for call in (lambda: parameter.variable(0.0, 2.0), lambda: parameter.variable(lower_bound=0.0),
+                 lambda: parameter.variable(upper_bound=2.0), lambda: Parameter(1.0, lower_bound=0.0)):
+        with pytest.raises(TypeError):
+            call()
+    assert not hasattr(parameter, "bound")
 
 
 @pytest.mark.parametrize("bounds, error", [
     ((2.0, 0.0), ValueError), ((0.0, 0.5), ValueError),
     ((True, 2.0), TypeError), ((np.nan, 2.0), ValueError),
-    ((0.0,), ValueError), ((0.0, 1.0, 2.0), ValueError),
+    ((0.0,), ValueError), ((0.0, 1.0, 2.0), ValueError), (5.0, ValueError),
 ])
-def test_variable_bounds_pair_reuses_validation(bounds, error):
+def test_bounds_validation_is_atomic_for_every_spelling(bounds, error):
     parameter = Parameter(1.0)
     with pytest.raises(error):
         parameter.variable(bounds=bounds)
+    with pytest.raises(error):
+        parameter.bounds = bounds
+    with pytest.raises(error):
+        Parameter(1.0, bounds=bounds)
     assert not parameter.is_variable
-    assert (parameter.lower_bound, parameter.upper_bound) == (-np.inf, np.inf)
-
-
-def test_variable_legacy_none_and_positional_endpoints_are_preserved():
-    parameter = Parameter(1.0).bound(0.0, 2.0)
-    parameter.variable(lower_bound=None, upper_bound=None)
-    assert (parameter.lower_bound, parameter.upper_bound) == (0.0, 2.0)
-    parameter.variable(-1.0, 3.0)
-    assert (parameter.lower_bound, parameter.upper_bound) == (-1.0, 3.0)
+    assert parameter.bounds == (-np.inf, np.inf)
 
 
 # ---------------------------
@@ -260,73 +248,54 @@ def test_parameter_constructor_can_make_variable():
 
 
 def test_parameter_bounds():
-    """Bounds should be stored fluently and reject an inverted interval."""
+    """Bounds are stored as a pair and reject an inverted interval."""
     x = Parameter(10, name="x")
 
-    assert x.bound(5, 20) is x
+    x.bounds = (5, 20)
     assert x.lower_bound == 5
     assert x.upper_bound == 20
 
     with pytest.raises(ValueError):
-        x.bound(20, 5)
+        x.bounds = (20, 5)
 
 
 @pytest.mark.parametrize("bound", (True, "invalid"))
 def test_parameter_rejects_nonreal_bounds(bound):
     with pytest.raises(TypeError, match="bound"):
-        Parameter(1.0, lower_bound=bound)
+        Parameter(1.0, bounds=(bound, None))
 
     with pytest.raises(TypeError, match="bound"):
-        Parameter(1.0, upper_bound=bound)
+        Parameter(1.0, bounds=(None, bound))
 
 
 @pytest.mark.parametrize("bound", (np.nan,))
 def test_parameter_rejects_nan_bounds(bound):
     with pytest.raises(ValueError, match="NaN"):
-        Parameter(1.0, lower_bound=bound)
+        Parameter(1.0, bounds=(bound, None))
 
     with pytest.raises(ValueError, match="NaN"):
-        Parameter(1.0, upper_bound=bound)
+        Parameter(1.0, bounds=(None, bound))
 
 
 def test_parameter_allows_infinite_bounds():
-    parameter = Parameter(1.0, lower_bound=-np.inf, upper_bound=np.inf)
+    parameter = Parameter(1.0, bounds=(-np.inf, np.inf))
 
     assert parameter.lower_bound == -np.inf
     assert parameter.upper_bound == np.inf
 
 
 def test_parameter_variable_validates_and_preserves_bounds_atomically():
-    parameter = Parameter(1.0, lower_bound=0.0, upper_bound=2.0)
+    parameter = Parameter(1.0, bounds=(0.0, 2.0))
 
     with pytest.raises(ValueError, match="lower_bound"):
-        parameter.variable(lower_bound=2.0, upper_bound=0.0)
+        parameter.variable(bounds=(2.0, 0.0))
 
     assert not parameter.is_variable
     assert parameter.lower_bound == 0.0
     assert parameter.upper_bound == 2.0
 
     with pytest.raises(TypeError, match="lower_bound"):
-        parameter.variable(lower_bound=True)
-
-
-@pytest.mark.parametrize("method", ("bound", "variable"))
-@pytest.mark.parametrize(
-    ("kwargs", "exception"),
-    (
-        ({"lower_bound": np.nan}, ValueError),
-        ({"upper_bound": "invalid"}, TypeError),
-    ),
-)
-def test_parameter_bound_operations_reject_invalid_proposed_bounds(
-    method,
-    kwargs,
-    exception,
-):
-    parameter = Parameter(1.0)
-
-    with pytest.raises(exception):
-        getattr(parameter, method)(**kwargs)
+        parameter.variable(bounds=(True, None))
 
 
 def test_parameter_without_name():
@@ -723,7 +692,7 @@ def test_comparison_repr_contains_unambiguous_relation(relation, symbol):
     assert f" {symbol} " in repr(comparison)
 
 
-@pytest.mark.parametrize("bounds", [{}, {"lower_bound": 0, "upper_bound": 1}])
+@pytest.mark.parametrize("bounds", [{}, {"bounds": (0, 1)}])
 @pytest.mark.parametrize("variable", [False, True])
 @pytest.mark.parametrize("name", [None, "invalid"])
 def test_parameter_rejects_nan_at_construction(bounds, variable, name):

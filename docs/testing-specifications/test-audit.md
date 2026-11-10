@@ -82,7 +82,7 @@ access) is a policy choice; see Q1.
 
 ### B3. `Parameter` accepts NaN at construction
 
-`Parameter(np.nan)` and `Parameter(np.nan, lower_bound=0, upper_bound=1)` both
+`Parameter(np.nan)` and `Parameter(np.nan, bounds=(0, 1))` both
 construct successfully. By contrast `Parameter(True)`, `Parameter(1j)`, `Parameter("x")`
 and out-of-bounds values are rejected immediately. NaN is caught only later, at
 compilation. NaN comparisons are always false, so the bounds check misses it.
