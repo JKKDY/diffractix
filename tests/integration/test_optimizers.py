@@ -11,7 +11,7 @@ from tests.helpers.optimization import constrained_problem, quadratic_problem
 
 @pytest.mark.scipy
 def test_variable_constraint_scaling_scipy_constrained_quadratic():
-    from diffractix.solver.backends.scipy import solve_scipy
+    from diffractix.solver.optimizers.scipy import solve_scipy
 
     # Project the unconstrained optimum [2, 1] onto x[0] + x[1] >= 4.
     problem = replace(constrained_problem(), constraint_lower=np.array([4.0]))
@@ -29,7 +29,7 @@ def test_variable_constraint_scaling_scipy_constrained_quadratic():
 @pytest.mark.scipy
 def test_real_scipy_backend_smoke():
     pytest.importorskip("scipy")
-    from diffractix.solver.backends.scipy import solve_scipy
+    from diffractix.solver.optimizers.scipy import solve_scipy
 
     result = solve_scipy(
         quadratic_problem(),
@@ -46,7 +46,7 @@ def test_real_scipy_backend_smoke():
 def test_real_nlopt_backend_smoke():
     pytest.importorskip("nlopt")
     backend = importlib.reload(
-        importlib.import_module("diffractix.solver.backends.nlopt")
+        importlib.import_module("diffractix.solver.optimizers.nlopt")
     )
 
     problem = replace(constrained_problem(), constraint_lower=np.array([4.0]))
@@ -68,7 +68,7 @@ def test_real_nlopt_backend_smoke():
 def test_real_ipopt_backend_smoke():
     pytest.importorskip("cyipopt")
     backend = importlib.reload(
-        importlib.import_module("diffractix.solver.backends.ipopt")
+        importlib.import_module("diffractix.solver.optimizers.ipopt")
     )
 
     problem = replace(constrained_problem(), constraint_lower=np.array([4.0]))
@@ -90,7 +90,7 @@ def test_real_ipopt_backend_smoke():
 @pytest.mark.parametrize("method", ["SLSQP", "trust-constr"])
 def test_native_scipy_solves_scaled_mixed_equality_and_inequality_constraints(method):
     from diffractix.solver.problem import Problem
-    from diffractix.solver.backends.scipy import solve_scipy
+    from diffractix.solver.optimizers.scipy import solve_scipy
 
     # Projection onto sum >= 4 and difference == 1 is uniquely (2.5, 1.5).
     problem = Problem(
@@ -116,7 +116,7 @@ def test_native_scipy_solves_scaled_mixed_equality_and_inequality_constraints(me
 
 @pytest.mark.scipy
 def test_native_iteration_limit_is_reported_as_unsuccessful_result():
-    from diffractix.solver.backends.scipy import solve_scipy
+    from diffractix.solver.optimizers.scipy import solve_scipy
     result = solve_scipy(quadratic_problem(), method="SLSQP", options={"maxiter": 1})
     assert not result.success
     assert "iteration" in result.message.lower()

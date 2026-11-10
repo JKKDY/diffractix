@@ -1,4 +1,4 @@
-from .solver import Backend, Solver
+from .solver import Optimizer, Solver
 from .solution import DEFAULT_FEASIBILITY_TOLERANCE, Solution
 from .solution import SolverResult
 from .constraint import Constraint
@@ -6,7 +6,7 @@ from .objective import Objective
 
 __all__ = [
     "Solver",
-    "Backend",
+    "Optimizer",
     "Solution",
     "DEFAULT_FEASIBILITY_TOLERANCE",
     "SolverResult",

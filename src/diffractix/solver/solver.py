@@ -31,11 +31,11 @@ from .constraint import (
     reduce_constraints,
 )
 from .problem import Problem
-from .backends import solve_ipopt, solve_nlopt, solve_scipy
+from .optimizers import solve_ipopt, solve_nlopt, solve_scipy
 
 
-class Backend(str, Enum):
-    """Optimization backends supported by :class:`Solver`."""
+class Optimizer(str, Enum):
+    """Optimization libraries supported by :class:`Solver`; strings such as "scipy" are accepted too."""
 
     IPOPT = "ipopt"
     SCIPY = "scipy"
@@ -164,9 +164,10 @@ class Solver:
 
     def solve(
         self,
-        backend: Backend = Backend.SCIPY,
+        *,
+        optimizer: Optimizer | str = Optimizer.SCIPY,
         method=None,
-        options: dict = {},
+        options: dict | None = None,
         feasibility_tolerance: float = DEFAULT_FEASIBILITY_TOLERANCE,
         jit: bool = True,
         x0=None,
@@ -175,7 +176,11 @@ class Solver:
     ) -> Solution:
         """Solve the inverse-design problem."""
         n = len(self.simulation._optics_program.parameter_indices)
-        
+        try:
+            optimizer = Optimizer(optimizer.lower() if isinstance(optimizer, str) else optimizer)
+        except ValueError:
+            choices = ", ".join(repr(item.value) for item in Optimizer)
+            raise ValueError(f"Unsupported optimizer {optimizer!r}; choose one of {choices}.") from None
         if n == 0:
             raise ValueError("Optimization problem must have at least one variable parameter.")
         if isinstance(feasibility_tolerance, bool) or not isinstance(feasibility_tolerance, Real):
@@ -254,14 +259,13 @@ class Solver:
             constraint_upper=cache.constraint_upper
         )
 
-        match backend:
-            case Backend.IPOPT: solve = solve_ipopt
-            case Backend.SCIPY: solve = solve_scipy
-            case Backend.NLOPT: solve = solve_nlopt
-            case _: raise ValueError(f"Unsupported backend: {backend}")
+        match optimizer:
+            case Optimizer.IPOPT: solve = solve_ipopt
+            case Optimizer.SCIPY: solve = solve_scipy
+            case Optimizer.NLOPT: solve = solve_nlopt
 
         scaled_problem = problem.scale()
-        result = solve(scaled_problem, method=method, options=options)
+        result = solve(scaled_problem, method=method, options={} if options is None else options)
         result = problem.scaling.unscale(result)
 
         return Solution(

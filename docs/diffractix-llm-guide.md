@@ -212,9 +212,9 @@ print("focal length [m]:", solution.value(lens.f))  # approximately 0.1
 print("image position [m]:", solution.run()[image].after.x)  # approximately 0
 ```
 
-`solve()` defaults to `Backend.SCIPY`, method SLSQP and `jit=True`; pass
+`solve()` takes keyword-only arguments. `optimizer` is an `Optimizer` or its name (`"scipy"`, `"ipopt"`, `"nlopt"`); it defaults to SciPy with method SLSQP and `jit=True`; pass
 `jit=False` for eager evaluation. Methods `"SLSQP"` and `"trust-constr"` are
-supported by SciPy. `Backend.IPOPT` and `Backend.NLOPT` need optional packages.
+supported by SciPy. `"ipopt"` and `"nlopt"` need optional packages.
 Pass native options with `options={...}`. Optional `x0`, `x_lower`, `x_upper`
 use the Simulation's canonical theta order and apply to that solve only.
 `feasibility_tolerance` controls reported feasibility. Bounds and initial values

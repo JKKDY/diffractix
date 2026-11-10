@@ -8,7 +8,7 @@ from dataclasses import replace
 from types import ModuleType, SimpleNamespace
 import numpy as np
 import pytest
-from diffractix.solver import Backend, SolverResult, Solution, Solver
+from diffractix.solver import Optimizer, SolverResult, Solution, Solver
 from diffractix.solver.problem import Problem
 from diffractix.graph import Parameter
 from tests.helpers.optimization import make_constrained_problem, make_problem, make_scaling_problem
@@ -41,7 +41,7 @@ def import_fake_cyipopt_backend(monkeypatch):
     fake_cyipopt.Problem = FakeProblem
     monkeypatch.setitem(sys.modules, "cyipopt", fake_cyipopt)
 
-    backend = importlib.import_module("diffractix.solver.backends.ipopt")
+    backend = importlib.import_module("diffractix.solver.optimizers.ipopt")
     monkeypatch.setattr(backend, "cyipopt", fake_cyipopt)
     return backend, fake_cyipopt, solvers
 
@@ -133,7 +133,7 @@ def import_fake_nlopt_backend(monkeypatch):
     fake_nlopt.opt = FakeOpt
     monkeypatch.setitem(sys.modules, "nlopt", fake_nlopt)
 
-    backend = importlib.import_module("diffractix.solver.backends.nlopt")
+    backend = importlib.import_module("diffractix.solver.optimizers.nlopt")
     monkeypatch.setattr(backend, "nlopt", fake_nlopt)
     return backend, fake_nlopt, optimizers
 
@@ -141,9 +141,9 @@ def import_fake_nlopt_backend(monkeypatch):
 @pytest.mark.parametrize(
     ("backend", "function_name", "method", "options"),
     [
-        (Backend.SCIPY, "solve_scipy", "SLSQP", {"maxeval": 100}),
-        (Backend.IPOPT, "solve_ipopt", None, {"maxeval": 100}),
-        (Backend.NLOPT, "solve_nlopt", "LD_SLSQP", {"maxeval": 100}),
+        (Optimizer.SCIPY, "solve_scipy", "SLSQP", {"maxeval": 100}),
+        (Optimizer.IPOPT, "solve_ipopt", None, {"maxeval": 100}),
+        (Optimizer.NLOPT, "solve_nlopt", "LD_SLSQP", {"maxeval": 100}),
         pytest.param(None, "solve_scipy", None, None, id="default-scipy"),
     ],
 )
@@ -175,7 +175,7 @@ def test_solver_dispatch_matrix_forwards_options(
 
     solution = (
         solver.solve() if backend is None
-        else solver.solve(backend, method=method, options=options)
+        else solver.solve(optimizer=backend, method=method, options=options)
     )
     assert isinstance(solution, Solution)
     np.testing.assert_array_equal(solution.x, [1.5])
@@ -198,7 +198,7 @@ def test_solver_dispatch_matrix_forwards_options(
     ],
 )
 @pytest.mark.parametrize("options", [None, {"value": 1}])
-def test_lazy_backend_entry_point_matrix(
+def test_lazy_optimizer_entry_point_matrix(
     monkeypatch,
     entry_point,
     backend_module,
@@ -209,7 +209,7 @@ def test_lazy_backend_entry_point_matrix(
     import sys
     from types import ModuleType
 
-    from diffractix.solver import backends
+    from diffractix.solver import optimizers
 
     received = {}
 
@@ -217,27 +217,27 @@ def test_lazy_backend_entry_point_matrix(
         received.update(problem=problem, method=method, options=options)
         return "result"
 
-    module_name = f"diffractix.solver.backends.{backend_module}"
+    module_name = f"diffractix.solver.optimizers.{backend_module}"
     module = ModuleType(module_name)
     setattr(module, function_name, solve)
     monkeypatch.setitem(sys.modules, module_name, module)
-    monkeypatch.setattr(backends, "_require_package", lambda *args: None)
-    assert getattr(backends, entry_point)("problem", method, options) == "result"
+    monkeypatch.setattr(optimizers, "_require_package", lambda *args: None)
+    assert getattr(optimizers, entry_point)("problem", method, options) == "result"
     assert received == {"problem": "problem", "method": method, "options": {} if options is None else options}
     assert received["options"] is not options
 
 
 @pytest.mark.parametrize("entry,extra", [("solve_ipopt", "ipopt"), ("solve_nlopt", "nlopt")])
-def test_lazy_backend_reports_missing_optional_dependency(monkeypatch, entry, extra):
-    from diffractix.solver import backends
+def test_lazy_optimizer_reports_missing_optional_dependency(monkeypatch, entry, extra):
+    from diffractix.solver import optimizers
 
     def missing(package):
         raise ImportError(package)
 
-    monkeypatch.setattr(backends, "import_module", missing)
+    monkeypatch.setattr(optimizers, "import_module", missing)
 
     with pytest.raises(ImportError, match=rf"diffractix\[{extra}\]"):
-        getattr(backends, entry)("problem")
+        getattr(optimizers, entry)("problem")
 
 
 def fake_result(**updates):
@@ -253,7 +253,7 @@ def fake_result(**updates):
 
 
 def test_scipy_trust_constr_constructs_native_call(monkeypatch):
-    from diffractix.solver.backends import scipy as backend
+    from diffractix.solver.optimizers import scipy as backend
 
     problem = make_constrained_problem()
     captured = {"nonlinear_constraints": []}
@@ -316,7 +316,7 @@ def test_scipy_trust_constr_constructs_native_call(monkeypatch):
 
 
 def test_scipy_subset_hessians_expand_scaled_multipliers_in_original_order(monkeypatch):
-    from diffractix.solver.backends import scipy as backend
+    from diffractix.solver.optimizers import scipy as backend
 
     # The middle row is a nonlinear equality; rows 0 and 2 are inequalities.
     physical = replace(
@@ -347,7 +347,7 @@ def test_scipy_subset_hessians_expand_scaled_multipliers_in_original_order(monke
 
 @pytest.mark.parametrize("equalities", (True, False))
 def test_scipy_omits_empty_constraint_subsets(monkeypatch, equalities):
-    from diffractix.solver.backends import scipy as backend
+    from diffractix.solver.optimizers import scipy as backend
 
     problem = make_constrained_problem()
     lower = np.array([2.0, 3.0, 4.0, 5.0])
@@ -372,7 +372,7 @@ def test_scipy_omits_empty_constraint_subsets(monkeypatch, equalities):
 
 
 def test_scipy_slsqp_uses_first_derivatives_only(monkeypatch):
-    from diffractix.solver.backends import scipy as backend
+    from diffractix.solver.optimizers import scipy as backend
 
     captured = {}
 
@@ -389,8 +389,8 @@ def test_scipy_slsqp_uses_first_derivatives_only(monkeypatch):
 
 
 def test_scipy_unconstrained_problem_registers_no_constraints(monkeypatch):
-    from diffractix.solver.backends import scipy as backend
-    from diffractix.solver.backends.scipy import DEFAULT_METHOD
+    from diffractix.solver.optimizers import scipy as backend
+    from diffractix.solver.optimizers.scipy import DEFAULT_METHOD
 
     captured = {}
 
@@ -408,14 +408,14 @@ def test_scipy_unconstrained_problem_registers_no_constraints(monkeypatch):
 
 
 def test_scipy_rejects_unknown_method():
-    from diffractix.solver.backends import scipy as backend
+    from diffractix.solver.optimizers import scipy as backend
 
     with pytest.raises(ValueError, match="Unsupported SciPy method"):
         backend.solve_scipy(make_problem(), method="DOES_NOT_EXIST")
 
 
 def test_scipy_standardizes_result(monkeypatch):
-    from diffractix.solver.backends import scipy as backend
+    from diffractix.solver.optimizers import scipy as backend
 
     raw = fake_result(
         x=np.array([0.25]),
@@ -779,3 +779,32 @@ assert 'cyipopt' not in sys.modules
 assert 'nlopt' not in sys.modules
 print('lazy')
 """, "autograd") == "lazy"
+
+
+@pytest.mark.parametrize("name, function_name", [
+    ("scipy", "solve_scipy"), ("SciPy", "solve_scipy"), ("ipopt", "solve_ipopt"), ("nlopt", "solve_nlopt"),
+])
+def test_optimizer_can_be_selected_by_name(monkeypatch, name, function_name):
+    from diffractix.solver import solver as solver_module
+    parameter = Parameter(1.0).variable(bounds=(0.0, 2.0))
+    solver = Solver(System(optical_input=Ray(x=parameter, theta=0, n=1))).target(parameter - 1.0)
+    called = []
+
+    def fake(problem, method=None, options=None):
+        called.append(function_name)
+        return SolverResult(x=np.zeros(1), success=True, cost=0.0, message="ok", scaling=problem.scaling)
+
+    monkeypatch.setattr(solver_module, function_name, fake)
+    solver.solve(optimizer=name)
+    assert called == [function_name]
+
+
+def test_unknown_optimizer_is_rejected_with_the_choices_and_solve_is_keyword_only():
+    parameter = Parameter(1.0).variable(bounds=(0.0, 2.0))
+    solver = Solver(System(optical_input=Ray(x=parameter, theta=0, n=1))).target(parameter - 1.0)
+    with pytest.raises(ValueError, match="'scipy', 'ipopt', 'nlopt'|choose one of"):
+        solver.solve(optimizer="gradient-descent")
+    with pytest.raises(ValueError, match="Unsupported optimizer"):
+        solver.solve(optimizer=None)
+    with pytest.raises(TypeError):
+        solver.solve(Optimizer.SCIPY)

@@ -53,7 +53,7 @@ from .simulation import (
 # Inverse design
 from .solver import (
     Solver,
-    Backend,
+    Optimizer,
     Objective,
     Constraint,
     Solution,
@@ -101,7 +101,7 @@ __all__ = [
 
     # Inverse design
     "Solver",
-    "Backend",
+    "Optimizer",
     "Objective",
     "Constraint",
     "Solution",

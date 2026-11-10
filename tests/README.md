@@ -42,6 +42,6 @@ Standalone numerical propagation fixtures use `numeric()` or `numerical_type()`;
 `System` itself only accepts declarative inputs. Examples are not executed by
 pytest; `scripts/run_examples.py` runs them separately.
 
-Real IPOPT tests use `pytest.importorskip("cyipopt")`; real NLopt tests use `pytest.importorskip("nlopt")`. Missing optional packages skip only their real backend tests, not mocked adapters or the rest of the integration suite. Backend markers select real optimizer tests; unit adapter tests are selected by directory.
+Real IPOPT tests use `pytest.importorskip("cyipopt")`; real NLopt tests use `pytest.importorskip("nlopt")`. Missing optional packages skip only their real optimizer tests, not mocked adapters or the rest of the integration suite. Optimizer markers select real optimizer tests; unit adapter tests are selected by directory.
 
 Pytest discovers only `tests/`, excluding archived suites. Importlib mode permits matching filenames in the unit and integration directories.

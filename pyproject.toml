@@ -53,7 +53,7 @@ Issues = "https://github.com/JKKDY/diffractix/issues"
 #   python -m pip install -e ".[jax]"                # Base + JAX (auto prefers JAX)
 #   python -m pip install -e ".[dev]"                # Base + test dependencies
 #   python -m pip install -e ".[dev,jax]"            # JAX + test dependencies
-#   python -m pip install -e ".[all-solvers]"        # Optional solver backends
+#   python -m pip install -e ".[all-solvers]"        # Optional solver optimizers
 #   python -m pip install -e ".[dev,jax,all-solvers]"  # Everything
 #   python -m pip install -e ".[dev,all-solvers]"    # Test + solvers, without requiring JAX
 #
