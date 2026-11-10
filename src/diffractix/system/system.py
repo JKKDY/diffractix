@@ -16,7 +16,7 @@ from diffractix.elements import OpticalElement, Interface, Space, GaussianApertu
 from diffractix.core import OpticalBase
 from diffractix.graph import (
     Node, Parameter, Literal, InputNode, Symbol, compile_graph, precompile,
-    walk_ast, evaluate_ast, Scalar,
+    walk_ast, evaluate_ast, clone_ast, Scalar,
 )
 from diffractix.simulation.simulation import Simulation
 from diffractix.simulation.result import SimulationResultTracer
@@ -626,7 +626,13 @@ class System:
     def build(self):
         """Resolve and compile the optical system into a simulation."""
         self._validate()
-        bindings = self._collect_bindings()
+        # Compile from a structural copy of the bound expressions and keep that copy in
+        # the Simulation, so later edits to the live graph reach neither.
+        memo = {}
+        bindings = {
+            key: clone_ast(value, memo) if isinstance(value, Node) else value
+            for key, value in self._collect_bindings().items()
+        }
 
         placements = self._resolve_elements()
         placements, element_data = self._resolve_layout(placements, bindings)

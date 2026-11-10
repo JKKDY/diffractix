@@ -59,9 +59,11 @@ remain unchecked inside compiled execution.
 Compiled Programs capture expression structure/fixed values. System snapshots
 ordinary mutable source fields and numerical mappings at build. Later edits to
 external Parameters or source arrays must not alter built numerical behavior.
-Simulation.bindings is a shallow mapping snapshot: AST objects inside it are not
-deep-cloned. Because new Solver expressions may resolve them later, this remains
-a documented limitation/TODO. Do not claim full binding-AST snapshot isolation.
+Simulation.bindings is a structural snapshot: build() clones bound expressions
+with clone_ast (operations and InputNode handles copied, shared subexpressions kept
+shared) and compiles from that clone. Parameters keep their identity, so variable
+ones keep their theta slot and fixed ones keep their live value; later structural
+edits or rebinding on the System reach neither the programs nor the bindings.
 Python callable captures remain the user's responsibility, especially deferred
 control-flow callables. A deferred callable must return numerical values.
 

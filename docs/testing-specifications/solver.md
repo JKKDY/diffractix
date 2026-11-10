@@ -190,9 +190,8 @@ cannot retroactively change earlier Solution reports or bounds.
 
 ## Limits
 
-The unused context.py module remains exported but is outside the rewritten
-pipeline. The active interfaces use SimulationResultTracer and result views.
-Python callable captures and shallow binding-AST snapshots retain the limits in
+The active interfaces use SimulationResultTracer and result views.
+Python callable captures and structural binding snapshots follow the policy in
 ../qa-status.md. Adapters copy options; Solver orchestration forwards them.
 No new signature or domain restriction should be inferred from an implementation
 detail. Record unclear policy rather than inventing an assertion.

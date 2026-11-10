@@ -82,6 +82,48 @@ def evaluate_ast(root: Node, bindings: Mapping = {}, parameter_values: Mapping |
     return evaluate(root)
 
 
+def clone_ast(node: Node, memo: dict[int, Node] | None = None) -> Node:
+    """Copy the structure of a graph so later edits to the original do not reach it.
+
+    Operations and InputNode handles are copied. Parameters, Literals and Symbols
+    are shared, so Parameters keep their identity (and with it their theta
+    association and live values). Shared subexpressions stay shared; pass one
+    memo to several calls to also share them across the cloned roots.
+    """
+    if memo is None:
+        memo = {}
+    active = set()
+
+    def clone(node):
+        node_id = id(node)
+        if node_id in memo:
+            return memo[node_id]
+        if node_id in active:
+            raise ASTCycleError(f"Cycle detected at {describe_node(node)}.")
+        active.add(node_id)
+
+        if isinstance(node, (Literal, Parameter, Symbol)):
+            copy = node
+        elif isinstance(node, BinaryOp):
+            copy = BinaryOp(node.op, clone(node.left), clone(node.right))
+        elif isinstance(node, UnaryOp):
+            copy = UnaryOp(node.op, clone(node.operand))
+        elif isinstance(node, InputNode):
+            if node.node is None:
+                raise UnresolvedInputError("Encountered an empty InputNode.")
+            copy = InputNode(clone(node.node))
+        else:
+            raise UnsupportedNodeError(f"Unsupported AST node type: {type(node).__name__}")
+
+        active.remove(node_id)
+        memo[node_id] = copy
+        return copy
+
+    if not isinstance(node, Node):
+        raise TypeError(f"AST root must be a Node, got {type(node).__name__}.")
+    return clone(node)
+
+
 def walk_ast(roots: Sequence[Node], bindings:Mapping = {}):
     """
     Walk the reachable AST once in depth-first order.

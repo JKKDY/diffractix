@@ -142,9 +142,9 @@ Telescope spacing failing build; GRIN/ABCD explicit-`n` continuity errors; remov
 9. **Low priority:** a guard that the removed `at`/`after`/`z_at`/`z_after` stay
    absent.
 
-Correctly left untested, because policy is still open: binding deduplication
-across composite branches, RayBundle factory domains and empty-bundle statistics,
-and deep snapshots of binding ASTs.
+Binding deduplication across composite branches, RayBundle factory domains,
+empty-bundle statistics and structural snapshots of binding ASTs were decided and
+are now tested.
 
 ## 4. Questions for the maintainer (answered; see Resolution status)
 

@@ -81,7 +81,6 @@ class Simulation:
         self._optics_program = optics_program
         self._optical_stages = tuple(optical_stages)
         self._optical_inputs = tuple(optical_inputs)
-        # TODO: Snapshot binding ASTs without losing their canonical theta associations.
         self.bindings = MappingProxyType(dict(bindings))
 
     @cached_property

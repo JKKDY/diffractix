@@ -495,3 +495,25 @@ def test_index_mismatch_reports_both_indices_and_where_the_light_comes_from():
     assert "Interface" in str(first.value)
     with pytest.raises(ValueError, match=r"arrives in n = 1 \(from the preceding element\).*expects n = 1\.5"):
         System(Space(d=0.1), Space(d=0.1, n=1.5), optical_input=Ray(x=0, theta=0, n=1.0)).build()
+
+
+def test_simulation_bindings_are_a_build_time_structural_snapshot():
+    from diffractix import Solver
+    variable = Parameter(0.2).variable(bounds=(0.05, 0.5))
+    lens = ThinLens(f=Symbol("focal"))
+    system = System(Space(d=0.1), lens, optical_input=Ray(x=1e-3, theta=0, n=1.0))
+    expression = 2 * variable
+    system.bind("focal", expression)
+    simulation = system.build()
+
+    expression.right = Parameter(9.0)       # structural edit after build
+    system.bind("focal", 10.0)              # rebinding the system after build
+
+    bound = simulation.bindings["focal"]
+    assert bound is not expression
+    assert bound.right is variable          # theta association kept by identity
+    assert bound.evaluate() == pytest.approx(0.4)
+    solver = Solver(simulation).target(value=Symbol("focal"), target=0.3)
+    solution = solver.solve()
+    assert solution.value(variable) == pytest.approx(0.15, rel=1e-4)
+    assert solution.value(Symbol("focal")) == pytest.approx(0.3, rel=1e-4)
