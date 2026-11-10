@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 from functools import cached_property
+from types import MappingProxyType
 
 from diffractix.core.base import OpticalBase
 from diffractix.elements.element import OpticalElement
@@ -46,20 +47,20 @@ class CompositeElement(OpticalBase, Sequence):
         """Names of direct child elements in propagation order."""
         return tuple(name for name, _ in self.named_elements)
 
-    @property
+    @cached_property
     def bindings(self):
-        """Collect child bindings recursively, rejecting duplicate keys."""
-        bindings = dict(super().bindings)
-        seen = set()
-        for element in self.elements:
-            if id(element) in seen:
-                continue
-            seen.add(id(element))
+        """Read-only bindings of all nested elements, gathered on first access.
+
+        Every provider contributes once, however often it appears in the hierarchy.
+        Distinct providers sharing a key are rejected.
+        """
+        bindings = {}
+        for element in {id(leaf): leaf for leaf in self.leaf_elements}.values():  # once per identity
             for key, value in element.bindings.items():
                 if key in bindings:
                     raise ValueError(f"Duplicate symbol binding for {key!r}.")
                 bindings[key] = value
-        return bindings
+        return MappingProxyType(bindings)
 
     # -----------------
     # NESTED COMPOSITES

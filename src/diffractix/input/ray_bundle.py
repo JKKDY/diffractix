@@ -1,4 +1,6 @@
+import math
 from dataclasses import dataclass
+from numbers import Integral, Real
 from typing import ClassVar
 
 import numpy as np
@@ -37,15 +39,39 @@ class RayBundle(ParaxialState):
         if len(np.shape(self.x)) != 1:
             raise ValueError("RayBundle arrays must be one-dimensional.")
     
+    @staticmethod
+    def _check_count(count):
+        if isinstance(count, bool) or not isinstance(count, Integral):
+            raise TypeError(f"count must be an integer, got {count!r}.")
+        if count < 1:
+            raise ValueError(f"count must be at least 1, got {count}.")
+
+    @staticmethod
+    def _check_radius(radius):
+        # Only concrete numbers are checked; traced values pass through.
+        if isinstance(radius, Real) and not (math.isfinite(radius) and radius >= 0):
+            raise ValueError(f"radius must be finite and >= 0, got {radius}.")
+
+    @staticmethod
+    def _check_focal_distance(focal_distance):
+        if isinstance(focal_distance, Real) and (focal_distance == 0 or math.isnan(focal_distance)):
+            raise ValueError(f"focal_distance must be nonzero and not NaN, got {focal_distance}.")
+
     @classmethod
     def parallel(cls, radius, count, n=1.0):
-        """Generate parallel rays across a 1D aperture."""
+        """Generate parallel rays across a 1D aperture of half-width radius."""
+        cls._check_count(count)
+        cls._check_radius(radius)
         x = xp.linspace(-radius, radius, count)
         theta = xp.zeros_like(x)
         return cls(x=x, theta=theta, n=n)
 
     @classmethod
     def converging(cls, radius, count, focal_distance, n=1.0):
+        """Generate rays aimed at a point focal_distance ahead (negative: diverging; inf: parallel)."""
+        cls._check_count(count)
+        cls._check_radius(radius)
+        cls._check_focal_distance(focal_distance)
         x = xp.linspace(-radius, radius, count)
         theta = -x / focal_distance
         return cls(x=x, theta=theta, n=n)
@@ -66,28 +92,28 @@ class RayBundle(ParaxialState):
 
     @property
     def centroid(self):
-        """Mean transverse position of the rays."""
-        return xp.mean(self.x)
+        """Mean transverse position of the rays (NaN for an empty bundle)."""
+        return xp.mean(self.x) if self.size else math.nan
 
     @property
     def mean_angle(self):
-        """Mean propagation angle."""
-        return xp.mean(self.theta)
+        """Mean propagation angle (NaN for an empty bundle)."""
+        return xp.mean(self.theta) if self.size else math.nan
 
     @property
     def position_spread(self):
-        """RMS spread around the bundle centroid."""
-        return xp.std(self.x)
+        """RMS spread around the bundle centroid (NaN for an empty bundle)."""
+        return xp.std(self.x) if self.size else math.nan
 
     @property
     def angular_spread(self):
-        """RMS angular spread around the mean angle."""
-        return xp.std(self.theta)
+        """RMS angular spread around the mean angle (NaN for an empty bundle)."""
+        return xp.std(self.theta) if self.size else math.nan
 
     @property
     def rms_x(self):
-        """RMS transverse displacement from the optical axis."""
-        return xp.sqrt(xp.mean(xp.square(self.x)))
+        """RMS transverse displacement from the optical axis (NaN for an empty bundle)."""
+        return xp.sqrt(xp.mean(xp.square(self.x))) if self.size else math.nan
 
 
     def propagate(self, A, B, C, D, n) -> 'RayBundle':

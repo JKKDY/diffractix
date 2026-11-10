@@ -343,7 +343,6 @@ class System:
         """Collect bindings from the input, elements, and system."""
         bindings = {}
         seen = set()
-        #? cant isntances of the same element have different bindings? maybe we should reject any form of duplciation directly 
         def add_binding(source):
             for key, value in source.items():
                 if key in bindings:
@@ -354,10 +353,11 @@ class System:
             add_binding(optical_input.bindings)
 
         for element in self.elements:
-            if id(element) in seen:
-                continue
-            seen.add(id(element))
-            add_binding(element.bindings)
+            leaves = element.leaf_elements if isinstance(element, CompositeElement) else (element,)
+            for leaf in leaves:
+                if id(leaf) not in seen:
+                    seen.add(id(leaf))
+                    add_binding(leaf.bindings)
 
         add_binding(self._bindings)
         return bindings
@@ -487,7 +487,18 @@ class System:
                         )
                     )
                 elif not np.isclose(evaluate_ast(residual, bindings), 0.0):
-                    raise ValueError(f"Refractive index mismatch at {placement.describe()}.")
+                    incoming = float(evaluate_ast(current_n, bindings))
+                    required = float(evaluate_ast(required_n, bindings))
+                    origin = "the optical input" if not resolved else "the preceding element"
+                    hint = (
+                        " Give the optical input a matching n, or change the system's ambient_n."
+                        if not resolved else ""
+                    )
+                    raise ValueError(
+                        f"Refractive index mismatch at {placement.describe()}: the light arrives "
+                        f"in n = {incoming:.6g} (from {origin}) but "
+                        f"{type(element).__name__} '{element.label}' expects n = {required:.6g}.{hint}"
+                    )
 
             current_n = next_n
             resolved.append(

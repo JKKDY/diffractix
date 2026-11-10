@@ -296,8 +296,9 @@ def test_recursive_bindings_preserve_nodes_and_do_not_mutate_child_mappings():
     assert set(bindings) == {"distance", ("calibration", 1)}
     assert bindings["distance"] is parameter
     assert bindings[("calibration", 1)] == 1.5
-    bindings["distance"] = 99.0
-    bindings["new"] = 3.0
+    with pytest.raises(TypeError):
+        bindings["distance"] = 99.0
+    assert composite.bindings is bindings   # gathered once, read-only
     assert left_bindings["distance"] is parameter
     assert tuple(left_bindings) == ("distance",)
     assert right_bindings == {("calibration", 1): 1.5}
@@ -324,3 +325,18 @@ def test_distinct_binding_providers_reject_duplicate_keys_even_if_values_match(s
     assert first.bindings == {"calibration": 1.5}
     assert second.bindings == {"calibration": second_value}
 
+
+
+def test_provider_shared_between_composite_branches_contributes_once():
+    shared = BoundLeaf(x=1.0, supplied_bindings={"calibration": 1.5})
+    left = Group(a=DummyLeaf(x=1.0), shared=shared)
+    right = Group(b=DummyLeaf(x=2.0), shared=shared)
+    assert Group(left=left, right=right).bindings == {"calibration": 1.5}
+    assert left.bindings == right.bindings == {"calibration": 1.5}
+
+
+def test_a_distinct_provider_with_the_same_key_still_conflicts_across_branches():
+    left = Group(shared=BoundLeaf(x=1.0, supplied_bindings={"calibration": 1.5}))
+    right = Group(other=BoundLeaf(x=2.0, supplied_bindings={"calibration": 1.5}))
+    with pytest.raises(ValueError, match="Duplicate symbol binding.*calibration"):
+        _ = Group(left=left, right=right).bindings

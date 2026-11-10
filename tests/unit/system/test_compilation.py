@@ -486,3 +486,12 @@ def test_require_label_rejects_multiple_or_prebuilt_constraints_without_changing
         with pytest.raises(ValueError, match="label requires a single comparison"):
             target.require(*args, label="ambiguous")
     assert target._constraints == before
+
+
+def test_index_mismatch_reports_both_indices_and_where_the_light_comes_from():
+    slab = Slab(d=0.01, n=1.5)
+    with pytest.raises(ValueError, match=r"arrives in n = 1 \(from the optical input\).*expects n = 1\.33.*ambient_n") as first:
+        System(slab, ambient_n=1.33, optical_input=GaussianBeam.from_waist(1e-3, 1e-6)).build()
+    assert "Interface" in str(first.value)
+    with pytest.raises(ValueError, match=r"arrives in n = 1 \(from the preceding element\).*expects n = 1\.5"):
+        System(Space(d=0.1), Space(d=0.1, n=1.5), optical_input=Ray(x=0, theta=0, n=1.0)).build()

@@ -246,3 +246,52 @@ def test_converging_factory_radius_and_focus_derivatives_and_jit():
     ):
         np.testing.assert_allclose(function(values), expected, rtol=1e-12, atol=1e-12)
         np.testing.assert_allclose(jit(function)(values), expected, rtol=1e-12, atol=1e-12)
+
+
+# ------------------------------
+# FACTORY VALIDATION AND EMPTY BUNDLES
+# ------------------------------
+@pytest.mark.parametrize("factory", [
+    lambda **kw: RayBundle.parallel(radius=1e-3, **kw),
+    lambda **kw: RayBundle.converging(radius=1e-3, focal_distance=0.1, **kw),
+])
+@pytest.mark.parametrize("count, error", [
+    (0, ValueError), (-1, ValueError), (2.5, TypeError), (True, TypeError), ("3", TypeError),
+])
+def test_factories_reject_invalid_counts(factory, count, error):
+    with pytest.raises(error, match="count"):
+        factory(count=count)
+
+
+@pytest.mark.parametrize("radius", [-1e-3, np.nan, np.inf])
+def test_factories_reject_invalid_radii(radius):
+    with pytest.raises(ValueError, match="radius"):
+        RayBundle.parallel(radius=radius, count=3)
+    with pytest.raises(ValueError, match="radius"):
+        RayBundle.converging(radius=radius, count=3, focal_distance=0.1)
+
+
+@pytest.mark.parametrize("focal_distance", [0, 0.0, np.nan])
+def test_converging_rejects_zero_or_nan_focal_distance(focal_distance):
+    with pytest.raises(ValueError, match="focal_distance"):
+        RayBundle.converging(radius=1e-3, count=3, focal_distance=focal_distance)
+
+
+def test_factories_accept_degenerate_but_meaningful_geometry():
+    assert RayBundle.parallel(radius=0, count=3).x.tolist() == [0, 0, 0]
+    assert RayBundle.parallel(radius=1e-3, count=1).size == 1
+    assert RayBundle.parallel(radius=1e-3, count=np.int64(4)).size == 4
+    diverging = RayBundle.converging(radius=1e-3, count=3, focal_distance=-0.1)
+    assert diverging.theta[0] < 0 < diverging.theta[-1]
+    collimated = RayBundle.converging(radius=1e-3, count=3, focal_distance=np.inf)
+    np.testing.assert_array_equal(collimated.theta, 0)
+
+
+@pytest.mark.parametrize("name", ["centroid", "mean_angle", "position_spread", "angular_spread", "rms_x"])
+def test_statistics_of_an_empty_bundle_are_nan_without_warnings(name):
+    import warnings
+    empty = RayBundle(x=np.array([]), theta=np.array([])).numeric({"ambient_n": 1.0})
+    assert empty.size == 0
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert np.isnan(getattr(empty, name))

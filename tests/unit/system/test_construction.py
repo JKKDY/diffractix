@@ -472,3 +472,17 @@ def test_negative_absolute_positions_are_rejected_however_small(z):
     with pytest.raises(ValueError, match="cannot be negative"):
         system.add(Plane(), z=z)
     assert system.placements == ()
+
+
+def test_shared_provider_in_two_composites_of_one_system_contributes_once():
+    from diffractix.composites import CompositeElement
+
+    class Pair(CompositeElement):
+        def __init__(self, shared):
+            super().__init__()
+            self.gap = Space(d=0.01)
+            self.shared = shared
+
+    shared = BoundPlane(supplied_bindings={"calibration": 1.5})
+    system = System(Pair(shared), Pair(shared), optical_input=Ray(x=0, theta=0, n=1))
+    assert system.build().bindings["calibration"] == 1.5
