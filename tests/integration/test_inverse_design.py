@@ -186,3 +186,46 @@ def test_quick_start_workflow_focuses_a_ray_onto_the_axis():
     assert solution.value(lens.f) == pytest.approx(0.1, abs=5e-5)
     assert solution.run()[image_plane].after.x == pytest.approx(0.0, abs=5e-6)
     assert lens.f.value == 0.2
+
+
+def test_symbolic_result_expressions_define_objectives_and_labelled_inequalities():
+    distance = Parameter(0.04).variable(bounds=(0.01, 0.15))
+    space = Space(d=distance)
+    simulation = System(space, optical_input=GaussianBeam(q=-0.08+0.03j, wavelength=1e-6, n=1)).build()
+    sim = simulation.symbolic
+    solver = Solver(simulation)
+    solver.target(value=sim.final.z0, target=0.0, scale=0.08, label="waist at the end")
+    # The unconstrained optimum is 0.08; the limit makes the inequality active.
+    solver.require(sim[space].z_end <= 0.06, label="short enough")
+    solution = solver.solve(options={"ftol": 1e-12})
+    assert solution.success and solution.feasible
+    assert solution.value(distance) == pytest.approx(0.06, abs=1e-7)
+    limit = next(entry for entry in solution.constraints if entry.label == "short enough")
+    assert limit.value == pytest.approx(0.06, abs=1e-7) and limit.upper_bound == 0.06
+    assert [entry.label for entry in solution.objectives] == ["waist at the end"]
+
+
+def test_value_expression_with_default_scale_is_a_relative_preference():
+    thickness = Parameter(0.01).variable(bounds=(0.001, 0.05))
+    solver = Solver(System(optical_input=Ray(x=thickness, theta=0, n=1)))
+    solver.target(value=thickness, target=0.02, label="preferred thickness")
+    solution = solver.solve(options={"ftol": 1e-14})
+    assert solution.value(thickness) == pytest.approx(0.02, abs=1e-7)
+    assert solution.objectives[0].value == pytest.approx((solution.x[0] - 0.02) / 0.02, abs=1e-12)
+
+
+def test_a_limit_on_every_stage_of_the_system_is_one_loop_over_symbolic_stages():
+    distance = Parameter(0.05).variable(bounds=(0.01, 0.15))
+    lens = ThinLens(f=0.1)
+    simulation = System(Space(d=distance), lens, Space(d=0.1),
+                        optical_input=GaussianBeam(q=-0.05 + 0.02j, wavelength=1e-6, n=1)).build()
+    sim = simulation.symbolic
+    solver = Solver(simulation)
+    solver.target(value=sim.final.w, target=2e-4)
+    limit = 0.8e-3
+    for stage in sim.stages:
+        solver.require(stage.after.w <= limit)
+    solution = solver.solve(options={"ftol": 1e-12})
+    assert solution.success and solution.feasible
+    assert max(float(state.w) for state in solution.run().states) <= limit * (1 + 1e-6)
+    assert len(solution.constraints) >= len(sim.stages)

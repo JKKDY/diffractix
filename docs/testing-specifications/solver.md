@@ -128,8 +128,12 @@ Real IPOPT/NLopt smoke tests are conditional integration, not required unit deps
 
 Solver accepts exactly one System or Simulation. Builds System once; readable
 simulation cannot be replaced. target/require chain and normalize before storing.
-target supports residual Node/callable/Objective and value=callable,target=...,scale
-(default 1),label forms; target=0 valid; scale=0 and ambiguous combinations fail.
+target supports residual Node/callable/Objective and value=Node-or-callable,target=...,
+scale (default abs(target) for a nonzero target, else 1),label forms; target=0 valid;
+scale=0 and ambiguous combinations fail. require(*constraints, label=None) names a
+single comparison (label with several constraints or a Constraint fails).
+Simulation.symbolic returns the result tracer: its expressions are valid Node
+objectives and Comparison constraints.
 None means omitted in this current API. Objectives/constraints are fixed once
 cache preparation completes, including when backend later fails. A new Solver is
 required for another mathematical model. No graph fingerprints or invalidation.

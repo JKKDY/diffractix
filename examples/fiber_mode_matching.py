@@ -6,7 +6,7 @@ its mode, while the package stays short. All lengths are in metres.
 """
 
 from diffractix import (
-    CompositeElement, Constraint, GaussianBeam, Node, Plane, Solver, Space, System, ThinLens,
+    CompositeElement, GaussianBeam, Node, Plane, Solver, Space, System, ThinLens,
 )
 
 WAVELENGTH = 1550e-9
@@ -64,20 +64,12 @@ initial = simulation.run()
 # OPTIMIZATION
 # ------------
 solver = Solver(simulation)
+sim = simulation.symbolic  # the result as expressions, for objectives and constraints
 
-# Match the target fiber's mode: same radius, waist on the fiber face.
-solver.target(
-    value=lambda sim: sim[target].after.w,
-    target=target_mode.w,
-    scale=target_mode.w,
-    label="Mode radius",
-)
-solver.target(
-    value=lambda sim: sim[target].after.z0,
-    target=0.0,
-    scale=target_mode.z_r,
-    label="Waist position",
-)
+# Match the target fiber's mode: same radius (a relative error, since the default scale
+# of a target is its own size), and the waist on the fiber face within one Rayleigh range.
+solver.target(value=sim[target].after.w, target=target_mode.w, label="Mode radius")
+solver.target(value=sim[target].after.z0, target=0.0, scale=target_mode.z_r, label="Waist position")
 # A soft preference: penalize only the length beyond 25 mm (hard limit 30 mm).
 solver.target(
     ((package_length - PREFERRED_PACKAGE_LENGTH) / 1e-3).maximum(0.0),
@@ -87,12 +79,10 @@ solver.target(
 # Only the lenses change the divergence, so checking after each lens covers the
 # whole path. Each lens also keeps two beam radii of aperture clearance.
 for package in (lens1, lens2):
-    solver.require(
-        Constraint(lambda sim, lens=package.lens: sim[lens].after.divergence_angle,
-                   upper_bound=MAX_DIVERGENCE, label=f"Paraxial divergence after {package.label}"),
-        Constraint(lambda sim, lens=package.lens: sim[lens].after.w,
-                   upper_bound=LENS_CLEAR_DIAMETER / 4, label=f"{package.label} aperture clearance"),
-    )
+    solver.require(sim[package.lens].after.divergence_angle <= MAX_DIVERGENCE,
+                   label=f"Paraxial divergence after {package.label}")
+    solver.require(sim[package.lens].after.w <= LENS_CLEAR_DIAMETER / 4,
+                   label=f"{package.label} aperture clearance")
 
 solution = solver.solve(method="SLSQP")
 optimized = solution.run()

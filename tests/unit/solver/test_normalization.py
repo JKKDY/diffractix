@@ -35,7 +35,7 @@ def test_constraint_infinite_endpoints_and_finite_objective_weights_remain_valid
 
 @pytest.mark.parametrize("args, kwargs, error, message", [
     ((), {"value": lambda sim: 1.0}, ValueError, "target must be specified"),
-    ((), {"value": 1.0, "target": 0}, TypeError, "value must be a callable"),
+    ((), {"value": 1.0, "target": 0}, TypeError, "value must be a graph expression or a callable"),
     ((), {"value": lambda sim: 1.0, "target": 0, "scale": 0}, ValueError, "scale must be nonzero"),
     ((lambda sim: 1.0,), {"value": lambda sim: 1.0, "target": 0}, ValueError, "positional objectives"),
     ((lambda sim: 1.0,), {"target": 0}, ValueError, "require value"),
@@ -205,10 +205,11 @@ def test_value_matching_and_residual_shorthand_match_explicit_objective_derivati
     from tests.helpers.backend import capture_problem
     p = Parameter(0.5).variable()
     simulation = System(optical_input=Ray(x=p, theta=0, n=1)).build()
-    solvers = [Solver(simulation) for _ in range(3)]
+    solvers = [Solver(simulation) for _ in range(4)]
     solvers[0].target(value=lambda result: result.final.x ** 2, target=0, scale=2, label="match")
     solvers[1].target(lambda result: result.final.x ** 2 / 2, label="match")
     solvers[2].target(Objective(lambda result: result.final.x ** 2 / 2, label="match"))
+    solvers[3].target(value=p ** 2, target=0, scale=2, label="match")   # a graph expression of the Parameter
     for solver in solvers:
         problem = capture_problem(solver)
         theta = xp.array([2.])
@@ -259,3 +260,61 @@ def test_array_matching_broadcasts_and_preserves_analytical_derivatives(use_jit)
     np.testing.assert_allclose(callbacks.objective_hessian(point), [[2.5]])
     np.testing.assert_array_equal(target, [1., 3.])
     np.testing.assert_array_equal(scale, [1., 2.])
+
+
+def objective_at(solver, theta):
+    from diffractix.backend import xp
+    from tests.helpers.backend import capture_problem
+    return float(capture_problem(solver).objective(xp.array([theta])))
+
+
+@pytest.mark.parametrize("make_value", [
+    pytest.param(lambda p: p, id="expression"),
+    pytest.param(lambda p: (lambda sim: sim.final.x), id="callable"),
+])
+@pytest.mark.parametrize("target, at, residual", [
+    (2.0, 3.0, 0.5),    # relative to |target|
+    (-4.0, -2.0, 0.5),  # the sign of the target does not matter
+    (0.0, 3.0, 3.0),    # a zero target keeps unit scale
+])
+def test_value_matching_scale_defaults_to_the_target_magnitude_or_one(make_value, target, at, residual):
+    p = Parameter(0.5).variable()
+    solver = Solver(System(optical_input=Ray(x=p, theta=0, n=1)))
+    solver.target(value=make_value(p), target=target)
+    assert objective_at(solver, at) == pytest.approx(residual ** 2)
+
+
+def test_default_scale_is_elementwise_for_array_targets_and_explicit_scale_wins():
+    p = Parameter(0.5).variable()
+    solver = Solver(System(optical_input=Ray(x=p, theta=0, n=1)))
+    solver.target(value=p * np.array([1., 1.]), target=np.array([2., 0.]))
+    assert objective_at(solver, 3.0) == pytest.approx(0.5 ** 2 + 3.0 ** 2)
+    explicit = Solver(System(optical_input=Ray(x=p, theta=0, n=1)))
+    explicit.target(value=p, target=2.0, scale=4.0)
+    assert objective_at(explicit, 3.0) == pytest.approx((1 / 4) ** 2)
+
+
+def test_require_label_names_a_single_comparison():
+    solver, p = make_solver(), Parameter(1)
+    assert solver.require(p >= 0, label="positive") is solver
+    assert [constraint.label for constraint in solver._constraints] == ["positive"]
+    assert solver._constraints[0].lower_bound == 0
+
+
+@pytest.mark.parametrize("make_arguments", [
+    pytest.param(lambda p: (), id="none"),
+    pytest.param(lambda p: (p >= 0, p <= 1), id="two"),
+    pytest.param(lambda p: (Constraint(p, lower_bound=0),), id="constraint"),
+])
+def test_require_label_rejects_anything_but_one_comparison_without_adding(make_arguments):
+    solver, p = make_solver(), Parameter(1)
+    with pytest.raises(ValueError, match="label requires a single comparison"):
+        solver.require(*make_arguments(p), label="name")
+    assert solver._constraints == []
+
+
+def test_require_label_with_a_raw_node_fails_without_adding():
+    solver = make_solver()
+    with pytest.raises(TypeError):
+        solver.require(Parameter(1), label="name")
+    assert solver._constraints == []

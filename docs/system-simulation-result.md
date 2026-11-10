@@ -202,11 +202,20 @@ See [the graph reference](graph-reference.md) for Nodes, bindings and programs.
 
 Solver(simulation) or Solver(system) creates one optimization model. Add objectives
 with target() and constraints with require() before the first solve. The model
-then stays fixed. A value-matching objective uses residual (value(result)-target)/scale;
-scale defaults to one and must be nonzero. Targets and scales may be numerical
-arrays; broadcasting follows the numerical backend, and every scale entry must
-be nonzero. Total cost is the sum of weight times
+then stays fixed. A value-matching objective, `target(value=..., target=..., scale=...)`,
+uses residual (value - target)/scale, where value is a graph expression or a
+callable of the result. scale defaults to abs(target) where the target is not zero
+(a relative error) and to 1 where it is, so give it explicitly for a zero target;
+an explicit scale must be nonzero. Targets and scales may be numerical arrays;
+broadcasting follows the numerical backend. Total cost is the sum of weight times
 the squared residual entries. target=0 is valid.
+
+`simulation.symbolic` is the result as graph expressions, bound to that simulation:
+`sim = simulation.symbolic`, then `sim[lens].after.w`, `sim.final.z0` or
+`sim[b].z_start - sim[a].z_end` can be used directly as objective values and in
+inequalities. `solver.require(sim[lens].after.w <= 1e-3, label="aperture")` adds a
+constraint; `label` names a single comparison. Callables of the result also work
+and are needed when the code branches on result values.
 
 Solution exposes x, cost, success, message, iterations, function_evaluations,
 feasible, objectives, constraints, violations, simulation, value(quantity) and

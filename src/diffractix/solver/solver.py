@@ -110,26 +110,35 @@ class Solver:
         return self._simulation
 
     def target(self, *objectives, value=None, target=None, scale=None, label=None):
-        """Add residual objectives, or match a callable value to a target."""
+        """Add residual objectives, or match a value to a target.
+
+        `value` (a graph expression or a callable of the result) gives the residual
+        `(value - target) / scale`. `scale` defaults to `abs(target)` where the target
+        is not zero and to 1 where it is, so choose it yourself when the target is 0.
+        """
         if self._cache is not None:
             raise RuntimeError("The optimization model is fixed; create a new Solver.")
 
         if value is not None:
             if objectives:
                 raise ValueError("value cannot be combined with positional objectives.")
-            if not callable(value):
-                raise TypeError("value must be a callable accepting the solver context.")
+            if not (isinstance(value, Node) or callable(value)):
+                raise TypeError("value must be a graph expression or a callable accepting the solver context.")
             if target is None:
                 raise ValueError("target must be specified when value is supplied.")
 
-            scale = 1 if scale is None else scale
-            if np.any(scale == 0):
+            if scale is None:
+                magnitude = np.abs(target)
+                scale = np.where(magnitude == 0, 1.0, magnitude)
+                scale = float(scale) if scale.ndim == 0 else scale
+            elif np.any(scale == 0):
                 raise ValueError("scale must be nonzero.")
 
-            objectives = (Objective(
-                lambda ctx: (value(ctx) - target) / scale,
-                label=label,
-            ),)
+            residual = (
+                (value - target) / scale if isinstance(value, Node)
+                else lambda ctx: (value(ctx) - target) / scale
+            )
+            objectives = (Objective(residual, label=label),)
         elif target is not None or scale is not None:
             raise ValueError("target and scale require value.")
         elif label is not None:
@@ -140,12 +149,16 @@ class Solver:
         self._objectives.extend([normalize_to_objective(objective) for objective in objectives])
         return self
 
-    def require(self, *constraints):
-        """Add hard optimization constraints."""
+    def require(self, *constraints, label=None):
+        """Add hard optimization constraints; `label` names a single comparison."""
         if self._cache is not None:
             raise RuntimeError("The optimization model is fixed; create a new Solver.")
+        if label is not None and (len(constraints) != 1 or isinstance(constraints[0], Constraint)):
+            raise ValueError("label requires a single comparison.")
 
         normalized = tuple(normalize_to_constraint(item) for item in constraints)
+        if label is not None:
+            normalized = (replace(normalized[0], label=label),)
         self._constraints.extend(normalized)
         return self
 

@@ -81,3 +81,16 @@ def test_empty_path_and_invalid_theta_do_not_corrupt_next_run():
     assert result.stages == ()
     np.testing.assert_array_equal(result.z,[0])
     assert simulation.run().final.x == pytest.approx(0.001)
+
+
+def test_symbolic_result_follows_the_numerical_result_lookup():
+    from diffractix.simulation.result import ResultSymbolKey, ResultSymbolKind
+    lens = ThinLens(f=0.1)
+    simulation = System(Space(d=0.02), lens, optical_input=Ray(x=0.001, theta=0.01)).build()
+    sim = simulation.symbolic
+    assert sim is simulation.symbolic
+    assert sim[lens].after.x.key == ResultSymbolKey(ResultSymbolKind.AFTER, 1, "x")
+    assert sim[lens].z_start.key == ResultSymbolKey(ResultSymbolKind.Z_START, 1)
+    assert sim.final.theta.key == ResultSymbolKey(ResultSymbolKind.FINAL, name="theta")
+    with pytest.raises(KeyError, match="not part"):
+        sim[ThinLens(f=0.1)]

@@ -6,7 +6,7 @@ at the same absolute position because the working distance is defined as the
 remaining system length. All lengths are in metres.
 """
 
-from diffractix import Constraint, GaussianBeam, Plane, Solver, Space, System, ThinLens
+from diffractix import GaussianBeam, Plane, Solver, Space, System, ThinLens
 
 WAVELENGTH = 1064e-9
 INPUT_RADIUS = 0.75e-3
@@ -44,30 +44,20 @@ initial = simulation.run()
 # OPTIMIZATION
 # ------------
 solver = Solver(simulation)
+sim = simulation.symbolic  # the result as expressions, for objectives and constraints
 
-# The spot must have the target radius, and the waist must sit on the workpiece.
-solver.target(
-    value=lambda sim: sim[workpiece].after.w,
-    target=target_focus.w,
-    scale=target_focus.w,
-    label="Spot radius at workpiece",
-)
-solver.target(
-    value=lambda sim: sim[workpiece].after.z0,
-    target=0.0,
-    scale=target_focus.z_r,
-    label="Waist position at workpiece",
-)
+# The spot must have the target radius (a relative error, since the default scale of a
+# target is its own size), and the waist must sit on the workpiece, within one
+# Rayleigh range of scale.
+solver.target(value=sim[workpiece].after.w, target=target_focus.w, label="Spot radius at workpiece")
+solver.target(value=sim[workpiece].after.z0, target=0.0, scale=target_focus.z_r,
+              label="Waist position at workpiece")
 
 # Only the lens changes the beam's divergence, so checking after the lens keeps
 # the whole system within the paraxial limit. The lens aperture keeps two beam
 # radii of clearance; clipping and aberrations are not modelled.
-solver.require(
-    Constraint(lambda sim: sim[lens].after.divergence_angle,
-               upper_bound=MAX_DIVERGENCE, label="Paraxial divergence after lens"),
-    Constraint(lambda sim: sim[lens].after.w,
-               upper_bound=LENS_CLEAR_DIAMETER / 4, label="Lens aperture clearance"),
-)
+solver.require(sim[lens].after.divergence_angle <= MAX_DIVERGENCE, label="Paraxial divergence after lens")
+solver.require(sim[lens].after.w <= LENS_CLEAR_DIAMETER / 4, label="Lens aperture clearance")
 
 solution = solver.solve(method="SLSQP")
 optimized = solution.run()

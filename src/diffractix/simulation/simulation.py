@@ -10,7 +10,7 @@ from types import MappingProxyType
 
 from diffractix.graph import InputNode, Parameter, Program
 from .info import SimulationInput, SimulationStep
-from .result import SimulationResult
+from .result import SimulationResult, SimulationResultTracer
 
 if TYPE_CHECKING:
     from diffractix.system.info import ElementData, ParameterData
@@ -83,6 +83,19 @@ class Simulation:
         self.optical_inputs = tuple(optical_inputs)
         # TODO: Snapshot binding ASTs without losing their canonical theta associations.
         self.bindings = MappingProxyType(dict(bindings))
+
+    @cached_property
+    def symbolic(self):
+        """Stand-in for a result whose quantities are graph expressions.
+
+        `sim = simulation.symbolic`, then `sim[lens].after.w <= 1e-3` or
+        `sim[b].z_start - sim[a].z_end` are expressions of the result at any theta, to
+        use as Solver objectives and constraints. It belongs to this simulation: use
+        the one of the simulation you pass to the Solver.
+        """
+        if len(self.optical_inputs) != 1:
+            raise ValueError("Simulation.symbolic requires exactly one optical input.")
+        return SimulationResultTracer(self.element_data, self.optical_inputs[0].initial_state)
 
     @cached_property
     def _initial_values(self):

@@ -312,3 +312,10 @@ def test_result_columns_are_existing_quantities_on_each_numerical_state():
         for name in state.result_columns:
             value = getattr(state, name)
             assert np.shape(value) in ((), (1,))
+
+
+def test_symbolic_result_requires_exactly_one_optical_input():
+    simulation = make_simulation()
+    simulation.optical_inputs = ()
+    with pytest.raises(ValueError, match="exactly one optical input"):
+        simulation.symbolic

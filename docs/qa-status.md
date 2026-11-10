@@ -89,8 +89,10 @@ been approved or implemented as a new contract.
 
 ## Objective, plotting and RayBundle details
 
-Value matching residual is exactly (value(result)-target)/scale. Cost sums
-weight * sum(square(residual)) across objectives. Scale defaults to one, and target zero is valid. Numerical array targets and
+Value matching residual is exactly (value-target)/scale, where value is a graph
+expression or a callable. Cost sums weight * sum(square(residual)) across
+objectives. Scale defaults to abs(target) for a nonzero target and to one for a
+zero target (elementwise for array targets); target zero is valid. Numerical array targets and
 scales are supported through broadcasting; any zero scale entry is rejected
 when target() is called. Incompatible shapes raise the numerical broadcasting
 error during evaluation. The matching shorthand has no weight keyword;

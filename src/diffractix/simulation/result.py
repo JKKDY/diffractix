@@ -148,6 +148,7 @@ class SimulationResultTracer:
 
     def __init__(self, element_data: Sequence[ElementData], state: ParaxialState):
         self._state = state
+        self._stage_count = len(element_data)
         self._element_positions = {}
         for index, element in enumerate(element_data):
             self._element_positions.setdefault(element.element_id, []).append(index)
@@ -159,6 +160,11 @@ class SimulationResultTracer:
     @property
     def final(self):
         return self.OpticalState(self._state, ResultSymbolKind.FINAL)
+
+    @property
+    def stages(self):
+        """One symbolic stage per resolved element, including generated gaps, in order."""
+        return tuple(self.OpticalStage(self._state, index) for index in range(self._stage_count))
 
     def __getitem__(self, key):
         if isinstance(key, tuple):
@@ -184,6 +190,10 @@ class SimulationResultView:
     @property
     def final(self) -> ParaxialState:
         return self._result.final
+
+    @property
+    def stages(self) -> tuple[SimulationResult.Stage, ...]:
+        return self._result.stages
 
     def __getitem__(self, key) -> SimulationResult.Stage:
         return self._result[key]

@@ -6,7 +6,7 @@ spacing and the second focal length, subject to a length limit and lens
 apertures. All lengths are in metres.
 """
 
-from diffractix import Constraint, GaussianBeam, Plane, Solver, Space, System, ThinLens
+from diffractix import GaussianBeam, Plane, Solver, Space, System, ThinLens
 
 WAVELENGTH = 1064e-9
 INPUT_RADIUS = 0.5e-3
@@ -55,27 +55,17 @@ target_divergence = input_beam.divergence_angle / EXPANSION
 # OPTIMIZATION
 # ------------
 solver = Solver(simulation)
+sim = simulation.symbolic  # the result as expressions, for objectives and constraints
 
-# Matching the radius alone would not make the expanded beam collimated.
-solver.target(
-    value=lambda sim: sim[output].after.w,
-    target=target_radius,
-    scale=target_radius,
-    label="Output beam radius",
-)
-solver.target(
-    value=lambda sim: sim[output].after.divergence_angle,
-    target=target_divergence,
-    scale=target_divergence,
-    label="Output divergence",
-)
+# Matching the radius alone would not make the expanded beam collimated. The default
+# scale of a target is its own size, so both are relative errors.
+solver.target(value=sim[output].after.w, target=target_radius, label="Output beam radius")
+solver.target(value=sim[output].after.divergence_angle, target=target_divergence,
+              label="Output divergence")
 
 for lens in (lens1, lens2):
-    solver.require(Constraint(
-        lambda sim, lens=lens: sim[lens].after.w,
-        upper_bound=LENS_DIAMETERS[lens.label] / 4,
-        label=f"{lens.label} aperture clearance",
-    ))
+    solver.require(sim[lens].after.w <= LENS_DIAMETERS[lens.label] / 4,
+                   label=f"{lens.label} aperture clearance")
 
 solution = solver.solve(method="SLSQP")
 optimized = solution.run()

@@ -14,14 +14,15 @@ modulation). All lengths are in metres; stations stay at fixed absolute position
 """
 
 from diffractix import (
-    Constraint, GaussianBeam, Parameter, Plane, Slab, Solver, Space, System, ThickLens, ThinLens,
+    CompositeElement, GaussianBeam, Node, Parameter, Plane, Slab, Solver, Space, System,
+    ThickLens, ThinLens,
 )
 
 WAVELENGTH = 1064e-9
 INPUT_RADIUS = 0.65e-3
 
-AOM_Z, AOM_EXIT_Z = 200e-3, 215e-3
-EOM_Z, EOM_EXIT_Z = 430e-3, 450e-3
+AOM_Z, AOM_LENGTH = 200e-3, 15e-3
+EOM_Z, EOM_LENGTH = 430e-3, 20e-3
 SCANNER_Z, WORKPIECE_Z = 625e-3, 850e-3
 
 AOM_RADIUS, AOM_EXIT_RADIUS = 0.85e-3, 0.90e-3
@@ -35,10 +36,14 @@ MIN_WORKING_DISTANCE = 110e-3
 MIN_LENS_GAP = 8e-3
 MAX_DIVERGENCE = 0.03  # Gaussian far-field half-angle in radians: paraxial limit
 
-THIN_LENS_DIAMETER = 9e-3
+# Clear diameters. The beam radius must stay below a quarter of each, which keeps
+# two beam radii of clearance (clipping itself is not modelled).
 FIRST_LENS_DIAMETER = 5e-3
+THIN_LENS_DIAMETER = 9e-3
 THICK_LENS_DIAMETER = 9e-3
-STATION_DIAMETERS = (6e-3, 6e-3, 8e-3, 8e-3, 8e-3)
+AOM_DIAMETER = 6e-3
+EOM_DIAMETER = 8e-3
+SCANNER_DIAMETER = 8e-3
 
 # SLSQP suits this heavily constrained design; trust-constr uses other options.
 SOLVER_METHOD = "SLSQP"  # Alternative: "trust-constr"
@@ -65,12 +70,12 @@ if source.numeric().divergence_angle > MAX_DIVERGENCE:
 
 # Absolute position of each lens's front surface. Disjoint bounds keep the
 # lenses in order around the fixed stations.
-z1 = Parameter(135e-3, name="Lens 1 position").variable(bounds=(40e-3, 170e-3))
-z2 = Parameter(270e-3, name="Lens 2 position").variable(bounds=(240e-3, 330e-3))
-z3 = Parameter(365e-3, name="Lens 3 position").variable(bounds=(345e-3, 400e-3))
-z4 = Parameter(500e-3, name="Lens 4 position").variable(bounds=(475e-3, 585e-3))
-z5 = Parameter(675e-3, name="Lens 5 position").variable(bounds=(655e-3, 705e-3))
-z6 = Parameter(720e-3, name="Lens 6 position").variable(bounds=(715e-3, 730e-3))
+z1 = Parameter(135e-3, name="Lens 1 position").variable()
+z2 = Parameter(270e-3, name="Lens 2 position").variable()
+z3 = Parameter(365e-3, name="Lens 3 position").variable()
+z4 = Parameter(500e-3, name="Lens 4 position").variable()
+z5 = Parameter(675e-3, name="Lens 5 position").variable()
+z6 = Parameter(720e-3, name="Lens 6 position").variable()
 positions = (z1, z2, z3, z4, z5, z6)
 
 # Negative lenses are ideal thin lenses.
@@ -98,33 +103,44 @@ lens6.R2.variable(bounds=(-350e-3, -70e-3))
 lens6.d.variable(bounds=(3e-3, 10e-3))
 
 lenses = (lens1, lens2, lens3, lens4, lens5, lens6)
-thin_lenses = (lens1, lens3, lens5)
 thick_lenses = (lens2, lens4, lens6)
 
-# Name the curved surfaces of each thick lens for the constraint labels and tables.
-for index, lens in zip((2, 4, 6), thick_lenses):
-    lens.front.label = f"Lens {index} front surface"
-    lens.back.label = f"Lens {index} back surface"
+# Name the curved surfaces of each thick lens for the constraint labels.
+for lens in thick_lenses:
+    lens.front.label = f"{lens.label} front surface"
+    lens.back.label = f"{lens.label} back surface"
 
 
 # --------
 # STATIONS
 # --------
-# The AOM and EOM modules have fixed lengths. A thicker crystal shrinks the air
-# allowances on either side; the module entrance and exit stay where they are.
-aom_crystal = Slab(d=9e-3, n=AOM_CRYSTAL_INDEX, label="AOM crystal")
-aom_crystal.d.variable(bounds=(6e-3, 14e-3))
-eom_crystal = Slab(d=17e-3, n=EOM_CRYSTAL_INDEX, label="EOM crystal")
-eom_crystal.d.variable(bounds=(8e-3, 18e-3))
+class CrystalModule(CompositeElement):
+    """A passive crystal centred in a module of fixed length, between two station planes."""
 
-aom, aom_exit = Plane(label="AOM"), Plane(label="AOM exit")
-eom, eom_exit = Plane(label="EOM"), Plane(label="EOM exit")
+    d: Node  # crystal thickness
+
+    def __init__(self, d, n, length, label):
+        self.d = d
+        self.label = label
+        self.entrance = Plane(label=f"{label} entrance")
+        self.air_before = Space(d=(length - self.d) / 2)
+        self.crystal = Slab(d=self.d, n=n, label=f"{label} crystal")
+        self.air_after = Space(d=(length - self.d) / 2)
+        self.exit = Plane(label=f"{label} exit")
+        super().__init__()
+
+
+aom = CrystalModule(d=9e-3, n=AOM_CRYSTAL_INDEX, length=AOM_LENGTH, label="AOM")
+aom.d.variable(bounds=(6e-3, 14e-3))
+eom = CrystalModule(d=17e-3, n=EOM_CRYSTAL_INDEX, length=EOM_LENGTH, label="EOM")
+eom.d.variable(bounds=(8e-3, 18e-3))
+
 scanner, workpiece = Plane(label="Scanner"), Plane(label="Workpiece")
 stations = (
-    (aom, AOM_RADIUS),
-    (aom_exit, AOM_EXIT_RADIUS),
-    (eom, EOM_RADIUS),
-    (eom_exit, EOM_EXIT_RADIUS),
+    (aom.entrance, AOM_RADIUS),
+    (aom.exit, AOM_EXIT_RADIUS),
+    (eom.entrance, EOM_RADIUS),
+    (eom.exit, EOM_EXIT_RADIUS),
     (scanner, SCANNER_RADIUS),
 )
 
@@ -132,33 +148,20 @@ stations = (
 # ------
 # SYSTEM
 # ------
-# Every element is placed at an absolute position. The air gaps between them are
-# generated automatically, and a gap that would be negative is infeasible, which
-# keeps the lenses in order. A lens position is its front surface (the default);
-# each crystal is centred (`at="center"`) in its fixed-length module.
+# Every element is placed at an absolute position (its front surface). The air gaps
+# between them are generated automatically, and a gap that would be negative is
+# infeasible, which keeps the lenses in order.
 system = System(optical_input=source)
 system.add(lens1, z=z1)
 system.add(aom, z=AOM_Z)
-system.add(aom_crystal, z=(AOM_Z + AOM_EXIT_Z) / 2, at="center")
-system.add(aom_exit, z=AOM_EXIT_Z)
 system.add(lens2, z=z2)
 system.add(lens3, z=z3)
 system.add(eom, z=EOM_Z)
-system.add(eom_crystal, z=(EOM_Z + EOM_EXIT_Z) / 2, at="center")
-system.add(eom_exit, z=EOM_EXIT_Z)
 system.add(lens4, z=z4)
 system.add(scanner, z=SCANNER_Z)
 system.add(lens5, z=z5)
 system.add(lens6, z=z6)
 system.add(workpiece, z=WORKPIECE_Z)
-
-# Air gaps that need a minimum: these are expressions of the design variables.
-lens2_to_lens3 = z3 - z2 - lens2.d
-working_distance = WORKPIECE_Z - z6 - lens6.d
-system.require(
-    working_distance >= MIN_WORKING_DISTANCE,
-    lens2_to_lens3 >= MIN_LENS_GAP,
-)
 
 simulation = system.build()
 initial = simulation.run()
@@ -168,65 +171,53 @@ initial = simulation.run()
 # OPTIMIZATION
 # ------------
 solver = Solver(simulation)
+sim = simulation.symbolic  # the result as expressions, for objectives and constraints
 
 # Beam radius at every station, then a focused spot with its waist on the workpiece.
+# The default scale of a target is its own size, so these are relative errors.
 for station, radius in stations:
-    solver.target(
-        value=lambda sim, station=station: sim[station].after.w,
-        target=radius,
-        scale=radius,
-        label=f"{station.label} beam radius",
-    )
-solver.target(
-    value=lambda sim: sim[workpiece].after.w,
-    target=FOCUS_RADIUS,
-    scale=FOCUS_RADIUS,
-    label="Workpiece spot radius",
-)
-solver.target(
-    value=lambda sim: sim[workpiece].after.z0,
-    target=0.0,
-    scale=target_focus.z_r,
-    label="Workpiece waist position",
-)
+    solver.target(value=sim[station].after.w, target=radius, label=f"{station.label} beam radius")
+solver.target(value=sim[workpiece].after.w, target=FOCUS_RADIUS, label="Workpiece spot radius")
+solver.target(value=sim[workpiece].after.z0, target=0.0, scale=target_focus.z_r,
+              label="Workpiece waist position")
 
-# Soft manufacturing preferences remove otherwise arbitrary freedom: symmetric
-# biconvex lenses, about 6 mm centre thickness, familiar crystal lengths.
-for index, lens in zip((2, 4, 6), thick_lenses):
-    solver.target((lens.R1 + lens.R2) / 0.10, label=f"Lens {index} surface symmetry")
-    solver.target((lens.d - 6e-3) / 12e-3, label=f"Lens {index} preferred thickness")
-for label, crystal, preferred in (("AOM", aom_crystal, 10e-3), ("EOM", eom_crystal, 14e-3)):
-    solver.target((crystal.d - preferred) / 20e-3, label=f"{label} preferred crystal thickness")
+# Soft manufacturing preferences remove otherwise arbitrary freedom: 
+# symmetric biconvex lenses, about 6 mm centre thickness, familiar crystal lengths.
+for lens in thick_lenses:
+    solver.target(value=lens.R1 + lens.R2, target=0, scale=0.10, label=f"{lens.label} surface symmetry")
+    solver.target(value=lens.d, target=6e-3, scale=12e-3, label=f"{lens.label} preferred thickness")
+solver.target(value=aom.d, target=10e-3, scale=20e-3, label="AOM preferred crystal thickness")
+solver.target(value=eom.d, target=14e-3, scale=20e-3, label="EOM preferred crystal thickness")
 
-# Only surfaces with optical power change the divergence; the flat slab faces do
-# not. For a thick lens, both curved surfaces are checked.
-power_elements = (
-    *thin_lenses,
-    *(surface for lens in thick_lenses for surface in (lens.front, lens.back)),
-)
-for element in power_elements:
-    solver.require(Constraint(
-        lambda sim, element=element: sim[element].after.divergence_angle,
-        upper_bound=MAX_DIVERGENCE,
-        label=f"Paraxial divergence after {element.label}",
-    ))
 
-# Keep the beam radius below a quarter of each clear diameter (two beam radii of
-# clearance). Between a slab module's entrance and exit the beam has no power,
-# so checking both stations bounds it inside the module as well.
+# Air gaps, measured on the result so they follow every thickness and position.
+solver.require(sim[lens3].z_start - sim[lens2.back].z_end >= MIN_LENS_GAP, label="Lens 2 to lens 3 gap")
+solver.require(sim[workpiece].z_start - sim[lens6.back].z_end >= MIN_WORKING_DISTANCE, label="Working distance")
+
+# Paraxial limit: the Gaussian divergence stays below the limit after every element.
+for stage in sim.stages:
+    solver.require(stage.after.divergence_angle <= MAX_DIVERGENCE)
+
+# Apertures. Between a module's entrance and exit the beam has no power, so
+# checking both stations bounds it inside the module as well.
 apertures = (
     (lens1, FIRST_LENS_DIAMETER),
     (lens3, THIN_LENS_DIAMETER),
     (lens5, THIN_LENS_DIAMETER),
-    *((surface, THICK_LENS_DIAMETER) for lens in thick_lenses for surface in (lens.front, lens.back)),
-    *zip((station for station, _ in stations), STATION_DIAMETERS),
+    (lens2.front, THICK_LENS_DIAMETER),
+    (lens2.back, THICK_LENS_DIAMETER),
+    (lens4.front, THICK_LENS_DIAMETER),
+    (lens4.back, THICK_LENS_DIAMETER),
+    (lens6.front, THICK_LENS_DIAMETER),
+    (lens6.back, THICK_LENS_DIAMETER),
+    (aom.entrance, AOM_DIAMETER),
+    (aom.exit, AOM_DIAMETER),
+    (eom.entrance, EOM_DIAMETER),
+    (eom.exit, EOM_DIAMETER),
+    (scanner, SCANNER_DIAMETER),
 )
 for element, diameter in apertures:
-    solver.require(Constraint(
-        lambda sim, element=element: sim[element].after.w,
-        upper_bound=diameter / 4,
-        label=f"{element.label} aperture clearance",
-    ))
+    solver.require(sim[element].after.w <= diameter / 4, label=f"{element.label} aperture")
 
 solution = solver.solve(method=SOLVER_METHOD, options=SOLVER_OPTIONS[SOLVER_METHOD])
 optimized = solution.run()
@@ -258,10 +249,12 @@ for index, (position, lens) in enumerate(zip(positions, lenses), start=1):
     for name in names:
         parameter = getattr(lens, name)
         row(f"Lens {index} {name}", parameter.value, solution.value(parameter), 1e3, "mm")
-row("AOM crystal thickness", aom_crystal.d.value, solution.value(aom_crystal.d), 1e3, "mm")
-row("EOM crystal thickness", eom_crystal.d.value, solution.value(eom_crystal.d), 1e3, "mm")
-row("Lens 2 to lens 3 air gap", lens2_to_lens3.value, solution.value(lens2_to_lens3), 1e3, "mm")
-row("Working distance", working_distance.value, solution.value(working_distance), 1e3, "mm")
+row("AOM crystal thickness", aom.d.value, solution.value(aom.d), 1e3, "mm")
+row("EOM crystal thickness", eom.d.value, solution.value(eom.d), 1e3, "mm")
+row("Lens 2 to lens 3 air gap", initial[lens3].z_start - initial[lens2.back].z_end,
+    optimized[lens3].z_start - optimized[lens2.back].z_end, 1e3, "mm")
+row("Working distance", initial[workpiece].z_start - initial[lens6.back].z_end,
+    optimized[workpiece].z_start - optimized[lens6.back].z_end, 1e3, "mm")
 row("Total length", initial.z[-1], optimized.z[-1], 1e3, "mm")
 print(f"Minimums: lens gap {MIN_LENS_GAP * 1e3:.0f} mm, working distance {MIN_WORKING_DISTANCE * 1e3:.0f} mm")
 
@@ -272,15 +265,16 @@ for station, radius in stations:
 row("Workpiece spot radius", initial[workpiece].after.w, optimized[workpiece].after.w, 1e6, "um")
 row("Workpiece waist offset", initial[workpiece].after.z0, optimized[workpiece].after.z0, 1e3, "mm")
 print(f"Target: {FOCUS_RADIUS * 1e6:.0f} um waist at z = {WORKPIECE_Z * 1e3:.0f} mm")
-
-table("Model checks")
-for element in power_elements:
-    row(f"{element.label} divergence", initial[element].after.divergence_angle,
-        optimized[element].after.divergence_angle, unit="rad")
+row("Worst divergence", max(state.divergence_angle for state in initial.states),
+    max(state.divergence_angle for state in optimized.states), unit="rad")
 print(f"Divergence limit: {MAX_DIVERGENCE} rad")
-for element, diameter in apertures:
-    row(f"{element.label} radius", initial[element].after.w, optimized[element].after.w, 1e3, "mm")
-    print(f"  limit {diameter / 4 * 1e3:.3f} mm")
+
+print("\nConstraints at the optimum (SI units)")
+for constraint in solution.constraints:
+    if constraint.label:
+        limit = constraint.upper_bound if constraint.upper_bound != float("inf") else constraint.lower_bound
+        print(f"  {constraint.label:<46} value={float(constraint.value):.4g}  "
+              f"limit={float(limit):.4g}  margin={float(constraint.margin):.3g}")
 
 print("\nObjectives at the optimum")
 for objective in solution.objectives:

@@ -262,3 +262,20 @@ def test_string_result_reports_boundary_locations_and_state_values(state_kind):
 def test_removed_position_probing_accessors_stay_absent(name):
     """Interior probing is unsupported; use indexed stage boundary views."""
     assert not hasattr(make_result((object(),)), name)
+
+
+def test_symbolic_and_numerical_results_expose_the_same_stages():
+    first, second = object(), object()
+    result = make_result((first, second, first))
+    trace = SimulationResultTracer(result.element_data, result.initial)
+    assert len(trace.stages) == len(result.stages) == len(result.view().stages) == 3
+    assert all(a.after is b.after for a, b in zip(result.view().stages, result.stages))
+    keys = [stage.after.x.key for stage in trace.stages]
+    assert keys == [ResultSymbolKey(ResultSymbolKind.AFTER, index, "x") for index in range(3)]
+    assert [stage.z_end.key for stage in trace.stages] == [
+        ResultSymbolKey(ResultSymbolKind.Z_END, index) for index in range(3)]
+
+
+def test_symbolic_stages_of_an_empty_system_are_empty():
+    trace = SimulationResultTracer((), make_result(()).initial)
+    assert trace.stages == ()
