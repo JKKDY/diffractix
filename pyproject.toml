@@ -72,7 +72,7 @@ namespaces = false
 
 [tool.ruff]
 target-version = "py311"
-extend-exclude = ["*.ipynb", "test.py"]  # test.py: a local scratch script
+extend-exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
 # Start with the rules that find bugs (pyflakes and syntax errors); style rules

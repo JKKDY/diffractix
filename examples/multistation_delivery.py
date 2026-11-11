@@ -193,13 +193,15 @@ solver.target(value=sim[workpiece].after.w, target=FOCUS_RADIUS, label="Workpiec
 solver.target(value=sim[workpiece].after.z0, target=0.0, scale=target_focus.z_r,
               label="Workpiece waist position")
 
-# Soft manufacturing preferences remove otherwise arbitrary freedom: 
-# symmetric biconvex lenses, about 6 mm centre thickness, familiar crystal lengths.
+# Soft manufacturing preferences remove otherwise arbitrary freedom: symmetric
+# biconvex lenses, about 6 mm centre thickness, familiar crystal lengths. Symmetry
+# targets zero, which has no size of its own, so it states the asymmetry that counts
+# as a full error (100 mm); the others are relative to their target by default.
 for lens in thick_lenses:
     solver.target(value=lens.R1 + lens.R2, target=0, scale=100 * mm, label=f"{lens.label} surface symmetry")
-    solver.target(value=lens.d, target=6 * mm, scale=12 * mm, label=f"{lens.label} preferred thickness")
-solver.target(value=aom.d, target=10 * mm, scale=20 * mm, label="AOM preferred crystal thickness")
-solver.target(value=eom.d, target=14 * mm, scale=20 * mm, label="EOM preferred crystal thickness")
+    solver.target(value=lens.d, target=6 * mm, label=f"{lens.label} preferred thickness")
+solver.target(value=aom.d, target=10 * mm, label="AOM preferred crystal thickness")
+solver.target(value=eom.d, target=14 * mm, label="EOM preferred crystal thickness")
 
 
 # Air gaps, measured on the result so they follow every thickness and position.

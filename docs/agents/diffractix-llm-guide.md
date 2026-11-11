@@ -285,14 +285,3 @@ For differentiable custom numerical functions use `diffractix.backend.xp`,
 `grad`, `jacobian`, `hessian` and `jit`. JAX traced predicates cannot raise
 ordinary Python errors based on unknown runtime values; validate concrete inputs
 at the boundary. Consult `docs/numerical_backends.md` for details.
-
-## Avoid removed or unsupported APIs
-
-- Use `System(optical_input=...)`, not `System(input=...)`.
-- Use `result[element].after`, not `result.at(element)` or `result.after(element)`.
-- Use `solution.value(lens.f)`, not `solution[lens.f]` or `solution.value_of(...)`.
-- Use `solver.solve(jit=False)`, not the former `use_jit` keyword.
-- Do not use `Simulation.require()`; use System/element requirements or Solver.
-- Do not place Python control flow on Nodes or assume interior-z probing exists.
-- Do not invent array-valued or complex Parameters; use numerical state arrays.
-- Do not treat changes to the original System after build as updates to Simulation.
