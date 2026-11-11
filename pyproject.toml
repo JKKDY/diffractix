@@ -42,7 +42,8 @@ all-solvers = [
 ]
 dev = [
     "pytest",
-    "ruff",
+    "ruff==0.17.4",  # keep in step with .pre-commit-config.yaml
+    "pre-commit",
 ]
 
 [project.urls]

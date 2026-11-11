@@ -10,6 +10,8 @@ From the repository root:
 ```console
 python -m pip install -e ".[dev,jax]"
 python -m pip install build twine
+pre-commit install        # once per clone: ruff checks staged files on every commit
+ruff check .
 python -m pytest tests
 python scripts/run_examples.py --backend autograd
 python scripts/run_examples.py --backend jax
@@ -26,6 +28,12 @@ python -m pytest tests
 $env:DIFFRACTIX_BACKEND = "jax"
 python -m pytest tests
 ```
+
+Linting uses ruff with the bug-finding rules only (pyflakes and syntax errors,
+configured in `pyproject.toml`); there is no formatter. The ruff version is pinned in
+three places that must stay equal: the `dev` extra, `.pre-commit-config.yaml`, and the
+CI lint job. The hook runs `ruff check` without `--fix`, so a commit stops on a finding
+instead of changing files.
 
 In Bash use `MPLBACKEND=Agg DIFFRACTIX_BACKEND=autograd python -m pytest tests`
 (and repeat with `jax`). An Autograd-only environment needs just `.[dev]`.

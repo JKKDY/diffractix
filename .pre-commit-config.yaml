@@ -1,0 +1,8 @@
+# Run `pre-commit install` once per clone; then ruff checks staged Python files on
+# every commit. The CI lint job runs the same check. Keep the rev in step with the
+# ruff pin in pyproject.toml (dev extra) and in .github/workflows/ci.yml.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.4
+    hooks:
+      - id: ruff-check
