@@ -15,8 +15,7 @@ from diffractix.composites import CompositeElement
 from diffractix.elements import OpticalElement, Interface, Space, GaussianAperture
 from diffractix.core import OpticalBase
 from diffractix.graph import (
-    Node, Parameter, Literal, InputNode, Symbol, compile_graph, precompile,
-    walk_ast, evaluate_ast, clone_ast, Scalar,
+    Node, Parameter, Literal, InputNode, compile_graph, walk_ast, evaluate_ast, clone_ast, Scalar,
 )
 from diffractix.simulation.simulation import Simulation
 from diffractix.simulation.result import SimulationResultTracer

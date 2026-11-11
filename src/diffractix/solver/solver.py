@@ -4,7 +4,7 @@ from enum import Enum
 from math import isfinite
 from numbers import Real
 from dataclasses import dataclass, replace
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 import numpy as np
 from contextlib import contextmanager
@@ -34,6 +34,10 @@ from .constraint import (
     reduce_constraints,
 )
 from .problem import Problem
+
+if TYPE_CHECKING:
+    from .constraint import ConstraintDescriptor
+    from .objective import ObjectiveDescriptor
 from .optimizers import solve_ipopt, solve_nlopt, solve_scipy
 
 
@@ -82,7 +86,7 @@ class Solver:
 
     @dataclass
     class _SolverCache:
-        callbacks:                 _Callbacks
+        callbacks:                 Solver._Callbacks
 
         objective_program:         Program
         objective_descriptors:     tuple[ObjectiveDescriptor, ...]
@@ -101,7 +105,7 @@ class Solver:
         output_indices:            tuple[int, ...] | None = None
         active_descriptors:        tuple[ConstraintDescriptor, ...] | None = None
 
-        reduced_callbacks:         _Callbacks | None = None
+        reduced_callbacks:         Solver._Callbacks | None = None
         constraint_lower:          np.ndarray | None = None
         constraint_upper:          np.ndarray | None = None
 

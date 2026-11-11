@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import importlib.util
 import os
-import sys
 from dataclasses import dataclass
 from threading import RLock
 from types import ModuleType

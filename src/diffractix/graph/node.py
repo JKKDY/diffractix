@@ -3,12 +3,16 @@ import math
 import weakref
 from collections.abc import Hashable, Mapping
 from numbers import Complex as Scalar, Real
+from typing import TYPE_CHECKING
 import numpy as np
 
 from diffractix.backend import xp
 
 from .ops import Op
 from .relations import Relation, Comparison, SymbolicControlFlowError
+
+if TYPE_CHECKING:
+    from diffractix.elements import OpticalElement
 
 
 class Node:

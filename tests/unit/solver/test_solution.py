@@ -361,7 +361,7 @@ def test_value_rejects_non_graph_quantities(quantity):
 
 
 def test_str_summarizes_status_variables_objectives_and_constraints():
-    from diffractix import Ray, Solver, Space, System, ThinLens
+    from diffractix import Ray, Solver, System, ThinLens
     gap = Space(d=0.5)
     gap.d.variable(bounds=(0, 1))
     lens = ThinLens(f=0.1)

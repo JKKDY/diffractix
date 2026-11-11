@@ -3,9 +3,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from numbers import Number, Real
-from typing import ClassVar
 
-from ..core.base import OpticalBase, parameter
+from ..core.base import OpticalBase
 from ..graph import InputNode, Node, Parameter, walk_ast
 
 @dataclass(eq=False, kw_only=True)

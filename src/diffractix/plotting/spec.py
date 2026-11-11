@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .primitives import PlotPrimitive
+
 
 @dataclass(frozen=True)
 class PlotSpec:

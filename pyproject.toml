@@ -42,6 +42,7 @@ all-solvers = [
 ]
 dev = [
     "pytest",
+    "ruff",
 ]
 
 [project.urls]
@@ -67,6 +68,15 @@ Issues = "https://github.com/JKKDY/diffractix/issues"
 where = ["src"]
 include = ["diffractix*"]
 namespaces = false
+
+[tool.ruff]
+target-version = "py311"
+extend-exclude = ["*.ipynb", "test.py"]  # test.py: a local scratch script
+
+[tool.ruff.lint]
+# Start with the rules that find bugs (pyflakes and syntax errors); style rules
+# and the formatter can follow in a dedicated formatting commit.
+select = ["F", "E9"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

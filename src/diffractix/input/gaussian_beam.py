@@ -1,9 +1,8 @@
 from dataclasses import dataclass
 from numbers import Real
-from typing import Tuple, ClassVar
+from typing import ClassVar
 import numpy as np
 from diffractix.backend import xp, require
-import cmath
 
 from .paraxial_input import ParaxialState
 from diffractix.graph import Node
@@ -397,7 +396,7 @@ class GaussianBeam(ParaxialState):
 
         # Labels
         plt.title(f"Beam Diagnostic (n={self.n})")
-        plt.xlabel(f"Relative Propagation Distance [m]\n(z > 0 is forward)")
+        plt.xlabel("Relative Propagation Distance [m]\n(z > 0 is forward)")
         plt.ylabel("Beam Radius w(z) [m]")
         plt.legend(loc='upper right')
         plt.grid(True, which='both', alpha=0.3)

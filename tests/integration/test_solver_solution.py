@@ -1,7 +1,7 @@
 """Real optimizer termination, full physical reporting, and solve overrides."""
 import numpy as np
 import pytest
-from diffractix import Constraint, Objective, Parameter, Ray, Solver, Space, System
+from diffractix import Constraint, Parameter, Ray, Solver, Space, System
 from diffractix.graph import Symbol
 
 

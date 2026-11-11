@@ -2,7 +2,8 @@ import pytest
 
 from dataclasses import dataclass
 
-from diffractix.elements.element import OpticalElement, parameter
+from diffractix import parameter
+from diffractix.elements.element import OpticalElement
 from diffractix.graph import Node, Parameter, InputNode
 from diffractix.graph import (
     ASTCycleError,

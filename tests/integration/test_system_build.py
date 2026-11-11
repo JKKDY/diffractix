@@ -1,5 +1,4 @@
 """Layout, binding and requirement compilation across the public System API."""
-import numpy as np
 import pytest
 from diffractix import ABCD, GRIN, Interface, Parameter, Ray, Slab, Space, System, SystemValidationError, ThinLens
 from diffractix.composites import CompositeElement

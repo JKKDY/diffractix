@@ -2,12 +2,12 @@
 Defines the Gaussian Aperture element.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 
 from .element import OpticalElement
-from diffractix.graph import Node, Symbol
+from diffractix.graph import Node
 from diffractix.system.symbols import WAVELENGTH, make_symbol
 
 @dataclass(eq=False, kw_only=True)

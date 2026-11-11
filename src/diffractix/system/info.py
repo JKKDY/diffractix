@@ -1,9 +1,13 @@
 from __future__ import annotations 
 from dataclasses import dataclass, field
 from numbers import Real
+from typing import TYPE_CHECKING
 
 from diffractix.core import OpticalBase
 from diffractix.graph import Node, Parameter
+
+if TYPE_CHECKING:
+    from diffractix.elements import OpticalElement
 
 @dataclass(eq=False, frozen=True)
 class CallSite:
