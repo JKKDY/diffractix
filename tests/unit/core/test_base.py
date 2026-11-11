@@ -337,3 +337,13 @@ def test_ordinary_fields_remain_unwrapped_even_when_assigned_a_node():
 
     assert element.parameter_names == ("gain",)
     assert element.note is expression
+
+
+def test_messages_name_a_parameter_by_the_object_label_or_its_type():
+    derived = Parameter(1.0)
+    labelled = TwoParameterElement(x=2 * derived, y=1.0)
+    labelled.label = "Objective"
+    with pytest.raises(TypeError, match=r"'Objective\.x'.*cannot itself be marked variable"):
+        labelled.variable("x")
+    with pytest.raises(TypeError, match=r"'TwoParameterElement\.x'"):
+        TwoParameterElement(x=2 * derived, y=1.0).variable("x")

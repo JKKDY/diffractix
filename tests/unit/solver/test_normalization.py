@@ -126,7 +126,6 @@ def test_strict_parameter_relations_normalize_to_open_residual_bounds(
     assert constraint.upper_bound == upper_bound
 
 
-
 @pytest.mark.parametrize("factory", [
     lambda p: p,
     lambda p: Objective(p, weight=2, label="explicit"),
@@ -204,7 +203,6 @@ def test_callable_objects_and_bound_methods_normalize_like_functions():
     assert normalize_to_objective(entry.constant).evaluate.value == 2
 
 
-
 def test_value_matching_and_residual_shorthand_match_explicit_objective_derivatives():
     from diffractix.backend import xp
     from tests.helpers.backend import capture_problem
@@ -259,7 +257,6 @@ def test_require_validation_is_atomic_and_chaining_preserves_entries():
 def test_entry_constructor_requires_graph_or_callable(constructor, invalid):
     with pytest.raises(TypeError, match="Node or callable"):
         constructor(invalid)
-
 
 
 @pytest.mark.parametrize("scale", [np.array([1., 0.]), np.array([[0.], [2.]]), np.array(0.)])
@@ -343,3 +340,42 @@ def test_require_label_with_a_raw_node_fails_without_adding():
     with pytest.raises(TypeError):
         solver.require(Parameter(1), label="name")
     assert solver._constraints == []
+
+
+@pytest.mark.parametrize("relation, lower, upper", [
+    ("LE", 2.0, math.inf),                       # 2 <= x
+    ("GE", -math.inf, 2.0),                      # 2 >= x
+    ("EQ", 2.0, 2.0),
+    ("LT", math.nextafter(2.0, math.inf), math.inf),
+    ("GT", -math.inf, math.nextafter(2.0, -math.inf)),
+])
+def test_a_comparison_with_the_constant_on_the_left_bounds_the_right_hand_side(relation, lower, upper):
+    """`2 <= x` is normally reflected by Python; a hand-built Comparison must agree."""
+    from diffractix.graph import Comparison, Relation
+    x = Parameter(1.0)
+    constraint = normalize_to_constraint(Comparison(Relation[relation], Literal(2.0), x))
+
+    assert constraint.evaluate is x
+    assert (constraint.lower_bound, constraint.upper_bound) == (lower, upper)
+
+
+def test_equality_with_a_constant_is_a_closed_interval_on_the_expression():
+    x = Parameter(1.0)
+    constraint = normalize_to_constraint(x == 2.0)
+    assert constraint.evaluate is x and (constraint.lower_bound, constraint.upper_bound) == (2.0, 2.0)
+
+
+def test_unlabelled_callable_constraints_are_described_by_their_source_or_name():
+    def beam_stays_small(sim):
+        return sim.final.x
+
+    class Clearance:
+        def __call__(self, sim):
+            return sim.final.x
+
+    assert str(Constraint(beam_stays_small, upper_bound=1.0)) == "beam_stays_small <= 1"
+    assert str(Constraint(Clearance(), lower_bound=0.0)) == "Clearance >= 0"
+    assert str(Constraint(lambda sim: sim.final.x, lower_bound=0.0, upper_bound=0.0)) == "(lambda sim: sim.final.x) == 0"
+    assert str(Constraint(beam_stays_small, upper_bound=1.0, label="named")) == "named"
+    compiled = eval("lambda sim: sim.final.x")    # no source file to read back
+    assert str(Constraint(compiled, upper_bound=1.0)) == "<lambda> <= 1"

@@ -44,15 +44,76 @@ def evaluate_matrix(element, context=None):
     return np.asarray(values).reshape(2, 2)
 
 
-def assert_single_parameter_constraint(element, parameter_name, relation):
-    """Assert an element declares one bound on one of its input handles."""
-    (constraint,) = element.constraints
+# The parameter whose zero makes each powered element singular.
+POWERED = {
+    "thin lens f": lambda value: ThinLens(f=value),
+    "mirror R": lambda value: Mirror(R=value),
+    "interface R": lambda value: Interface(n1=1.0, n2=1.5, R=value),
+}
 
-    assert isinstance(constraint, Comparison)
+
+# ----------------------------
+# VALIDATION AND DOMAIN LIMITS
+# ----------------------------
+@pytest.mark.parametrize("make", POWERED.values(), ids=POWERED)
+@pytest.mark.parametrize("value", (0.5, -0.5, np.inf, -np.inf))
+def test_build_validation_accepts_any_nonzero_focal_length_or_radius(make, value):
+    make(value).validate()
+
+
+@pytest.mark.parametrize("make", POWERED.values(), ids=POWERED)
+@pytest.mark.parametrize("zero", [0.0, -0.0, 0], ids=["0.0", "-0.0", "0"])
+def test_build_validation_rejects_a_zero_focal_length_or_radius(make, zero):
+    with pytest.raises(ValueError, match="must not be zero"):
+        make(zero).validate()
+
+
+@pytest.mark.parametrize("make", POWERED.values(), ids=POWERED)
+def test_build_validation_checks_the_current_value_of_variables_and_expressions(make):
+    variable = Parameter(0.0).variable()
+    with pytest.raises(ValueError, match="must not be zero"):
+        make(variable).validate()
+    with pytest.raises(ValueError, match="must not be zero"):
+        make(2 * variable).validate()
+    variable.value = 0.2
+    make(variable).validate()
+
+
+@pytest.mark.parametrize("make", POWERED.values(), ids=POWERED)
+def test_build_validation_defers_values_that_are_only_known_at_build(make):
+    make(Symbol("bound when the system is built")).validate()
+
+
+@pytest.mark.parametrize("make, expected", [
+    pytest.param(lambda: Space(d=0.1), [("d", Relation.GE)], id="space"),
+    pytest.param(lambda: Space(d=0.1, n=1.5), [("n", Relation.GT), ("d", Relation.GE)], id="space-in-medium"),
+    pytest.param(lambda: Interface(n1=1.0, n2=1.5), [("n1", Relation.GT), ("n2", Relation.GT)], id="interface"),
+    pytest.param(lambda: ABCD(thickness=0.1), [("thickness", Relation.GE)], id="abcd"),
+    pytest.param(lambda: GaussianAperture(a=1e-3), [("a", Relation.GT)], id="aperture"),
+])
+def test_elements_declare_the_physical_domain_of_their_parameters(make, expected):
+    """Lengths are non-negative; indices and aperture radii are strictly positive."""
+    element = make()
+
+    assert len(element.constraints) == len(expected)
+    for constraint, (name, relation) in zip(element.constraints, expected):
+        assert isinstance(constraint, Comparison)
+        assert constraint.relation is relation
+        assert constraint.left is getattr(element, name)
+        assert isinstance(constraint.right, Literal) and constraint.right.value == 0
+
+
+@pytest.mark.parametrize("make, name, relation, position", [
+    pytest.param(lambda: ABCD(thickness=0.1, n=1.5), "n", Relation.GT, 0, id="abcd-index"),
+    pytest.param(lambda: GRIN(d=0.02, g=10.0, n=1.5), "d", Relation.GE, 0, id="grin-length"),
+    pytest.param(lambda: GRIN(d=0.02, g=10.0, n=1.5), "n", Relation.GT, -1, id="grin-index"),
+])
+def test_thick_elements_in_a_medium_bound_their_length_and_index(make, name, relation, position):
+    element = make()
+    constraint = element.constraints[position]
+
     assert constraint.relation is relation
-    assert constraint.left is getattr(element, parameter_name)
-    assert isinstance(constraint.right, Literal)
-    assert constraint.right.value == 0
+    assert constraint.left is getattr(element, name)
 
 
 # ---------
@@ -96,16 +157,6 @@ def test_thin_lens_matrix_tracks_input_handle():
     lens.f = 0.2
 
     assert matrix[1][0].value == -5.0
-
-
-@pytest.mark.parametrize("focal_length", (-0.5, 0.1, np.inf))
-def test_thin_lens_build_validation_accepts_nonzero_focal_length(focal_length):
-    ThinLens(f=focal_length).validate()
-
-
-def test_thin_lens_build_validation_rejects_zero_focal_length():
-    with pytest.raises(ValueError, match="focal length.*zero"):
-        ThinLens(f=0.0).validate()
 
 
 # -----
@@ -158,18 +209,6 @@ def test_space_refractive_index_does_not_affect_matrix():
     )
 
 
-def test_space_requires_nonnegative_length():
-    assert_single_parameter_constraint(Space(d=0.1), "d", Relation.GE)
-
-
-def test_space_requires_positive_explicit_refractive_index():
-    space = Space(d=0.1, n=1.5)
-
-    assert len(space.constraints) == 2
-    assert space.constraints[0].relation is Relation.GT
-    assert space.constraints[0].left is space.n
-
-
 # ------
 # MIRROR
 # ------
@@ -195,16 +234,6 @@ def test_mirror_matrix():
             evaluate_matrix(mirror),
             expected,
         )
-
-
-@pytest.mark.parametrize("radius", (0.5, -0.5, np.inf, -np.inf))
-def test_mirror_build_validation_accepts_nonzero_radius(radius):
-    Mirror(R=radius).validate()
-
-
-def test_mirror_build_validation_rejects_zero_radius():
-    with pytest.raises(ValueError, match="radius R.*zero"):
-        Mirror(R=0.0).validate()
 
 
 # ---------
@@ -298,25 +327,6 @@ def test_curved_interface_retains_radius_derivatives(radius):
         np.testing.assert_allclose(function(np.array([radius])), [-power_factor / radius**2], rtol=1e-12)
     for function in (hessian(evaluate), jit(hessian(evaluate))):
         np.testing.assert_allclose(function(np.array([radius])), [[2 * power_factor / radius**3]], rtol=1e-12)
-
-
-@pytest.mark.parametrize("radius", (0.5, -0.5, np.inf, -np.inf))
-def test_interface_build_validation_accepts_nonzero_radius(radius):
-    Interface(n1=1.0, n2=1.5, R=radius).validate()
-
-
-def test_interface_build_validation_rejects_zero_radius():
-    with pytest.raises(ValueError, match="radius R.*zero"):
-        Interface(n1=1.0, n2=1.5, R=0.0).validate()
-
-
-def test_interface_requires_positive_refractive_indices():
-    interface = Interface(n1=1.0, n2=1.5)
-
-    assert len(interface.constraints) == 2
-    assert all(constraint.relation is Relation.GT for constraint in interface.constraints)
-    assert interface.constraints[0].left is interface.n1
-    assert interface.constraints[1].left is interface.n2
 
 
 # ----------
@@ -446,17 +456,6 @@ def test_abcd_refractive_index_can_be_context_dependent():
     np.testing.assert_allclose(result, [1.5])
 
 
-def test_abcd_requires_nonnegative_thickness():
-    assert_single_parameter_constraint(ABCD(thickness=0.1), "thickness", Relation.GE)
-
-
-def test_abcd_requires_positive_explicit_refractive_index():
-    element = ABCD(thickness=0.1, n=1.5)
-
-    assert element.constraints[0].relation is Relation.GT
-    assert element.constraints[0].left is element.n
-
-
 # -----------------
 # GAUSSIAN APERTURE
 # -----------------
@@ -494,10 +493,6 @@ def test_gaussian_aperture_matrix():
     ])
 
     np.testing.assert_allclose(matrix, expected)
-
-
-def test_gaussian_aperture_requires_strictly_positive_radius():
-    assert_single_parameter_constraint(GaussianAperture(a=1e-3), "a", Relation.GT)
 
 
 # ----
@@ -556,21 +551,6 @@ def test_grin_sinc_derivatives_at_zero_match_taylor_limit(order, expected):
             evaluate(np.array([0.0])), np.full((1,) * order, expected),
             rtol=1e-12, atol=1e-15,
         )
-
-
-def test_grin_requires_nonnegative_length():
-    element = GRIN(d=0.02, g=10.0, n=1.5)
-
-    assert element.constraints[0].relation is Relation.GE
-    assert element.constraints[0].left is element.d
-
-
-def test_grin_requires_positive_refractive_index():
-    element = GRIN(d=0.02, g=10.0, n=1.5)
-    constraint = element.constraints[-1]
-
-    assert constraint.relation is Relation.GT
-    assert constraint.left is element.n
 
 
 @pytest.mark.parametrize("element", [ThinLens(f=-0.1), Mirror(R=-0.5), Plane()],

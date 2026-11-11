@@ -140,3 +140,10 @@ def test_propagation_derivatives_and_jit_for_source_distance_and_focal_length(fo
     ):
         np.testing.assert_allclose(function(values), expected, rtol=1e-12, atol=1e-12)
         np.testing.assert_allclose(jit(function)(values), expected, rtol=1e-12, atol=1e-12)
+
+
+@pytest.mark.parametrize("x, expected", [
+    (5e-7, "500.0 nm"), (-5e-4, "-500.0 um"), (0.5, "500.0 mm"), (2.0, "2.00 m"), (5e3, "5.0 km"), (0.0, "0.0 nm"),
+])
+def test_string_form_picks_a_readable_length_unit(x, expected):
+    assert str(Ray(x=x, theta=1e-3, n=1.5).numeric()) == f"Ray(x={expected}, theta=0.001 rad, n=1.5)"

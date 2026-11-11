@@ -319,3 +319,18 @@ def test_symbolic_result_requires_exactly_one_optical_input():
     simulation._optical_inputs = ()
     with pytest.raises(ValueError, match="exactly one optical input"):
         simulation.symbolic
+
+
+def test_string_summary_lists_each_variable_with_its_initial_value_and_bounds():
+    from diffractix.elements import Space, ThinLens
+    from diffractix.system import System
+    lens = ThinLens(f=0.1, label="Focus").variable(f=(0.05, 0.5))
+    gap = Space(d=0.2).variable("d")
+    text = str(System(gap, lens, optical_input=Ray(x=0, theta=0, n=1.0)).build())
+    table = text.split("Variables\n\n")[1].split("\n\n")[0].splitlines()
+
+    assert "Variables: 2" in text
+    assert table[0].split() == ["#", "Parameter", "Initial", "Bounds"]
+    rows = [line.split(maxsplit=3) for line in table[2:]]
+    assert [row[0] for row in rows] == ["0", "1"]
+    assert {(row[1], row[2], row[3].strip()) for row in rows} == {("d", "0.2", "[-inf, inf]"), ("f", "0.1", "[0.05, 0.5]")}

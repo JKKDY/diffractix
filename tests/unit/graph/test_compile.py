@@ -236,3 +236,38 @@ def test_program_and_analytical_expression_agree_through_nested_derivatives(kind
         transform(lambda t: cost(actual, t))(point), reference,
         rtol=1e-9, atol=1e-10, equal_nan=False,
     )
+
+
+def test_program_text_lists_inputs_instructions_and_outputs_in_order():
+    """str(program) is the debugging view: theta slots, runtime symbols, code, outputs."""
+    from diffractix.graph import Literal, Parameter, Symbol
+    parameter = Parameter(0.5).variable()
+    program = compile_graph(((parameter * 2 + Symbol("k")).sin(), parameter, Literal(3.0)))
+    lines = str(program).splitlines()
+
+    assert lines[0] == "INPUTS"
+    assert lines[1].split("\t")[:2] == ["  i0", "theta[0]"] and str(id(parameter)) in lines[1]
+    assert lines[2].split("\t") == ["  i1", "symbol['k']"]
+    code = lines[lines.index("PROGRAM") + 1:lines.index("OUTPUTS") - 1]
+    assert [line.split()[0] for line in code] == ["MUL", "ADD", "SIN"]
+    assert code[0].split()[1:] == ["r0,", "i0,", "2"]
+    assert [line.split("\t")[1] for line in lines[lines.index("OUTPUTS") + 1:]] == ["r0", "i0", "3.0"]
+
+
+def test_program_text_of_an_empty_program_has_no_instructions():
+    text = str(compile_graph(()))
+    assert "INPUTS" in text and "OUTPUTS" in text
+    assert text.split("PROGRAM")[1].split("OUTPUTS")[0].strip() == ""
+
+
+@pytest.mark.parametrize("compiler", [precompile, compile_graph])
+def test_compilation_rejects_empty_handles_and_unknown_node_types(compiler):
+    from diffractix.graph import InputNode, Node, UnresolvedInputError, UnsupportedNodeError
+
+    class Unknown(Node):
+        pass
+
+    with pytest.raises(UnresolvedInputError, match="empty InputNode"):
+        compiler((InputNode(None) + 1,))
+    with pytest.raises(UnsupportedNodeError, match="Unknown"):
+        compiler((Unknown(),))

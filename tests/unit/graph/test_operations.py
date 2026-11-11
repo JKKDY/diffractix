@@ -106,3 +106,24 @@ def test_binary_operations_with_a_constant_on_either_side(name):
     for expression, reference in ((build(parameter, Y), build(X, Y)), (build(Y, parameter), build(Y, X))):
         for function in _evaluators(expression, [parameter]).values():
             np.testing.assert_allclose(function(xp.array([X])), reference, rtol=1e-12)
+
+
+def test_operation_metadata_gives_name_arity_and_commutativity():
+    from diffractix.graph.ops import Op
+    assert repr(Op.ADD) == "ADD" and repr(Op.SINC) == "SINC"
+    assert (Op.ADD.arity, Op.SUB.arity, Op.MAX.arity) == (2, 2, 2)
+    assert (Op.NEG.arity, Op.SIN.arity, Op.SINC.arity) == (1, 1, 1)
+    assert Op.ADD.is_commutative and Op.MUL.is_commutative
+    assert not Op.SUB.is_commutative and not Op.DIV.is_commutative
+
+
+def test_unary_expressions_have_a_live_value_and_inherit_variability():
+    variable, fixed = Parameter(0.5).variable(), Parameter(2.0)
+    negated = -variable
+
+    assert negated.value == -0.5 and negated.is_variable
+    assert not (-fixed).is_variable
+    variable.value = 0.25
+    assert negated.value == -0.25
+    variable.fixed()
+    assert not negated.is_variable

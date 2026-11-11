@@ -437,3 +437,12 @@ def test_custom_input_subclasses_remain_numerical_after_inherited_propagation(
     assert source.refractive_index == 1.0
     propagated.n = 1.5
     assert propagated.n == 1.5 and not isinstance(propagated.n, Node)
+
+
+def test_inputs_get_unique_default_labels_but_numerical_copies_do_not():
+    from diffractix import Ray
+    first, second = Ray(x=0, theta=0, n=1), Ray(x=0, theta=0, n=1)
+    assert first.label != second.label and first.label.startswith("Ray")
+    assert Ray(x=0, theta=0, n=1, label="probe").label == "probe"
+    assert first.numeric().label == first.label
+    assert Ray.numerical_type()(x=0.0, theta=0.0, n=1.0).label is None

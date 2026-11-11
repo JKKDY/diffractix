@@ -157,7 +157,6 @@ def test_scaling_mixed_unbounded_and_zero_width_dimensions_owns_immutable_metada
             values[0] = 0.0
 
 
-
 def test_scaling_rejects_wrong_constraint_jacobian_shape():
     from dataclasses import replace
     with pytest.raises(ValueError, match="Jacobian.*shape"):
@@ -181,3 +180,16 @@ def test_finite_large_width_does_not_overflow_and_empty_constraints_skip_jacobia
                       jacobian=unexpected_jacobian, scaling=None)
     np.testing.assert_allclose(problem.scaling.x_scale, [1e308])
     assert problem.scaling.constraint_scale.shape == (0,)
+
+
+def test_a_bound_interval_too_narrow_to_halve_falls_back_to_the_value_scale():
+    """0.5 * 5e-324 underflows to zero; the scale must stay positive."""
+    problem = make_scaling_problem()
+    narrow = Problem(
+        x0=np.array([0.0, 3.0]), x_lower=np.array([0.0, 3.0]), x_upper=np.array([5e-324, 3.0]),
+        objective=problem.objective, gradient=problem.gradient, objective_hessian=problem.objective_hessian,
+        constraints=lambda x: np.array([]), jacobian=lambda x: np.zeros((0, 2)),
+        constraint_hessian=lambda x, multipliers: np.zeros((2, 2)),
+        constraint_lower=np.array([]), constraint_upper=np.array([]),
+    )
+    np.testing.assert_array_equal(narrow.scaling.x_scale, [1.0, 3.0])

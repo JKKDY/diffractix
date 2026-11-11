@@ -295,3 +295,8 @@ def test_statistics_of_an_empty_bundle_are_nan_without_warnings(name):
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         assert np.isnan(getattr(empty, name))
+
+
+def test_string_form_reports_size_and_medium():
+    assert str(RayBundle.parallel(radius=1e-3, count=3, n=1.5).numeric()) == "RayBundle(size=3, n=1.5)"
+    assert str(RayBundle(x=np.array([]), theta=np.array([])).numeric({"ambient_n": 1.0})) == "RayBundle(size=0, n=1)"

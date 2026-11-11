@@ -376,3 +376,26 @@ def test_str_summarizes_status_variables_objectives_and_constraints():
     for expected in ("Variables", "d", "0.5", "0.3", "Objectives", "focus", "Constraints", "length", "ok"):
         assert expected in text
     assert "VIOLATED" not in text
+
+
+def test_reporting_rejects_a_deferred_callable_that_returns_a_graph_node():
+    p = Parameter(0.5).variable()
+    solver = Solver(System(optical_input=Ray(x=p, theta=0, n=1)))
+
+    def residual(result):
+        return p if result.final.x > 1 else result.final.x   # a Node only at the solved point
+
+    solver.target(residual)
+    solution, _ = make_solution(solver=solver)
+    with pytest.raises(TypeError, match="must return numerical scalars or arrays"):
+        solution.objectives
+
+
+@pytest.mark.filterwarnings("ignore:overflow encountered:RuntimeWarning")
+def test_reporting_rejects_a_finite_residual_whose_cost_overflows():
+    p = Parameter(0.5).variable()
+    solver = Solver(System(optical_input=Ray(x=p, theta=0, n=1)))
+    solver.target(lambda result: 1e200 if result.final.x > 1 else result.final.x, label="huge")
+    solution, _ = make_solution(solver=solver)
+    with pytest.raises(ValueError, match="'huge' cost is non-finite"):
+        solution.objectives

@@ -83,3 +83,14 @@ Open questions: how plain floats (currently SI by convention) take part, since
 existing code such as `ThinLens(f=0.05)` must keep working; and how far inference
 reaches into user callables. Quantity objects inside the numerical backends
 (Pint/Astropy style) are ruled out because they break JAX and Autograd tracing.
+
+## 8. Gaussian beam factories that follow the ambient index
+
+`GaussianBeam.from_waist`, `from_w_and_R`, `from_divergence` and `from_fiber_tip`
+default to `n=1`, while the plain constructor (and `Ray`, `RayBundle`) default to
+the system's ambient index. The factories need `n` as a number because the waist
+radius fixes `q` only together with the index (`z_R = pi * n * w0**2 / wavelength`).
+Following the ambient index would mean keeping the factory inputs (`w0`, waist
+position, ...) and computing `q` at build time once `ambient_n` is known, which
+changes how `GaussianBeam` stores its state. Kept at `n=1` for 0.0.1, documented,
+with the index-mismatch error naming the fix.

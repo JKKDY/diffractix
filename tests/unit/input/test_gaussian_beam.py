@@ -234,7 +234,6 @@ def test_waist_envelope_derivatives_remain_finite_through_plane_curvature():
         np.testing.assert_allclose(jit(function)(0.0), expected, rtol=1e-12, atol=1e-15)
 
 
-
 @pytest.mark.parametrize("q", [0, 1., -1j, 1-1j, complex(np.nan, 1), complex(0, np.nan),
                               complex(np.inf, 1), complex(0, np.inf)])
 @pytest.mark.parametrize("entry", ["declarative", "numerical", "width"])
@@ -303,3 +302,53 @@ def test_overlap_wavelength_tolerance_accepts_float32_rounding():
     rounded = cls(q=1j, wavelength=np.float32(1.064e-6), n=1)
     assert first.overlap_with(rounded) == pytest.approx(1.)
     assert rounded.overlap_with(first) == pytest.approx(1.)
+
+
+# ----------------
+# DISPLAY HELPERS
+# ----------------
+def test_string_form_reports_the_beam_here_and_its_waist():
+    at_waist = str(GaussianBeam.from_waist(5e-4, 1e-6).numeric())
+    assert at_waist.startswith("GaussianBeam(lam=1.0 um, Current[w=500.0 um, R=Plane]")
+    assert "Waist[w0=500.0 um" in at_waist
+
+    converging = str(GaussianBeam.from_waist(5e-4, 1e-6, z_waist_loc=0.2).numeric())
+    assert "Current[w=516.0 um, R=-3.28 m]" in converging
+    assert "Waist[w0=500.0 um @ z=200.0 mm]" in converging
+
+
+@pytest.mark.parametrize("span", [None, 0.5])
+def test_debug_plot_draws_the_envelope_marks_the_waist_and_shows_once(span, monkeypatch):
+    import matplotlib
+    matplotlib.use("Agg", force=True)
+    import matplotlib.pyplot as plt
+    shown = []
+    monkeypatch.setattr(plt, "show", lambda: shown.append(True))
+    beam = GaussianBeam.from_waist(5e-4, 1e-6, z_waist_loc=0.1).numeric()
+
+    beam.plot(span=span, points=51)
+
+    axes = plt.gca()
+    try:
+        assert shown == [True]
+        envelope = axes.lines[0]
+        assert len(envelope.get_xdata()) == 51
+        width = np.ptp(envelope.get_xdata())
+        assert width == pytest.approx(0.5 if span else 4 * max(0.1, float(beam.z_r)))
+        np.testing.assert_allclose(envelope.get_ydata().min(), 5e-4, rtol=1e-3)   # the waist is in view
+        labels = axes.get_legend_handles_labels()[1]
+        assert "Current Position" in labels and "Waist Location" in labels
+    finally:
+        plt.close("all")
+
+
+def test_debug_plot_omits_the_waist_marker_when_the_waist_is_out_of_view(monkeypatch):
+    import matplotlib
+    matplotlib.use("Agg", force=True)
+    import matplotlib.pyplot as plt
+    monkeypatch.setattr(plt, "show", lambda: None)
+    try:
+        GaussianBeam.from_waist(5e-4, 1e-6, z_waist_loc=10.0).numeric().plot(span=0.1, points=11)
+        assert "Waist Location" not in plt.gca().get_legend_handles_labels()[1]
+    finally:
+        plt.close("all")

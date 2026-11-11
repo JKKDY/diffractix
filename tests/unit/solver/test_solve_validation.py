@@ -104,13 +104,6 @@ def test_a_branching_callable_fails_under_jit_with_a_hint_to_pass_jit_false_and_
     assert _branching_solver().solve(jit=False).success
 
 
-def test_a_branching_callable_runs_unchanged_where_nothing_is_traced():
-    from diffractix.backend import current_backend
-    if current_backend() == "jax":
-        pytest.skip("Covered by the JIT hint test.")
-    assert _branching_solver().solve().success
-
-
 def test_chained_comparisons_explain_how_to_write_the_two_bounds():
     distance = Parameter(0.5)
     with pytest.raises(TypeError, match="chained comparison.*solver.require"):

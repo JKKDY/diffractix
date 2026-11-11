@@ -235,12 +235,3 @@ def test_default_composite_labels_are_unique_and_explicit_labels_are_kept(compos
     named = composite_type(**kwargs, label="mine")
     assert named.label == "mine"
     assert all(part.label.startswith("mine") for part in named.leaf_elements)
-
-
-def test_inputs_get_unique_default_labels_but_numerical_copies_do_not():
-    from diffractix import Ray
-    first, second = Ray(x=0, theta=0, n=1), Ray(x=0, theta=0, n=1)
-    assert first.label != second.label and first.label.startswith("Ray")
-    assert Ray(x=0, theta=0, n=1, label="probe").label == "probe"
-    assert first.numeric().label == first.label
-    assert Ray.numerical_type()(x=0.0, theta=0.0, n=1.0).label is None

@@ -63,7 +63,6 @@ def test_empty_path_plot_does_not_invent_trajectory():
     assert ax.collections
 
 
-
 def test_thick_grin_plot_keeps_boundaries_without_inventing_interior_samples():
     grin = GRIN(d=0.03, g=2, n=1)
     result = System(Space(d=0.02), grin, Space(d=0.04),
@@ -152,28 +151,50 @@ def test_composites_are_named_once_and_shaded_and_element_kinds_have_one_legend_
     np.testing.assert_allclose(span, [start, end])
 
 
-def test_element_paths_start_with_the_top_level_composite_and_are_none_for_direct_elements_and_gaps():
-    from diffractix.composites import CompositeElement, Telescope
-    telescope = Telescope(f1=0.05, f2=0.1, label="Relay")
-
-    class Module(CompositeElement):
-        def __init__(self):
-            super().__init__(label="Module")
-            self.inner = Telescope(f1=0.02, f2=0.02, label="Inner")
-
-    module = Module()
-    first = Space(d=0.01)
-    system = System(first, telescope, optical_input=Ray(x=0.001, theta=0.0)).add(module, z=0.5)
-    paths = {info.label: info.path for info in system.build().element_data}
-    assert paths[first.label] is None                                   # added directly
-    assert paths[f"AutoSpace_to_{module.inner.lens1.label}"] is None    # generated gap
-    assert paths[telescope.lens1.label] == ("Relay", "lens1")
-    assert paths[module.inner.lens1.label] == ("Module", "inner", "lens1")
-
-
 def test_names_of_nearly_coincident_elements_merge_into_one_label():
     from diffractix import Plane
     result = System(Space(d=0.1), Plane(label="Scanner"), Space(d=0.0005), ThinLens(f=0.1, label="Lens"),
                     Space(d=0.1), Plane(label="Screen"), optical_input=Ray(x=0.001, theta=0.0)).build().run()
     _, ax = plot(result)
     assert element_names(ax) == ["Scanner / Lens", "Screen"]
+
+
+# -----------------------
+# INPUTS THAT CANNOT PLOT
+# -----------------------
+@pytest.mark.parametrize("value, message", [
+    (np.array([1.0, np.nan]), "finite numerical values"),
+    (np.array([np.inf]), "finite numerical values"),
+    (np.array([1 + 2j]), "concrete real numerical results"),
+    (np.array(["a"]), "concrete real numerical results"),
+    (object(), "concrete real numerical results"),
+])
+def test_plot_data_must_be_finite_real_numbers(value, message):
+    from diffractix.plotting.sampling import _concrete
+    with pytest.raises(ValueError, match=message):
+        _concrete(value)
+
+
+def test_complex_values_without_an_imaginary_part_plot_as_real():
+    from diffractix.plotting.sampling import _concrete
+    converted = _concrete(np.array([1 + 0j, 2 + 0j]))
+    assert converted.dtype.kind == "f" and converted.tolist() == [1.0, 2.0]
+
+
+def test_sampling_rejects_unknown_sources_and_malformed_traces():
+    from types import SimpleNamespace
+    ray = Ray(x=0.001, theta=0.0, n=1.0).numeric()
+    with pytest.raises(TypeError, match="supports numerical Ray, RayBundle and GaussianBeam.*got object"):
+        sample(SimpleNamespace(source=object()))
+    with pytest.raises(ValueError, match="one scalar z position per state"):
+        sample(SimpleNamespace(source=ray, z=np.zeros((2, 2))))
+    vector_state = SimpleNamespace(x=np.array([0.0, 1.0]))
+    with pytest.raises(ValueError, match="scalar state values"):
+        sample(SimpleNamespace(source=ray, z=np.array([0.0, 1.0]), states=[vector_state, vector_state]))
+
+
+def test_a_nonfinite_result_cannot_be_plotted():
+    result = System(Space(d=0.1), optical_input=Ray(x=0.001, theta=0.0)).build().run([])
+    result.states[-1].x = float("nan")
+    with pytest.raises(ValueError, match="finite numerical values"):
+        plot(result)

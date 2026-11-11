@@ -521,3 +521,22 @@ def test_simulation_bindings_are_a_build_time_structural_snapshot():
     solution = solver.solve()
     assert solution.value(variable) == pytest.approx(0.15, rel=1e-4)
     assert solution.value(Symbol("focal")) == pytest.approx(0.3, rel=1e-4)
+
+
+def test_element_paths_start_with_the_top_level_composite_and_are_none_for_direct_elements_and_gaps():
+    from diffractix.composites import Telescope
+    telescope = Telescope(f1=0.05, f2=0.1, label="Relay")
+
+    class Module(CompositeElement):
+        def __init__(self):
+            super().__init__(label="Module")
+            self.inner = Telescope(f1=0.02, f2=0.02, label="Inner")
+
+    module = Module()
+    first = Space(d=0.01)
+    system = System(first, telescope, optical_input=Ray(x=0.001, theta=0.0)).add(module, z=0.5)
+    paths = {info.label: info.path for info in system.build().element_data}
+    assert paths[first.label] is None                                   # added directly
+    assert paths[f"AutoSpace_to_{module.inner.lens1.label}"] is None    # generated gap
+    assert paths[telescope.lens1.label] == ("Relay", "lens1")
+    assert paths[module.inner.lens1.label] == ("Module", "inner", "lens1")

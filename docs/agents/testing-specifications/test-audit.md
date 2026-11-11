@@ -272,3 +272,48 @@ test suite stay in step. None is implemented yet, so no tests have changed for t
 | 5b | Solver locking: either allow `target()`/`require()` after a solve (invalidating the cache), or keep it fixed. `Solver(solution.simulation)` already covers reuse across simulations, so a per-simulation keyed cache is only needed if one Solver must swap simulations. | Update `test_model_definitions_freeze_after_preparation` if the lock is relaxed. |
 | 3 | Thick-lens positioning (front vertex versus centre) is to be reviewed. | None yet. |
 | – | GRIN rod without explicit Interfaces: low priority; a composite could package it. | None yet. |
+
+## 8. Suite review (11 November 2026)
+
+Baseline 1580 passed / 5 skipped (Autograd), 92 % branch coverage; after the review
+1637 passed / 4 skipped (Autograd), 1639 passed / 2 skipped (JAX), 95 %.
+
+Consolidated (26 tests merged or removed, none of their assertions lost):
+
+- `unit/graph/test_construction.py`: five older bounds tests folded into the two
+  table-driven ones (every spelling, atomic, starting from existing bounds); three
+  comparison-operand tests into one table; the two truth-value tests into one.
+- `unit/elements/test_elements.py`: per-element "accepts nonzero / rejects zero"
+  pairs for ThinLens, Mirror and Interface into shared tables (now also `-0.0`, a
+  variable at zero, an expression at zero and a build-time Symbol); eight per-element
+  domain-constraint tests into two tables.
+- The JAX "Python branch under JIT" contract was asserted three times; it now lives
+  only in `unit/solver/test_solve_validation.py` (the raw-callback variant in
+  `unit/backend/test_jax.py` stays, it covers the constraint path).
+- Moved: the element-path test out of `integration/test_plotting.py` into
+  `unit/system/test_compilation.py`; the input-label test from the composites file
+  into `unit/input/test_input.py`.
+
+Added: `tests/e2e/test_design_workflows.py` (7 workflow tests, see `tests/README.md`),
+and unit tests for previously unexecuted behaviour: `str(program)`, operation
+metadata, `Parameter.full_name`, the string forms of Ray, RayBundle and GaussianBeam,
+`GaussianBeam.plot`, the System and Simulation summaries (variable / fixed / derived
+parameters, constraint naming, the variables table), runtime-symbol resolution errors,
+private attributes and comparisons on symbolic results, plot inputs that cannot be
+drawn, Solution reporting failures (a Node from a deferred callable, an overflowing
+cost), a denormal bound interval in scaling, hand-built reversed comparisons, and the
+description of unlabelled callable constraints.
+
+Left uncovered on purpose:
+
+- `plotting/primitives.py` and `plotting/spec.py` are not used by anything.
+- `elif length < 0: raise ValueError(...)` in Space, GRIN and ABCD cannot be reached:
+  `element_length` is always a graph node there, so the constraint branch runs.
+- "Unknown instruction / operand" guards in `graph/program*.py` and `compile.py`.
+- `backend/__init__.py` and `plotting/__init__.py` are exercised in subprocesses,
+  which the in-process coverage run does not see.
+
+Noticed, not changed: `str(GaussianBeam)` prints a waist at the current plane as
+`z=-0.0 nm`; `describe_callable` returns the whole enclosing expression for a lambda
+nested inside another lambda on the same line.
+

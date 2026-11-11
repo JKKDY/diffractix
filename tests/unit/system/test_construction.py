@@ -333,7 +333,6 @@ def test_summary_describes_design_without_resolving_or_mutating_it():
     assert system.placements == before and system.system_constraints[0] is constraint
 
 
-
 def test_variadic_constructor_records_user_call_site_and_build_error_location():
     import inspect
     line = inspect.currentframe().f_lineno + 1
@@ -486,3 +485,36 @@ def test_shared_provider_in_two_composites_of_one_system_contributes_once():
     shared = BoundPlane(supplied_bindings={"calibration": 1.5})
     system = System(Pair(shared), Pair(shared), optical_input=Ray(x=0, theta=0, n=1))
     assert system.build().bindings["calibration"] == 1.5
+
+
+def test_summary_marks_variable_fixed_derived_and_empty_parameters():
+    distance = Parameter(0.1).variable()
+    system = System(
+        Space(d=distance, label="Gap"),                 # variable length, inherited index
+        ThinLens(f=2 * distance, label="Derived"),      # an expression of the variable
+        ThinLens(f=0.25, label="Fixed"),
+        optical_input=Ray(x=0, theta=0, n=1.0),
+    )
+    rows = {line.split()[3]: line for line in str(system).splitlines() if "relative" in line}
+
+    assert "d=0.1 [VAR]" in rows["Gap"] and "n=-" in rows["Gap"]
+    assert "[EXPR]" in rows["Derived"] and "[VAR]" not in rows["Derived"]
+    assert "f=0.25 [FIX]" in rows["Fixed"]
+
+
+def test_summary_names_constraints_by_label_then_function_name_then_expression():
+    distance = Parameter(0.1, name="distance").variable()
+    system = System(Space(d=distance), optical_input=Ray(x=0, theta=0, n=1.0))
+
+    def stay_short():
+        return distance <= 1
+
+    system.require(distance <= 2, label="Hard stop")
+    system.require(stay_short)
+    system.require(distance >= 0.01)
+    text = str(system)
+
+    listed = text.split("Constraints\n\n")[1].splitlines()
+    assert [line.split(maxsplit=1)[1] for line in listed[:3]] == [
+        "Hard stop", "stay_short", "distance=0.1[V] >= 0.01"]
+    assert "Constraints: 4" in text    # the three above and the Space's own d >= 0
