@@ -22,7 +22,8 @@ def test_nested_composite_paths_shared_theta_and_absolute_gap():
     simulation=system.build()
     result=simulation.run()
     assert len(simulation.parameter_data)==1
-    assert [info.path for info in simulation.element_data[:4]]==["window.front","window.body","window.back","output"]
+    assert [info.path for info in simulation.element_data[:4]]==[
+        (relay.label,"window","front"),(relay.label,"window","body"),(relay.label,"window","back"),(relay.label,"output")]
     assert result[target].z_start == pytest.approx(0.05)
     assert result.final.x == pytest.approx(0.001+0.01*0.01/1.5+0.04*0.01)
     guess=simulation.initial_values

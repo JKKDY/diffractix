@@ -25,7 +25,10 @@ class ElementData:
     position: int
     type_name: str
     label: str | None
-    path: str | None
+    # Location inside a top-level composite: (composite label, *attribute names),
+    # for example ("Relay 1", "front"); None for an element added directly and
+    # for generated gaps.
+    path: tuple[str, ...] | None
     variable_parameter_ids: frozenset[int]
     parameter_names: tuple[str, ...] = ()
     parameter_indices: tuple[int, ...] = ()
@@ -55,7 +58,7 @@ class Placement:
     element: OpticalBase
     z: Node | Real | None = None
     call_site: CallSite | None = None
-    path: str | None = None # identifies location within a composite element
+    path: tuple[str, ...] | None = None # (composite label, *attribute names) inside a composite
 
     def describe(self, index: int | None = None) -> str:
         element_type = type(self.element).__name__

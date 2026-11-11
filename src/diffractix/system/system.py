@@ -380,7 +380,7 @@ class System:
                         element=leaf,
                         z=placement.z if i == 0 else None,
                         call_site=placement.call_site,
-                        path=path,
+                        path=(placement.element.label, *path.split(".")),
                     ))
             else:
                 raise TypeError(
@@ -395,11 +395,11 @@ class System:
         element_data = []
         current_z = 0.0
 
-        def append(element, placement):
+        def append(element, placement, path):
             resolved.append(Placement(
                 element=element,
                 call_site=placement.call_site,
-                path=placement.path,
+                path=path,
             ))
 
             parameters = tuple(
@@ -418,7 +418,7 @@ class System:
                 position=len(resolved) - 1,
                 type_name=type(element).__name__,
                 label=element.label,
-                path=placement.path,
+                path=path,
                 variable_parameter_ids=parameter_ids,
                 parameter_names=tuple(name for name, _ in parameters),
                 element=element,
@@ -431,10 +431,10 @@ class System:
                 gap = placement.z - current_z
                 spacer = Space(d=gap, label=f"AutoSpace_to_{element.label}")
 
-                append(spacer, placement)
+                append(spacer, placement, path=None)  # a generated gap belongs to no composite
                 current_z = current_z + spacer.element_length
 
-            append(element, placement)
+            append(element, placement, placement.path)
             current_z = current_z + element.element_length
 
         return tuple(resolved), tuple(element_data),

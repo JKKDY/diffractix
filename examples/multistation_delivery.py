@@ -327,13 +327,63 @@ design("Total length", initial.z[-1], optimized.z[-1])
 
 
 if __name__ == "__main__":
+    import numpy as np
     import matplotlib.pyplot as plt
 
-    figure, axes = plt.subplots(2, 1, figsize=(11, 7), sharex=True, sharey=True, layout="constrained")
+    def mark_goals(ax, result):
+        """Draw the station target radii and the aperture limits onto a beam plot."""
+        target_z = [float(result[station].z_start) for station, _ in stations]
+        target_w = [radius * 1e3 for _, radius in stations]
+        ax.scatter(target_z * 2, target_w + [-w for w in target_w], s=30, facecolors="none",
+                   edgecolors="#26323f", linewidths=1.1, zorder=6, label="Target radius")
+        limit_z = [float(result[element].z_start) for element, _ in apertures]
+        limit_w = [diameter / 4 * 1e3 for _, diameter in apertures]
+        ax.scatter(limit_z * 2, limit_w + [-w for w in limit_w], marker="_", s=90,
+                   color="#6b4e3d", linewidths=1.6, zorder=6, label="Aperture limit (D/4)")
+
+    def spot_summary(result):
+        spot = float(result[workpiece].after.w) * 1e6
+        offset = float(result[workpiece].after.z0) * 1e3
+        return f"{spot:.1f} um spot, waist {offset:+.2f} mm from the workpiece"
+
+    figure = plt.figure(figsize=(11, 11), layout="constrained")
+    before_ax, after_ax, focus_ax = figure.subplots(3, 1, height_ratios=(1, 1, 0.8))
+    after_ax.sharex(before_ax)
+    after_ax.sharey(before_ax)
     figure.suptitle("Multi-station delivery")
-    initial.plot(ax=axes[0])
-    optimized.plot(ax=axes[1])
-    axes[0].set_title("Before optimization", loc="left")
-    axes[1].set_title("After optimization", loc="left")
-    axes[0].set_xlabel("")
+
+    initial.plot(ax=before_ax)
+    mark_goals(before_ax, initial)
+    before_ax.set_title(f"Before optimization: {spot_summary(initial)}", loc="left")
+    before_ax.set_xlabel("")
+
+    optimized.plot(ax=after_ax)
+    mark_goals(after_ax, optimized)
+    verdict = "all requirements met" if solution.feasible else "requirements violated"
+    after_ax.set_title(f"After optimization: {spot_summary(optimized)}, {verdict}", loc="left")
+    # One legend for both beam plots, beside them rather than over the beam.
+    before_ax.get_legend().remove()
+    after_ax.legend(frameon=False, fontsize=8, loc="upper left", bbox_to_anchor=(1.01, 1.0))
+
+    # Close-up of the focus: the free-space envelope around the workpiece plane,
+    # continued a few millimetres past it to show where the waist lies.
+    offsets = np.linspace(-25e-3, 5e-3, 601)
+    for result, name, style in ((initial, "Before", dict(color="#9aa3ad", linestyle="--")),
+                                (optimized, "After", dict(color="#df7664"))):
+        state = result[workpiece].after
+        w = np.array([float(state.w_at_z(float(offset))) for offset in offsets]) * 1e6
+        z = (WORKPIECE_Z + offsets) * 1e3
+        focus_ax.plot(z, w, label=name, **style)
+        focus_ax.plot(z, -w, **style)
+    for sign in (1, -1):
+        focus_ax.axhline(sign * FOCUS_RADIUS * 1e6, color="#26323f", linestyle=":", linewidth=1,
+                         label="Target waist radius" if sign == 1 else "_nolegend_")
+    focus_ax.axvline(WORKPIECE_Z * 1e3, color="#a3abb4", linestyle=":", label="Workpiece")
+    focus_ax.axhline(0, color="#8a929b", linewidth=0.8, linestyle="--", alpha=0.65)
+    focus_ax.set_title("Focus at the workpiece", loc="left")
+    focus_ax.set_xlabel("Optical axis z [mm]")
+    focus_ax.set_ylabel("Beam radius ±w [um]")
+    focus_ax.legend(frameon=False, fontsize=8, loc="upper left", bbox_to_anchor=(1.01, 1.0))
+    focus_ax.grid(True, color="#a0a8b1", alpha=0.18, linewidth=0.6)
+    focus_ax.spines[["top", "right"]].set_visible(False)
     plt.show()

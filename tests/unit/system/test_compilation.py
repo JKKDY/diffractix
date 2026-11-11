@@ -69,7 +69,9 @@ def test_flattening_preserves_paths_identity_call_site_and_first_absolute_positi
     system = System().add(relay, z=0.5)
     original = system.placements[0]
     resolved = system._resolve_elements()
-    assert [p.path for p in resolved] == ["lens", "slab.front", "slab.body", "slab.back"]
+    name = relay.label
+    assert [p.path for p in resolved] == [
+        (name, "lens"), (name, "slab", "front"), (name, "slab", "body"), (name, "slab", "back")]
     assert all(p.element is leaf for p, leaf in zip(resolved, relay.leaf_elements))
     assert [p.z for p in resolved] == [0.5, None, None, None]
     assert all(p.call_site is original.call_site for p in resolved)
@@ -112,9 +114,11 @@ def test_layout_preserves_paths_and_call_site_on_generated_space():
     system = System().add(slab, z=0.1)
     original = system.placements[0]
     resolved, metadata = system._resolve_layout(system._resolve_elements(), system.bindings)
-    assert [p.path for p in resolved] == ["front", "front", "body", "back"]
+    # The generated gap belongs to no composite; the slab's parts carry its label.
+    expected = [None, (slab.label, "front"), (slab.label, "body"), (slab.label, "back")]
+    assert [p.path for p in resolved] == expected
     assert all(p.call_site is original.call_site for p in resolved)
-    assert [info.path for info in metadata] == ["front", "front", "body", "back"]
+    assert [info.path for info in metadata] == expected
     assert all(info.element_id == id(p.element) for info, p in zip(metadata, resolved))
 
 

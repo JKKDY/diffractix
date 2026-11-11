@@ -174,7 +174,7 @@ class Simulation:
                 f"{z:.4g}",
                 element.type_name,
                 element.label or "-",
-                *([element.path or "-"] if has_paths else []),
+                *([".".join(element.path) if element.path else "-"] if has_paths else []),
                 f"{length:.4g}",
                 f"{n:.4g}",
             ))

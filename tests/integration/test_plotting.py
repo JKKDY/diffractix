@@ -9,6 +9,11 @@ from diffractix.plotting import plot
 from diffractix.plotting.sampling import sample
 
 
+def element_names(ax):
+    """Names on the top axis that labels the elements."""
+    return [label.get_text() for child in ax.child_axes for label in child.get_xticklabels()]
+
+
 @pytest.fixture(autouse=True)
 def close_figures():
     yield
@@ -110,8 +115,7 @@ def test_element_and_axis_overlays_are_optional(show_elements, show_axis):
     result = System(Space(d=0.05), lens, Space(d=0.05),
                     optical_input=Ray(x=0.001, theta=0.0)).build().run()
     _, ax = plot(result, show_elements=show_elements, show_axis=show_axis)
-    labels = [text.get_text() for text in ax.texts]
-    assert ("Objective" in labels) is show_elements
+    assert ("Objective" in element_names(ax)) is show_elements
     axis_lines = [line for line in ax.lines
                   if len(line.get_ydata()) and np.all(np.asarray(line.get_ydata(), dtype=float) == 0)]
     assert bool(axis_lines) is show_axis
@@ -122,3 +126,46 @@ def test_bundle_plot_shows_at_most_41_rays(count):
     result = System(Space(d=0.05), optical_input=RayBundle.parallel(radius=1e-3, count=count)).build().run()
     _, ax = plot(result, show_elements=False, show_axis=False)
     assert len(ax.lines) == min(count, 41)
+
+
+def test_composites_are_named_once_and_shaded_and_element_kinds_have_one_legend_entry_each():
+    from diffractix import Plane, ThickLens
+    first = ThinLens(f=0.1, label="Objective")
+    lens = ThickLens(d=0.01, n=1.5, R1=0.1, R2=-0.1, label="Doublet")
+    second = ThinLens(f=0.2, label="Tube lens")
+    result = System(Space(d=0.02), first, Space(d=0.02), lens, Space(d=0.02), second,
+                    Space(d=0.02), Plane(label="Camera"),
+                    optical_input=GaussianBeam.from_waist(3e-4, 1.064e-6)).build().run()
+    _, ax = plot(result)
+    names = element_names(ax)
+    assert names == ["Objective", "Doublet", "Tube lens", "Camera"]
+    assert not any("front" in name or "Doublet_" in name for name in names)
+    legend = [text.get_text() for text in ax.get_legend().get_texts()]
+    assert sorted(legend) == sorted(["Beam envelope", "Thin lens", "Surface", "Plane", "Composite element"])
+    shaded = [patch for patch in ax.patches if patch.get_label() == "Composite element"]
+    assert len(shaded) == 1
+    start, end = result[lens.front].z_start, result[lens.back].z_end
+    corners = np.atleast_2d(shaded[0].get_xy())      # a Polygon or a Rectangle's corner
+    if corners.shape[0] == 1:
+        corners = np.array([[shaded[0].get_x(), 0], [shaded[0].get_x() + shaded[0].get_width(), 0]])
+    span = (corners[:, 0].min(), corners[:, 0].max())
+    np.testing.assert_allclose(span, [start, end])
+
+
+def test_element_paths_start_with_the_top_level_composite_and_are_none_for_direct_elements_and_gaps():
+    from diffractix.composites import CompositeElement, Telescope
+    telescope = Telescope(f1=0.05, f2=0.1, label="Relay")
+
+    class Module(CompositeElement):
+        def __init__(self):
+            super().__init__(label="Module")
+            self.inner = Telescope(f1=0.02, f2=0.02, label="Inner")
+
+    module = Module()
+    first = Space(d=0.01)
+    system = System(first, telescope, optical_input=Ray(x=0.001, theta=0.0)).add(module, z=0.5)
+    paths = {info.label: info.path for info in system.build().element_data}
+    assert paths[first.label] is None                                   # added directly
+    assert paths[f"AutoSpace_to_{module.inner.lens1.label}"] is None    # generated gap
+    assert paths[telescope.lens1.label] == ("Relay", "lens1")
+    assert paths[module.inner.lens1.label] == ("Module", "inner", "lens1")

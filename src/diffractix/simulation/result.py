@@ -330,7 +330,7 @@ class SimulationResult:
                 location = "Input"
             else:
                 element = self.element_data[index - 1]
-                location = element.label or element.path or element.type_name
+                location = element.label or ".".join(element.path or ()) or element.type_name
             rows.append((
                 str(index), format_value(z), location,
                 *(format_value(getattr(state, column)) for column in cols),

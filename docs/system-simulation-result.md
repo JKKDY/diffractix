@@ -169,9 +169,11 @@ result[lens].after.w
 ## Inspect the resolved optical system
 
 `result.element_data` describes every resolved element (type, label, composite
-path, generated Spaces included), in propagation order. Element labels and paths
-describe the resolved hierarchy; they do not reconstruct the original composite
-constructor arguments. The evaluated optical outputs and compiled stages are
+path, generated Spaces included), in propagation order. An element inside a
+composite has the path `(composite label, *attribute names)`, for example
+`("Relay 1", "front")`; an element added directly and a generated gap have
+`path=None`. Element labels and paths describe the resolved hierarchy; they do not
+reconstruct the original composite constructor arguments. The evaluated optical outputs and compiled stages are
 internal.
 
 `result.theta` holds the values used for this run. `result.parameter_data` describes
