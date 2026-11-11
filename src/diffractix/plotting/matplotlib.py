@@ -65,9 +65,18 @@ def _elements(ax, z, element_data):
         names.setdefault((start + end) / 2, []).append(label)
 
     if names:
-        positions = sorted(names)
+        # Names closer than 1 % of the layout would overlap: write them as one label.
+        span = max(float(z[-1] - z[0]), 1e-12)
+        clusters = []
+        for position in sorted(names):
+            if clusters and position - clusters[-1][-1] < 0.01 * span:
+                clusters[-1].append(position)
+            else:
+                clusters.append([position])
+        positions = [sum(cluster) / len(cluster) for cluster in clusters]
+        labels = [" / ".join(dict.fromkeys(name for p in cluster for name in names[p])) for cluster in clusters]
         top = ax.secondary_xaxis("top")
-        top.set_xticks(positions, [" / ".join(dict.fromkeys(names[p])) for p in positions])
+        top.set_xticks(positions, labels)
         top.tick_params(axis="x", length=0, labelsize=8, labelcolor="#5f6b77", rotation=45)
         top.spines["top"].set_visible(False)
         for text in top.get_xticklabels():

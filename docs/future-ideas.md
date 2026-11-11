@@ -68,3 +68,18 @@ samples, would be genuinely useful (what happens to the spot size if a distance 
 off by 50 um?). It should stay separate from `Solver` rather than complicate
 optimization; it only needs `Simulation.run(theta)`, which is already
 differentiable and cheap to call repeatedly (JAX could vectorize it).
+
+## 7. Dimension-checked units
+
+`diffractix.core.units` (0.0.1) only scales numbers: `50 * mm` is the float 0.05 and
+nothing checks dimensions. A later step could check them without putting unit
+objects into the numerics: quantities are converted to SI at the API boundary, and
+their dimensions are kept as metadata on Parameters and element parameters (`f` is a
+length, `n` is dimensionless). The graph would infer dimensions at compile time, so
+`lens.f + space.d` is valid while `lens.f + lens.n` is rejected, and the compiled
+program stays plain floats for JAX/Autograd.
+
+Open questions: how plain floats (currently SI by convention) take part, since
+existing code such as `ThinLens(f=0.05)` must keep working; and how far inference
+reaches into user callables. Quantity objects inside the numerical backends
+(Pint/Astropy style) are ruled out because they break JAX and Autograd tracing.

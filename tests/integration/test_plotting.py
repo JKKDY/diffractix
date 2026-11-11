@@ -169,3 +169,11 @@ def test_element_paths_start_with_the_top_level_composite_and_are_none_for_direc
     assert paths[f"AutoSpace_to_{module.inner.lens1.label}"] is None    # generated gap
     assert paths[telescope.lens1.label] == ("Relay", "lens1")
     assert paths[module.inner.lens1.label] == ("Module", "inner", "lens1")
+
+
+def test_names_of_nearly_coincident_elements_merge_into_one_label():
+    from diffractix import Plane
+    result = System(Space(d=0.1), Plane(label="Scanner"), Space(d=0.0005), ThinLens(f=0.1, label="Lens"),
+                    Space(d=0.1), Plane(label="Screen"), optical_input=Ray(x=0.001, theta=0.0)).build().run()
+    _, ax = plot(result)
+    assert element_names(ax) == ["Scanner / Lens", "Screen"]

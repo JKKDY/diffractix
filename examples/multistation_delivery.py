@@ -10,11 +10,14 @@ workpiece. The optimizer adjusts 20 design variables:
 * the crystal thicknesses inside the AOM and EOM.
 
 The modulator crystals are modelled only as passive glass slabs (refraction, no
-modulation). All lengths are in metres; stations stay at fixed absolute positions.
+modulation). Values are written with unit constants (diffractix computes in SI);
+stations stay at fixed absolute positions.
 """
 
 import sys
 
+from diffractix import units
+from diffractix.units import mm, mrad, nm, um
 from diffractix import (
     CompositeElement, 
     GaussianBeam, 
@@ -29,32 +32,38 @@ from diffractix import (
     ThinLens,
 )
 
-WAVELENGTH = 1064e-9
-INPUT_RADIUS = 0.65e-3
+WAVELENGTH = 1064 * nm
+INPUT_RADIUS = 0.65 * mm
 
-AOM_Z, AOM_LENGTH = 200e-3, 15e-3
-EOM_Z, EOM_LENGTH = 430e-3, 20e-3
-SCANNER_Z, WORKPIECE_Z = 625e-3, 850e-3
+AOM_Z = 200 * mm
+AOM_LENGTH = 15 * mm
+EOM_Z = 430 * mm
+EOM_LENGTH = 20 * mm
+SCANNER_Z = 625 * mm
+WORKPIECE_Z = 850 * mm
 
-AOM_RADIUS, AOM_EXIT_RADIUS = 0.85e-3, 0.90e-3
-EOM_RADIUS, EOM_EXIT_RADIUS = 1.10e-3, 1.20e-3
-SCANNER_RADIUS, FOCUS_RADIUS = 1.32e-3, 45e-6
+AOM_RADIUS = 0.85 * mm
+AOM_EXIT_RADIUS = 0.90 * mm
+EOM_RADIUS = 1.10 * mm
+EOM_EXIT_RADIUS = 1.20 * mm
+SCANNER_RADIUS = 1.32 * mm
+FOCUS_RADIUS = 45 * um
 
 GLASS_INDEX = 1.52
 AOM_CRYSTAL_INDEX = 1.45
 EOM_CRYSTAL_INDEX = 1.62
-MIN_WORKING_DISTANCE = 110e-3
-MIN_LENS_GAP = 8e-3
-MAX_DIVERGENCE = 0.03  # Gaussian far-field half-angle in radians: paraxial limit
+MIN_WORKING_DISTANCE = 110 * mm
+MIN_LENS_GAP = 8 * mm
+MAX_DIVERGENCE = 30 * mrad  # Gaussian far-field half-angle: paraxial limit
 
 # Clear diameters. The beam radius must stay below a quarter of each, which keeps
 # two beam radii of clearance (clipping itself is not modelled).
-FIRST_LENS_DIAMETER = 5e-3
-THIN_LENS_DIAMETER = 9e-3
-THICK_LENS_DIAMETER = 9e-3
-AOM_DIAMETER = 6e-3
-EOM_DIAMETER = 8e-3
-SCANNER_DIAMETER = 8e-3
+FIRST_LENS_DIAMETER = 5 * mm
+THIN_LENS_DIAMETER = 9 * mm
+THICK_LENS_DIAMETER = 9 * mm
+AOM_DIAMETER = 6 * mm
+EOM_DIAMETER = 8 * mm
+SCANNER_DIAMETER = 8 * mm
 
 # SLSQP suits this heavily constrained design; trust-constr uses other options.
 SOLVER_METHOD = "SLSQP"  # Alternative: "trust-constr"
@@ -83,17 +92,17 @@ if source.numeric().divergence_angle > MAX_DIVERGENCE:
 
 # Along the beam: expander, relay, expander, relay, expander, focusing lens.
 # The expanders (negative) are ideal thin lenses.
-expander1 = ThinLens(f=-160e-3, label="Expander 1").variable(f=(-400e-3, -45e-3))
-expander2 = ThinLens(f=-340e-3, label="Expander 2").variable(f=(-500e-3, -45e-3))
-expander3 = ThinLens(f=-160e-3, label="Expander 3").variable(f=(-500e-3, -45e-3))
+expander1 = ThinLens(f=-160 * mm, label="Expander 1").variable(f=(-400 * mm, -45 * mm))
+expander2 = ThinLens(f=-340 * mm, label="Expander 2").variable(f=(-500 * mm, -45 * mm))
+expander3 = ThinLens(f=-160 * mm, label="Expander 3").variable(f=(-500 * mm, -45 * mm))
 
 # The positive lenses are biconvex thick lenses (R1 > 0, R2 < 0) in fixed glass.
-relay1 = ThickLens(d=6e-3, n=GLASS_INDEX, R1=150e-3, R2=-250e-3, label="Relay 1")
-relay1.variable(R1=(90e-3, 550e-3), R2=(-550e-3, -90e-3), d=(3e-3, 11e-3))
-relay2 = ThickLens(d=8e-3, n=GLASS_INDEX, R1=240e-3, R2=-280e-3, label="Relay 2")
-relay2.variable(R1=(90e-3, 500e-3), R2=(-500e-3, -90e-3), d=(3e-3, 12e-3))
-focusing_lens = ThickLens(d=4e-3, n=GLASS_INDEX, R1=180e-3, R2=-220e-3, label="Focusing lens")
-focusing_lens.variable(R1=(70e-3, 350e-3), R2=(-350e-3, -70e-3), d=(3e-3, 10e-3))
+relay1 = ThickLens(d=6 * mm, n=GLASS_INDEX, R1=150 * mm, R2=-250 * mm, label="Relay 1")
+relay1.variable(R1=(90 * mm, 550 * mm), R2=(-550 * mm, -90 * mm), d=(3 * mm, 11 * mm))
+relay2 = ThickLens(d=8 * mm, n=GLASS_INDEX, R1=240 * mm, R2=-280 * mm, label="Relay 2")
+relay2.variable(R1=(90 * mm, 500 * mm), R2=(-500 * mm, -90 * mm), d=(3 * mm, 12 * mm))
+focusing_lens = ThickLens(d=4 * mm, n=GLASS_INDEX, R1=180 * mm, R2=-220 * mm, label="Focusing lens")
+focusing_lens.variable(R1=(70 * mm, 350 * mm), R2=(-350 * mm, -70 * mm), d=(3 * mm, 10 * mm))
 
 lenses = (expander1, relay1, expander2, relay2, expander3, focusing_lens)
 thick_lenses = (relay1, relay2, focusing_lens)
@@ -123,10 +132,10 @@ class CrystalModule(CompositeElement):
         super().__init__()
 
 
-aom = CrystalModule(d=9e-3, n=AOM_CRYSTAL_INDEX, length=AOM_LENGTH, label="AOM")
-aom.variable(d=(6e-3, 14e-3))
-eom = CrystalModule(d=17e-3, n=EOM_CRYSTAL_INDEX, length=EOM_LENGTH, label="EOM")
-eom.variable(d=(8e-3, 18e-3))
+aom = CrystalModule(d=9 * mm, n=AOM_CRYSTAL_INDEX, length=AOM_LENGTH, label="AOM")
+aom.variable(d=(6 * mm, 14 * mm))
+eom = CrystalModule(d=17 * mm, n=EOM_CRYSTAL_INDEX, length=EOM_LENGTH, label="EOM")
+eom.variable(d=(8 * mm, 18 * mm))
 
 scanner, workpiece = Plane(label="Scanner"), Plane(label="Workpiece")
 stations = (
@@ -146,12 +155,12 @@ stations = (
 # infeasible, which keeps the lenses in order.
 
 # Absolute position of each lens's front surface
-expander1_z = Parameter(135e-3, name="Expander 1 position").variable()
-relay1_z = Parameter(270e-3, name="Relay 1 position").variable()
-expander2_z = Parameter(365e-3, name="Expander 2 position").variable()
-relay2_z = Parameter(500e-3, name="Relay 2 position").variable()
-expander3_z = Parameter(675e-3, name="Expander 3 position").variable()
-focusing_z = Parameter(720e-3, name="Focusing lens position").variable()
+expander1_z = Parameter(135 * mm, name="Expander 1 position").variable()
+relay1_z = Parameter(270 * mm, name="Relay 1 position").variable()
+expander2_z = Parameter(365 * mm, name="Expander 2 position").variable()
+relay2_z = Parameter(500 * mm, name="Relay 2 position").variable()
+expander3_z = Parameter(675 * mm, name="Expander 3 position").variable()
+focusing_z = Parameter(720 * mm, name="Focusing lens position").variable()
 positions = (expander1_z, relay1_z, expander2_z, relay2_z, expander3_z, focusing_z)
 
 system = System(optical_input=source)
@@ -187,10 +196,10 @@ solver.target(value=sim[workpiece].after.z0, target=0.0, scale=target_focus.z_r,
 # Soft manufacturing preferences remove otherwise arbitrary freedom: 
 # symmetric biconvex lenses, about 6 mm centre thickness, familiar crystal lengths.
 for lens in thick_lenses:
-    solver.target(value=lens.R1 + lens.R2, target=0, scale=0.10, label=f"{lens.label} surface symmetry")
-    solver.target(value=lens.d, target=6e-3, scale=12e-3, label=f"{lens.label} preferred thickness")
-solver.target(value=aom.d, target=10e-3, scale=20e-3, label="AOM preferred crystal thickness")
-solver.target(value=eom.d, target=14e-3, scale=20e-3, label="EOM preferred crystal thickness")
+    solver.target(value=lens.R1 + lens.R2, target=0, scale=100 * mm, label=f"{lens.label} surface symmetry")
+    solver.target(value=lens.d, target=6 * mm, scale=12 * mm, label=f"{lens.label} preferred thickness")
+solver.target(value=aom.d, target=10 * mm, scale=20 * mm, label="AOM preferred crystal thickness")
+solver.target(value=eom.d, target=14 * mm, scale=20 * mm, label="EOM preferred crystal thickness")
 
 
 # Air gaps, measured on the result so they follow every thickness and position.
@@ -260,15 +269,15 @@ def heading(title):
     print(f"  {'':34} {'Initial':>12}   {'Optimized':>12}   Goal")
 
 
-def goal(label, before, after, reached, goal_text, scale=1.0):
-    """One row: the initial and optimized value, each with its mark, then the goal."""
+def goal(label, before, after, reached, goal_text, unit=1.0):
+    """One row: the initial and optimized value (in unit), each with its mark, then the goal."""
     before, after = float(before), float(after)
-    print(f"  {label:<34} {mark(reached(before))} {before * scale:>10.3f}   "
-          f"{mark(reached(after))} {after * scale:>10.3f}   {goal_text}")
+    print(f"  {label:<34} {mark(reached(before))} {before / unit:>10.3f}   "
+          f"{mark(reached(after))} {after / unit:>10.3f}   {goal_text}")
 
 
-def design(label, before, after, scale=1e3, unit="mm"):
-    print(f"  {label:<34} {float(before) * scale:>12.2f}   {float(after) * scale:>12.2f}   {unit}")
+def design(label, before, after, unit=mm):
+    print(f"  {label:<34} {float(before) / unit:>12.2f}   {float(after) / unit:>12.2f}   {unit.symbol}")
 
 
 def gap(result, front, back):
@@ -293,23 +302,23 @@ print(f"  {solution.message}")
 heading("Design goals")
 for station, radius in stations:
     goal(f"{station.label} beam radius", initial[station].after.w, optimized[station].after.w,
-         lambda w, r=radius: near(w, r, GOAL_TOLERANCE * r), f"{radius * 1e3:.3f} mm ± 1 %", 1e3)
+         lambda w, r=radius: near(w, r, GOAL_TOLERANCE * r), f"{units.format(radius, mm)} ± 1 %", mm)
 goal("Workpiece spot radius", initial[workpiece].after.w, optimized[workpiece].after.w,
      lambda w: near(w, FOCUS_RADIUS, GOAL_TOLERANCE * FOCUS_RADIUS),
-     f"{FOCUS_RADIUS * 1e6:.0f} um ± 1 %", 1e6)
+     f"{units.format(FOCUS_RADIUS, um)} ± 1 %", um)
 goal("Workpiece waist offset", initial[workpiece].after.z0, optimized[workpiece].after.z0,
      lambda z0: near(z0, 0.0, GOAL_TOLERANCE * target_focus.z_r),
-     f"0 ± {GOAL_TOLERANCE * target_focus.z_r * 1e3:.2f} mm (1 % of the Rayleigh range)", 1e3)
+     f"0 ± {units.format(GOAL_TOLERANCE * target_focus.z_r, mm, 2)} (1 % of the Rayleigh range)", mm)
 
 heading("Requirements")
 goal("Relay 1 to expander 2 air gap", gap(initial, relay1.back, expander2),
      gap(optimized, relay1.back, expander2),
-     lambda d: at_least(d, MIN_LENS_GAP), f"≥ {MIN_LENS_GAP * 1e3:.0f} mm", 1e3)
+     lambda d: at_least(d, MIN_LENS_GAP), f"≥ {units.format(MIN_LENS_GAP, mm)}", mm)
 goal("Working distance", gap(initial, focusing_lens.back, workpiece),
      gap(optimized, focusing_lens.back, workpiece),
-     lambda d: at_least(d, MIN_WORKING_DISTANCE), f"≥ {MIN_WORKING_DISTANCE * 1e3:.0f} mm", 1e3)
+     lambda d: at_least(d, MIN_WORKING_DISTANCE), f"≥ {units.format(MIN_WORKING_DISTANCE, mm)}", mm)
 goal("Worst divergence", worst_divergence(initial), worst_divergence(optimized),
-     lambda angle: at_most(angle, MAX_DIVERGENCE), f"≤ {MAX_DIVERGENCE * 1e3:.0f} mrad", 1e3)
+     lambda angle: at_most(angle, MAX_DIVERGENCE), f"≤ {units.format(MAX_DIVERGENCE, mrad)}", mrad)
 goal("Worst aperture use (w / limit)", worst_aperture_use(initial), worst_aperture_use(optimized),
      lambda use: at_most(use, 1.0), "≤ 1")
 
@@ -333,18 +342,18 @@ if __name__ == "__main__":
     def mark_goals(ax, result):
         """Draw the station target radii and the aperture limits onto a beam plot."""
         target_z = [float(result[station].z_start) for station, _ in stations]
-        target_w = [radius * 1e3 for _, radius in stations]
+        target_w = [radius / mm for _, radius in stations]
         ax.scatter(target_z * 2, target_w + [-w for w in target_w], s=30, facecolors="none",
                    edgecolors="#26323f", linewidths=1.1, zorder=6, label="Target radius")
         limit_z = [float(result[element].z_start) for element, _ in apertures]
-        limit_w = [diameter / 4 * 1e3 for _, diameter in apertures]
+        limit_w = [diameter / 4 / mm for _, diameter in apertures]
         ax.scatter(limit_z * 2, limit_w + [-w for w in limit_w], marker="_", s=90,
                    color="#6b4e3d", linewidths=1.6, zorder=6, label="Aperture limit (D/4)")
 
     def spot_summary(result):
-        spot = float(result[workpiece].after.w) * 1e6
-        offset = float(result[workpiece].after.z0) * 1e3
-        return f"{spot:.1f} um spot, waist {offset:+.2f} mm from the workpiece"
+        spot = units.format(result[workpiece].after.w, um, 3)
+        offset = float(result[workpiece].after.z0) / mm
+        return f"{spot} spot, waist {offset:+.2f} mm from the workpiece"
 
     figure = plt.figure(figsize=(11, 11), layout="constrained")
     before_ax, after_ax, focus_ax = figure.subplots(3, 1, height_ratios=(1, 1, 0.8))
@@ -367,18 +376,18 @@ if __name__ == "__main__":
 
     # Close-up of the focus: the free-space envelope around the workpiece plane,
     # continued a few millimetres past it to show where the waist lies.
-    offsets = np.linspace(-25e-3, 5e-3, 601)
+    offsets = np.linspace(-25 * mm, 5 * mm, 601)
     for result, name, style in ((initial, "Before", dict(color="#9aa3ad", linestyle="--")),
                                 (optimized, "After", dict(color="#df7664"))):
         state = result[workpiece].after
-        w = np.array([float(state.w_at_z(float(offset))) for offset in offsets]) * 1e6
-        z = (WORKPIECE_Z + offsets) * 1e3
+        w = np.array([float(state.w_at_z(float(offset))) for offset in offsets]) / um
+        z = (WORKPIECE_Z + offsets) / mm
         focus_ax.plot(z, w, label=name, **style)
         focus_ax.plot(z, -w, **style)
     for sign in (1, -1):
-        focus_ax.axhline(sign * FOCUS_RADIUS * 1e6, color="#26323f", linestyle=":", linewidth=1,
+        focus_ax.axhline(sign * FOCUS_RADIUS / um, color="#26323f", linestyle=":", linewidth=1,
                          label="Target waist radius" if sign == 1 else "_nolegend_")
-    focus_ax.axvline(WORKPIECE_Z * 1e3, color="#a3abb4", linestyle=":", label="Workpiece")
+    focus_ax.axvline(WORKPIECE_Z / mm, color="#a3abb4", linestyle=":", label="Workpiece")
     focus_ax.axhline(0, color="#8a929b", linewidth=0.8, linestyle="--", alpha=0.65)
     focus_ax.set_title("Focus at the workpiece", loc="left")
     focus_ax.set_xlabel("Optical axis z [mm]")

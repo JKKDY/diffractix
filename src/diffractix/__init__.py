@@ -2,6 +2,7 @@
 
 # Optical inputs
 from .core import OpticalBase
+from . import units
 from .input import (
     OpticalInput,
     ParaxialState,
@@ -63,6 +64,7 @@ from .solver import (
 __all__ = [
     # Optical inputs
     "OpticalBase",
+    "units",
     "OpticalInput",
     "ParaxialState",
     "GaussianBeam",

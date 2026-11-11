@@ -5,20 +5,21 @@ never calls show(), so figures can be customised or saved before display.
 """
 
 from diffractix import GaussianBeam, Ray, RayBundle, Space, System, ThinLens
+from diffractix.units import mm, mrad, nm
 
 
 def make_plots():
     sources = {
-        "Single ray": Ray(x=-0.5e-3, theta=0.015),
-        "Parallel ray bundle": RayBundle.parallel(radius=1.3e-3, count=15),
-        "Gaussian beam": GaussianBeam.from_waist(w0=0.3e-3, wavelength=1064e-9),
+        "Single ray": Ray(x=-0.5 * mm, theta=15 * mrad),
+        "Parallel ray bundle": RayBundle.parallel(radius=1.3 * mm, count=15),
+        "Gaussian beam": GaussianBeam.from_waist(w0=0.3 * mm, wavelength=1064 * nm),
     }
     figures = []
     for title, source in sources.items():
         system = System(
-            Space(d=0.06),
-            ThinLens(f=0.08, label="Focus"),
-            Space(d=0.18),
+            Space(d=60 * mm),
+            ThinLens(f=80 * mm, label="Focus"),
+            Space(d=180 * mm),
             optical_input=source,
         )
         figure, axes = system.build().run().plot()

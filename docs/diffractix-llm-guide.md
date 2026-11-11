@@ -12,6 +12,24 @@ lengths, radii, positions, beam widths and vacuum wavelengths use metres. Angles
 are in radians. A ray vector is `[x, theta]`, where theta is the physical angle,
 not `n * theta`. Mirrors use the unfolded optical-path convention.
 
+Unit constants make SI values easier to write and read. They are plain scale
+factors (`50 * mm` is the float 0.05), so they work everywhere a number does,
+including bounds, targets and JAX/Autograd code. They do not check dimensions.
+
+```python
+from diffractix import units
+from diffractix.units import mm, um, nm, mrad   # also m, cm, pm, rad, urad, deg
+
+beam = GaussianBeam.from_waist(w0=500 * um, wavelength=1064 * nm)
+lens = ThinLens(f=50 * mm).variable(f=(20 * mm, 100 * mm))
+solution.value(lens.f) / mm                  # read back in millimetres
+units.format(solution.run().final.w, um)     # '45.02 um' (4 significant digits)
+```
+
+The constants are not exported from `diffractix` itself, so `from diffractix import *`
+does not define `m` or `mm`; import them from `diffractix.units` (implemented in
+`diffractix.core.units`).
+
 The normal workflow is:
 
 1. Declare an optical input and an ordered sequence of elements.

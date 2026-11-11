@@ -2,19 +2,21 @@
 
 The fibers have different mode field diameters. The optimizer chooses three air
 gaps and two focal lengths so that the beam arriving at the second fiber matches
-its mode, while the package stays short. All lengths are in metres.
+its mode, while the package stays short. Values are written with unit constants;
+diffractix computes in SI.
 """
 
 from diffractix import (
-    CompositeElement, GaussianBeam, Node, Plane, Solver, Space, System, ThinLens,
+    CompositeElement, GaussianBeam, Node, Plane, Solver, Space, System, ThinLens, units,
 )
+from diffractix.units import mm, mrad, nm, um
 
-WAVELENGTH = 1550e-9
-LENS_LENGTH = 4e-3
-MAX_PACKAGE_LENGTH = 30e-3
-PREFERRED_PACKAGE_LENGTH = 25e-3
-MAX_DIVERGENCE = 0.15       # Gaussian far-field half-angle in radians: paraxial limit
-LENS_CLEAR_DIAMETER = 4e-3  # Illustrative clear aperture
+WAVELENGTH = 1550 * nm
+LENS_LENGTH = 4 * mm
+MAX_PACKAGE_LENGTH = 30 * mm
+PREFERRED_PACKAGE_LENGTH = 25 * mm
+MAX_DIVERGENCE = 150 * mrad      # Gaussian far-field half-angle: paraxial limit
+LENS_CLEAR_DIAMETER = 4 * mm     # Illustrative clear aperture
 
 
 class PackagedThinLens(CompositeElement):
@@ -34,23 +36,23 @@ class PackagedThinLens(CompositeElement):
 # ------
 # DESIGN
 # ------
-source = GaussianBeam.from_fiber_tip(wavelength=WAVELENGTH, MFD=10.4e-6)
-target_mode = GaussianBeam.from_fiber_tip(wavelength=WAVELENGTH, MFD=9.2e-6).numeric()
+source = GaussianBeam.from_fiber_tip(wavelength=WAVELENGTH, MFD=10.4 * um)
+target_mode = GaussianBeam.from_fiber_tip(wavelength=WAVELENGTH, MFD=9.2 * um).numeric()
 if max(source.numeric().divergence_angle, target_mode.divergence_angle) > MAX_DIVERGENCE:
     raise ValueError("A fiber mode exceeds the paraxial divergence limit.")
 
 # A poor starting design (about 7% overlap) that still respects every limit.
-input_gap = Space(d=5e-3, label="Input gap")
-lens1 = PackagedThinLens(f=5e-3, length=LENS_LENGTH, label="Lens 1")
-middle_gap = Space(d=5e-3, label="Lens spacing")
-lens2 = PackagedThinLens(f=5e-3, length=LENS_LENGTH, label="Lens 2")
-output_gap = Space(d=5e-3, label="Output gap")
+input_gap = Space(d=5 * mm, label="Input gap")
+lens1 = PackagedThinLens(f=5 * mm, length=LENS_LENGTH, label="Lens 1")
+middle_gap = Space(d=5 * mm, label="Lens spacing")
+lens2 = PackagedThinLens(f=5 * mm, length=LENS_LENGTH, label="Lens 2")
+output_gap = Space(d=5 * mm, label="Output gap")
 target = Plane(label="Target fiber")
 
 for gap in (input_gap, middle_gap, output_gap):
-    gap.d.variable()  # Space already requires d >= 0.
+    gap.variable("d")  # Space already requires d >= 0.
 for package in (lens1, lens2):
-    package.f.variable(bounds=(4e-3, 15e-3))
+    package.variable(f=(4 * mm, 15 * mm))
 
 system = System(input_gap, lens1, middle_gap, lens2, output_gap, target, optical_input=source)
 package_length = sum(element.element_length for element in system.elements)
@@ -70,9 +72,9 @@ sim = simulation.symbolic  # the result as expressions, for objectives and const
 # of a target is its own size), and the waist on the fiber face within one Rayleigh range.
 solver.target(value=sim[target].after.w, target=target_mode.w, label="Mode radius")
 solver.target(value=sim[target].after.z0, target=0.0, scale=target_mode.z_r, label="Waist position")
-# A soft preference: penalize only the length beyond 25 mm (hard limit 30 mm).
+# A soft preference: penalize only the length beyond 25 mm (hard limit 30 mm), per millimetre.
 solver.target(
-    ((package_length - PREFERRED_PACKAGE_LENGTH) / 1e-3).maximum(0.0),
+    ((package_length - PREFERRED_PACKAGE_LENGTH) / mm).maximum(0.0),
     label="Package length over 25 mm",
 )
 
@@ -84,7 +86,7 @@ for package in (lens1, lens2):
     solver.require(sim[package.lens].after.w <= LENS_CLEAR_DIAMETER / 4,
                    label=f"{package.label} aperture clearance")
 
-solution = solver.solve(method="SLSQP")
+solution = solver.solve(method="SLSQP", options={"maxiter": 300})
 optimized = solution.run()
 
 
@@ -97,8 +99,10 @@ def table(title):
     print("-" * 56)
 
 
-def row(label, before, after, scale=1.0, unit=""):
-    print(f"{label:<26} {before * scale:>12.4f} {after * scale:>12.4f} {unit}")
+def row(label, before, after, unit=None):
+    """A row of values in unit (a unit constant), or as plain numbers without one."""
+    scale, symbol = (unit, unit.symbol) if unit is not None else (1.0, "")
+    print(f"{label:<26} {float(before) / scale:>12.4f} {float(after) / scale:>12.4f} {symbol}")
 
 
 print(f"Optimization: success={solution.success}, feasible={solution.feasible}, "
@@ -114,24 +118,25 @@ for label, parameter in (
     ("Lens 2 focal length", lens2.f),
     ("Output gap", output_gap.d),
 ):
-    row(label, parameter.value, solution.value(parameter), 1e3, "mm")
-row("Package length", initial.z[-1], optimized.z[-1], 1e3, "mm")
-print(f"Preferred {PREFERRED_PACKAGE_LENGTH * 1e3:.0f} mm, maximum {MAX_PACKAGE_LENGTH * 1e3:.0f} mm")
+    row(label, parameter.value, solution.value(parameter), mm)
+row("Package length", initial.z[-1], optimized.z[-1], mm)
+print(f"Preferred {units.format(PREFERRED_PACKAGE_LENGTH, mm)}, maximum {units.format(MAX_PACKAGE_LENGTH, mm)}")
 
 before, after = initial[target].after, optimized[target].after
 table("Coupling into the target fiber")
-row("Beam radius", before.w, after.w, 1e6, "um")
-row("Waist offset", before.z0, after.z0, 1e6, "um")
-row("Mode overlap", before.overlap_with(target_mode), after.overlap_with(target_mode), 100, "%")
-print(f"Target mode radius: {target_mode.w * 1e6:.2f} um")
+row("Beam radius", before.w, after.w, um)
+row("Waist offset", before.z0, after.z0, um)
+row("Mode overlap [%]", 100 * before.overlap_with(target_mode), 100 * after.overlap_with(target_mode))
+print(f"Target mode radius: {units.format(target_mode.w, um)}")
 
 table("Model checks")
 for package in (lens1, lens2):
     row(f"{package.label} beam radius", initial[package.lens].after.w,
-        optimized[package.lens].after.w, 1e3, "mm")
+        optimized[package.lens].after.w, mm)
     row(f"{package.label} divergence", initial[package.lens].after.divergence_angle,
-        optimized[package.lens].after.divergence_angle, unit="rad")
-print(f"Limits: radius {LENS_CLEAR_DIAMETER / 4 * 1e3:.2f} mm, divergence {MAX_DIVERGENCE} rad")
+        optimized[package.lens].after.divergence_angle, mrad)
+print(f"Limits: radius {units.format(LENS_CLEAR_DIAMETER / 4, mm)}, "
+      f"divergence {units.format(MAX_DIVERGENCE, mrad)}")
 
 print("\nObjectives at the optimum")
 for objective in solution.objectives:
