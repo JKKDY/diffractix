@@ -106,7 +106,9 @@ lens.f.variable(bounds=(0.05, 0.3))
 A Parameter is fixed unless marked `.variable()`. `.fixed()` reverses this.
 Bounds are always a `(lower, upper)` pair: `variable(bounds=...)`, the
 `Parameter(..., bounds=...)` constructor or `parameter.bounds = ...`; a `None`
-endpoint leaves the current one unchanged. Choose an initial value inside the
+endpoint leaves the current one unchanged. On an element, `lens.variable("f")`
+marks parameters by name and `lens.variable(R1=(0.09, 0.5), d=(0.003, 0.012))`
+also sets their bounds, atomically. Choose an initial value inside the
 bounds. A shared Parameter has one theta entry. Graph arithmetic combines Nodes;
 comparisons such as `distance >= 0.01` create symbolic constraints. Do not use
 symbolic expressions in Python `if` or convert them to bool.

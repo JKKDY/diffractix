@@ -13,9 +13,20 @@ The modulator crystals are modelled only as passive glass slabs (refraction, no
 modulation). All lengths are in metres; stations stay at fixed absolute positions.
 """
 
+import sys
+
 from diffractix import (
-    CompositeElement, GaussianBeam, Node, Parameter, Plane, Slab, Solver, Space, System,
-    ThickLens, ThinLens,
+    CompositeElement, 
+    GaussianBeam, 
+    Node, 
+    Parameter, 
+    Plane, 
+    Slab, 
+    Solver, 
+    Space, 
+    System,
+    ThickLens, 
+    ThinLens,
 )
 
 WAVELENGTH = 1064e-9
@@ -68,42 +79,24 @@ if source.numeric().divergence_angle > MAX_DIVERGENCE:
 # The starting design is deliberately poor but feasible: the workpiece spot is
 # about 124 um instead of 45 um, with its waist about 18 mm off target.
 
-# Absolute position of each lens's front surface. Disjoint bounds keep the
-# lenses in order around the fixed stations.
-z1 = Parameter(135e-3, name="Lens 1 position").variable()
-z2 = Parameter(270e-3, name="Lens 2 position").variable()
-z3 = Parameter(365e-3, name="Lens 3 position").variable()
-z4 = Parameter(500e-3, name="Lens 4 position").variable()
-z5 = Parameter(675e-3, name="Lens 5 position").variable()
-z6 = Parameter(720e-3, name="Lens 6 position").variable()
-positions = (z1, z2, z3, z4, z5, z6)
 
-# Negative lenses are ideal thin lenses.
-lens1 = ThinLens(f=-160e-3, label="Lens 1 (expander)")
-lens1.f.variable(bounds=(-400e-3, -45e-3))
-lens3 = ThinLens(f=-340e-3, label="Lens 3 (expander)")
-lens3.f.variable(bounds=(-500e-3, -45e-3))
-lens5 = ThinLens(f=-160e-3, label="Lens 5 (expander)")
-lens5.f.variable(bounds=(-500e-3, -45e-3))
 
-# Positive lenses are biconvex thick lenses (R1 > 0, R2 < 0) in fixed glass.
-lens2 = ThickLens(d=6e-3, n=GLASS_INDEX, R1=150e-3, R2=-250e-3, label="Lens 2 (thick relay)")
-lens2.R1.variable(bounds=(90e-3, 550e-3))
-lens2.R2.variable(bounds=(-550e-3, -90e-3))
-lens2.d.variable(bounds=(3e-3, 11e-3))
+# Along the beam: expander, relay, expander, relay, expander, focusing lens.
+# The expanders (negative) are ideal thin lenses.
+expander1 = ThinLens(f=-160e-3, label="Expander 1").variable(f=(-400e-3, -45e-3))
+expander2 = ThinLens(f=-340e-3, label="Expander 2").variable(f=(-500e-3, -45e-3))
+expander3 = ThinLens(f=-160e-3, label="Expander 3").variable(f=(-500e-3, -45e-3))
 
-lens4 = ThickLens(d=8e-3, n=GLASS_INDEX, R1=240e-3, R2=-280e-3, label="Lens 4 (thick relay)")
-lens4.R1.variable(bounds=(90e-3, 500e-3))
-lens4.R2.variable(bounds=(-500e-3, -90e-3))
-lens4.d.variable(bounds=(3e-3, 12e-3))
+# The positive lenses are biconvex thick lenses (R1 > 0, R2 < 0) in fixed glass.
+relay1 = ThickLens(d=6e-3, n=GLASS_INDEX, R1=150e-3, R2=-250e-3, label="Relay 1")
+relay1.variable(R1=(90e-3, 550e-3), R2=(-550e-3, -90e-3), d=(3e-3, 11e-3))
+relay2 = ThickLens(d=8e-3, n=GLASS_INDEX, R1=240e-3, R2=-280e-3, label="Relay 2")
+relay2.variable(R1=(90e-3, 500e-3), R2=(-500e-3, -90e-3), d=(3e-3, 12e-3))
+focusing_lens = ThickLens(d=4e-3, n=GLASS_INDEX, R1=180e-3, R2=-220e-3, label="Focusing lens")
+focusing_lens.variable(R1=(70e-3, 350e-3), R2=(-350e-3, -70e-3), d=(3e-3, 10e-3))
 
-lens6 = ThickLens(d=4e-3, n=GLASS_INDEX, R1=180e-3, R2=-220e-3, label="Lens 6 (thick focusing)")
-lens6.R1.variable(bounds=(70e-3, 350e-3))
-lens6.R2.variable(bounds=(-350e-3, -70e-3))
-lens6.d.variable(bounds=(3e-3, 10e-3))
-
-lenses = (lens1, lens2, lens3, lens4, lens5, lens6)
-thick_lenses = (lens2, lens4, lens6)
+lenses = (expander1, relay1, expander2, relay2, expander3, focusing_lens)
+thick_lenses = (relay1, relay2, focusing_lens)
 
 # Name the curved surfaces of each thick lens for the constraint labels.
 for lens in thick_lenses:
@@ -131,9 +124,9 @@ class CrystalModule(CompositeElement):
 
 
 aom = CrystalModule(d=9e-3, n=AOM_CRYSTAL_INDEX, length=AOM_LENGTH, label="AOM")
-aom.d.variable(bounds=(6e-3, 14e-3))
+aom.variable(d=(6e-3, 14e-3))
 eom = CrystalModule(d=17e-3, n=EOM_CRYSTAL_INDEX, length=EOM_LENGTH, label="EOM")
-eom.d.variable(bounds=(8e-3, 18e-3))
+eom.variable(d=(8e-3, 18e-3))
 
 scanner, workpiece = Plane(label="Scanner"), Plane(label="Workpiece")
 stations = (
@@ -151,16 +144,26 @@ stations = (
 # Every element is placed at an absolute position (its front surface). The air gaps
 # between them are generated automatically, and a gap that would be negative is
 # infeasible, which keeps the lenses in order.
+
+# Absolute position of each lens's front surface
+expander1_z = Parameter(135e-3, name="Expander 1 position").variable()
+relay1_z = Parameter(270e-3, name="Relay 1 position").variable()
+expander2_z = Parameter(365e-3, name="Expander 2 position").variable()
+relay2_z = Parameter(500e-3, name="Relay 2 position").variable()
+expander3_z = Parameter(675e-3, name="Expander 3 position").variable()
+focusing_z = Parameter(720e-3, name="Focusing lens position").variable()
+positions = (expander1_z, relay1_z, expander2_z, relay2_z, expander3_z, focusing_z)
+
 system = System(optical_input=source)
-system.add(lens1, z=z1)
+system.add(expander1, z=expander1_z)
 system.add(aom, z=AOM_Z)
-system.add(lens2, z=z2)
-system.add(lens3, z=z3)
+system.add(relay1, z=relay1_z)
+system.add(expander2, z=expander2_z)
 system.add(eom, z=EOM_Z)
-system.add(lens4, z=z4)
+system.add(relay2, z=relay2_z)
 system.add(scanner, z=SCANNER_Z)
-system.add(lens5, z=z5)
-system.add(lens6, z=z6)
+system.add(expander3, z=expander3_z)
+system.add(focusing_lens, z=focusing_z)
 system.add(workpiece, z=WORKPIECE_Z)
 
 simulation = system.build()
@@ -191,8 +194,10 @@ solver.target(value=eom.d, target=14e-3, scale=20e-3, label="EOM preferred cryst
 
 
 # Air gaps, measured on the result so they follow every thickness and position.
-solver.require(sim[lens3].z_start - sim[lens2.back].z_end >= MIN_LENS_GAP, label="Lens 2 to lens 3 gap")
-solver.require(sim[workpiece].z_start - sim[lens6.back].z_end >= MIN_WORKING_DISTANCE, label="Working distance")
+solver.require(sim[expander2].z_start - sim[relay1.back].z_end >= MIN_LENS_GAP,
+               label="Relay 1 to expander 2 gap")
+solver.require(sim[workpiece].z_start - sim[focusing_lens.back].z_end >= MIN_WORKING_DISTANCE,
+               label="Working distance")
 
 # Paraxial limit: the Gaussian divergence stays below the limit after every element.
 for stage in sim.stages:
@@ -201,15 +206,15 @@ for stage in sim.stages:
 # Apertures. Between a module's entrance and exit the beam has no power, so
 # checking both stations bounds it inside the module as well.
 apertures = (
-    (lens1, FIRST_LENS_DIAMETER),
-    (lens3, THIN_LENS_DIAMETER),
-    (lens5, THIN_LENS_DIAMETER),
-    (lens2.front, THICK_LENS_DIAMETER),
-    (lens2.back, THICK_LENS_DIAMETER),
-    (lens4.front, THICK_LENS_DIAMETER),
-    (lens4.back, THICK_LENS_DIAMETER),
-    (lens6.front, THICK_LENS_DIAMETER),
-    (lens6.back, THICK_LENS_DIAMETER),
+    (expander1, FIRST_LENS_DIAMETER),
+    (expander2, THIN_LENS_DIAMETER),
+    (expander3, THIN_LENS_DIAMETER),
+    (relay1.front, THICK_LENS_DIAMETER),
+    (relay1.back, THICK_LENS_DIAMETER),
+    (relay2.front, THICK_LENS_DIAMETER),
+    (relay2.back, THICK_LENS_DIAMETER),
+    (focusing_lens.front, THICK_LENS_DIAMETER),
+    (focusing_lens.back, THICK_LENS_DIAMETER),
     (aom.entrance, AOM_DIAMETER),
     (aom.exit, AOM_DIAMETER),
     (eom.entrance, EOM_DIAMETER),
@@ -226,59 +231,99 @@ optimized = solution.run()
 # -------
 # RESULTS
 # -------
-def table(title):
+# Soft goals count as reached within GOAL_TOLERANCE of their target (the waist
+# offset within that fraction of the target Rayleigh range); hard requirements
+# are reached when they hold (up to rounding).
+GOAL_TOLERANCE = 0.01
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")  # the check marks need a UTF-8 console
+
+
+def mark(reached):
+    return "✓" if reached else "✗"
+
+
+def near(value, target, tolerance):
+    return abs(value - target) <= tolerance
+
+
+def at_most(value, limit):
+    return value <= limit * (1 + 1e-6)
+
+
+def at_least(value, limit):
+    return value >= limit * (1 - 1e-6)
+
+
+def heading(title):
     print(f"\n{title}")
-    print(f"{'':32} {'Initial':>12} {'Optimized':>12}")
-    print("-" * 62)
+    print(f"  {'':34} {'Initial':>12}   {'Optimized':>12}   Goal")
 
 
-def row(label, before, after, scale=1.0, unit=""):
-    print(f"{label:<32} {before * scale:>12.4f} {after * scale:>12.4f} {unit}")
+def goal(label, before, after, reached, goal_text, scale=1.0):
+    """One row: the initial and optimized value, each with its mark, then the goal."""
+    before, after = float(before), float(after)
+    print(f"  {label:<34} {mark(reached(before))} {before * scale:>10.3f}   "
+          f"{mark(reached(after))} {after * scale:>10.3f}   {goal_text}")
 
 
-print(f"Optimization ({SOLVER_METHOD}): success={solution.success}, "
-      f"feasible={solution.feasible}, cost={solution.cost:.3e}, "
-      f"iterations={solution.iterations}, evaluations={solution.function_evaluations}")
+def design(label, before, after, scale=1e3, unit="mm"):
+    print(f"  {label:<34} {float(before) * scale:>12.2f}   {float(after) * scale:>12.2f}   {unit}")
+
+
+def gap(result, front, back):
+    return result[back].z_start - result[front].z_end
+
+
+def worst_divergence(result):
+    return max(float(state.divergence_angle) for state in result.states)
+
+
+def worst_aperture_use(result):
+    """Largest beam radius as a fraction of its limit (a quarter of the clear diameter)."""
+    return max(float(result[element].after.w) / (diameter / 4) for element, diameter in apertures)
+
+
+status = "converged" if solution.success else "did not converge"
+feasibility = "all requirements hold" if solution.feasible else f"{len(solution.violations)} violated"
+print(f"Optimization {status}, {feasibility} ({SOLVER_METHOD}, {solution.iterations} iterations, "
+      f"{len(solution.x)} design variables)")
 print(f"  {solution.message}")
-print(f"  Design variables: {len(solution.x)}")
 
-table("Design")
-for index, (position, lens) in enumerate(zip(positions, lenses), start=1):
-    row(f"Lens {index} position", position.value, solution.value(position), 1e3, "mm")
+heading("Design goals")
+for station, radius in stations:
+    goal(f"{station.label} beam radius", initial[station].after.w, optimized[station].after.w,
+         lambda w, r=radius: near(w, r, GOAL_TOLERANCE * r), f"{radius * 1e3:.3f} mm ± 1 %", 1e3)
+goal("Workpiece spot radius", initial[workpiece].after.w, optimized[workpiece].after.w,
+     lambda w: near(w, FOCUS_RADIUS, GOAL_TOLERANCE * FOCUS_RADIUS),
+     f"{FOCUS_RADIUS * 1e6:.0f} um ± 1 %", 1e6)
+goal("Workpiece waist offset", initial[workpiece].after.z0, optimized[workpiece].after.z0,
+     lambda z0: near(z0, 0.0, GOAL_TOLERANCE * target_focus.z_r),
+     f"0 ± {GOAL_TOLERANCE * target_focus.z_r * 1e3:.2f} mm (1 % of the Rayleigh range)", 1e3)
+
+heading("Requirements")
+goal("Relay 1 to expander 2 air gap", gap(initial, relay1.back, expander2),
+     gap(optimized, relay1.back, expander2),
+     lambda d: at_least(d, MIN_LENS_GAP), f"≥ {MIN_LENS_GAP * 1e3:.0f} mm", 1e3)
+goal("Working distance", gap(initial, focusing_lens.back, workpiece),
+     gap(optimized, focusing_lens.back, workpiece),
+     lambda d: at_least(d, MIN_WORKING_DISTANCE), f"≥ {MIN_WORKING_DISTANCE * 1e3:.0f} mm", 1e3)
+goal("Worst divergence", worst_divergence(initial), worst_divergence(optimized),
+     lambda angle: at_most(angle, MAX_DIVERGENCE), f"≤ {MAX_DIVERGENCE * 1e3:.0f} mrad", 1e3)
+goal("Worst aperture use (w / limit)", worst_aperture_use(initial), worst_aperture_use(optimized),
+     lambda use: at_most(use, 1.0), "≤ 1")
+
+print("\nDesign")
+print(f"  {'':34} {'Initial':>12}   {'Optimized':>12}")
+for lens, position in zip(lenses, positions):
+    design(f"{lens.label} position", position.value, solution.value(position))
     names = ("f",) if isinstance(lens, ThinLens) else ("R1", "R2", "d")
     for name in names:
         parameter = getattr(lens, name)
-        row(f"Lens {index} {name}", parameter.value, solution.value(parameter), 1e3, "mm")
-row("AOM crystal thickness", aom.d.value, solution.value(aom.d), 1e3, "mm")
-row("EOM crystal thickness", eom.d.value, solution.value(eom.d), 1e3, "mm")
-row("Lens 2 to lens 3 air gap", initial[lens3].z_start - initial[lens2.back].z_end,
-    optimized[lens3].z_start - optimized[lens2.back].z_end, 1e3, "mm")
-row("Working distance", initial[workpiece].z_start - initial[lens6.back].z_end,
-    optimized[workpiece].z_start - optimized[lens6.back].z_end, 1e3, "mm")
-row("Total length", initial.z[-1], optimized.z[-1], 1e3, "mm")
-print(f"Minimums: lens gap {MIN_LENS_GAP * 1e3:.0f} mm, working distance {MIN_WORKING_DISTANCE * 1e3:.0f} mm")
-
-table("Beam at the stations")
-for station, radius in stations:
-    row(f"{station.label} radius", initial[station].after.w, optimized[station].after.w, 1e3, "mm")
-    print(f"  target {radius * 1e3:.3f} mm")
-row("Workpiece spot radius", initial[workpiece].after.w, optimized[workpiece].after.w, 1e6, "um")
-row("Workpiece waist offset", initial[workpiece].after.z0, optimized[workpiece].after.z0, 1e3, "mm")
-print(f"Target: {FOCUS_RADIUS * 1e6:.0f} um waist at z = {WORKPIECE_Z * 1e3:.0f} mm")
-row("Worst divergence", max(state.divergence_angle for state in initial.states),
-    max(state.divergence_angle for state in optimized.states), unit="rad")
-print(f"Divergence limit: {MAX_DIVERGENCE} rad")
-
-print("\nConstraints at the optimum (SI units)")
-for constraint in solution.constraints:
-    if constraint.label:
-        limit = constraint.upper_bound if constraint.upper_bound != float("inf") else constraint.lower_bound
-        print(f"  {constraint.label:<46} value={float(constraint.value):.4g}  "
-              f"limit={float(limit):.4g}  margin={float(constraint.margin):.3g}")
-
-print("\nObjectives at the optimum")
-for objective in solution.objectives:
-    print(f"  {objective.label}: residual={objective.value:.3e}, cost={objective.cost:.3e}")
+        design(f"  {name}", parameter.value, solution.value(parameter))
+design("AOM crystal thickness", aom.d.value, solution.value(aom.d))
+design("EOM crystal thickness", eom.d.value, solution.value(eom.d))
+design("Total length", initial.z[-1], optimized.z[-1])
 
 
 if __name__ == "__main__":

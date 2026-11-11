@@ -143,6 +143,35 @@ def test_named_variable_selection():
     assert element.y.node.is_variable
 
 
+def test_variable_keywords_set_bounds_alongside_names():
+    element = TwoParameterElement(x=1.0, y=2.0)
+    assert element.variable(x=(0.5, 1.5)) is element
+    assert element.x.node.is_variable and element.x.node.bounds == (0.5, 1.5)
+    assert not element.y.node.is_variable
+
+    other = TwoParameterElement(x=1.0, y=2.0)
+    other.variable("x", y=(None, 3.0))
+    assert other.x.node.is_variable and other.x.node.bounds == (-np.inf, np.inf)
+    assert other.y.node.is_variable and other.y.node.bounds == (-np.inf, 3.0)
+
+
+@pytest.mark.parametrize("args, kwargs, error", [
+    ((), {"x": (0.5, 1.5), "y": (3.0, 4.0)}, ValueError),   # y = 2 outside its new bounds
+    ((), {"x": (0.5, 1.5), "y": (5.0, 1.0)}, ValueError),   # inverted pair
+    ((), {"x": (0.5, 1.5), "y": 2.0}, ValueError),          # not a pair
+    ((), {"x": (0.5, 1.5), "unknown": (0, 1)}, ValueError),
+    (("x",), {"x": (0.5, 1.5)}, ValueError),                 # both by name and with bounds
+])
+def test_variable_keywords_are_atomic(args, kwargs, error):
+    element = TwoParameterElement(x=1.0, y=2.0)
+    element.y.node.bounds = (1.0, 10.0)
+    with pytest.raises(error):
+        element.variable(*args, **kwargs)
+    assert not element.x.node.is_variable and not element.y.node.is_variable
+    assert element.x.node.bounds == (-np.inf, np.inf)
+    assert element.y.node.bounds == (1.0, 10.0)
+
+
 def test_named_fixed_selection():
     element = TwoParameterElement(x=1.0, y=2.0)
     element.variable()

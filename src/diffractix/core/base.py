@@ -197,25 +197,44 @@ class OpticalBase:
 
         return names
 
-    def variable(self, *parameter_names: str):
+    def variable(self, *parameter_names: str, **bounds):
         """
         Mark directly stored Parameters as optimization variables.
 
-        With no names, every parameter directly containing a
-        Parameter is marked variable. Derived parameters are skipped.
+        With no arguments, every parameter directly containing a Parameter is
+        marked variable; derived parameters are skipped. Names mark those
+        parameters variable, and keywords also set their bounds, for example
+        `lens.variable(R1=(90e-3, 500e-3), d=(3e-3, 12e-3))`. The call is atomic:
+        if any name or bounds pair is invalid, nothing changes.
         """
-        strict = bool(parameter_names)
-        names = self._validate_parameter_names(parameter_names)
+        duplicated = set(parameter_names) & set(bounds)
+        if duplicated:
+            raise ValueError(f"Parameter(s) {sorted(duplicated)} given both by name and with bounds.")
+        requested = (*parameter_names, *bounds)
+        strict = bool(requested)
+        names = self._validate_parameter_names(requested)
 
+        parameters = []
         for name in names:
             parameter = self._get_parameter_node(name)
             if parameter is not None:
-                parameter.variable()
+                parameters.append((parameter, bounds.get(name)))
             elif strict:
                 raise TypeError(
                     f"Parameter {self._get_parameter_label(name)!r} does not directly contain "
                     "a Parameter and cannot itself be marked variable."
                 )
+
+        previous = [(parameter, parameter.bounds, parameter.is_variable) for parameter, _ in parameters]
+        try:
+            for parameter, pair in parameters:
+                parameter.variable(bounds=pair)
+        except Exception:
+            for parameter, old_bounds, was_variable in previous:
+                parameter.lower_bound, parameter.upper_bound = old_bounds
+                if not was_variable:
+                    parameter.fixed()
+            raise
 
         return self
 
