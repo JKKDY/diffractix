@@ -9,11 +9,18 @@ from ..graph import InputNode, Node, Parameter, walk_ast
 
 @dataclass(eq=False, kw_only=True)
 class OpticalElement(OpticalBase, ABC):
-    """
-    Base class for optical elements.
+    """Base class for elements: optical components described by a ray-transfer (ABCD) matrix and a length.
 
-    Dataclass subclasses inherit the label constructor argument. Subclasses
-    overriding __post_init__ should call super().__post_init__().
+    Notes
+    -----
+    To write a custom element, subclass it with ``@dataclass(eq=False, kw_only=True)``,
+    declare parameters as fields annotated with ``Node``, and implement `matrix`
+    and `element_length`. Override `refractive_index` if the element sets the
+    medium after it. When overriding ``__post_init__``, call
+    ``super().__post_init__()``.
+
+    Matrices act on ``[x, theta]`` with the physical angle ``theta``, not the
+    reduced angle ``n * theta``.
     """
 
     label: str | None = None
@@ -28,29 +35,28 @@ class OpticalElement(OpticalBase, ABC):
     @property
     @abstractmethod
     def matrix(self):
-        """
-        Declarative 2x2 ABCD matrix.
-
-        Entries may be graph Nodes or numerical constants. System.build()
-        compiles these expressions into the numerical simulation.
-        """
+        """Ray-transfer matrix: ``((A, B), (C, D))``, with numbers or graph expressions as entries."""
         raise NotImplementedError
 
     @property
     @abstractmethod
     def element_length(self):
-        """
-        Declarative physical length of the element.
-
-        May be a graph Node or a numerical constant.
-        """
+        """Element length [m]: the distance along the axis the element occupies."""
         raise NotImplementedError
 
     # ----------
     # VALIDATION
     # ----------
     def validate(self):
-        """Validate this element's ABCD representation before system compilation."""
+        """Check the matrix, length and refractive index before the system is built.
+
+        Raises
+        ------
+        TypeError
+            If an entry, the length or the index has the wrong type.
+        ValueError
+            If the matrix is not 2 x 2.
+        """
         matrix = self.matrix
         length = self.element_length
         refractive_index = self.refractive_index
@@ -114,6 +120,7 @@ class OpticalElement(OpticalBase, ABC):
     # DISPLAY
     # -------
     def __str__(self):
+        """Return a readable summary: type, label, length and parameters."""
         def current_value(value):
             if isinstance(value, Node):
                 try:

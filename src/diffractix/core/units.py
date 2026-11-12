@@ -22,9 +22,25 @@ __all__ = ["Unit", "m", "cm", "mm", "um", "nm", "pm", "rad", "mrad", "urad", "de
 
 
 class Unit(float):
-    """A scale factor to SI that also knows its symbol, for formatting.
+    """A unit: an SI scale factor that knows its symbol.
 
-    Arithmetic with a Unit gives plain floats (or arrays), so `50 * mm` is 0.05.
+    Multiply to write a value in SI, divide to read one back. Arithmetic gives
+    plain floats, so ``50 * mm`` is ``0.05``.
+
+    Parameters
+    ----------
+    scale : float
+        Size of the unit in SI units, for example ``1e-3`` for millimetres.
+    symbol : str
+        Symbol used by :func:`format`, for example ``"mm"``.
+
+    Examples
+    --------
+    >>> from diffractix.units import mm
+    >>> 50 * mm
+    0.05
+    >>> 0.05 / mm
+    50.0
     """
 
     def __new__(cls, scale: float, symbol: str):
@@ -52,10 +68,35 @@ deg = Unit(math.pi / 180, "deg")
 
 
 def format(value, unit: Unit, digits: int = 4) -> str:
-    """Write an SI value in unit with `digits` significant digits, e.g. '45.02 um'.
+    """Return a value written in a unit, for example ``'45.02 um'``.
 
-    Arrays are written element by element: '[1.2, 3.4] mm'. Not in `__all__`, so
-    `from ... import *` does not shadow the built-in format.
+    Parameters
+    ----------
+    value : float or array_like
+        Value in SI units. Arrays are written element by element: ``'[1.2, 3.4] mm'``.
+    unit : Unit
+        Unit to write the value in.
+    digits : int, optional
+        Significant digits. Defaults to 4.
+
+    Returns
+    -------
+    str
+        The value in `unit`, followed by the unit's symbol.
+
+    Raises
+    ------
+    TypeError
+        If `unit` is not a `Unit`.
+    ValueError
+        If `digits` is not a positive integer.
+
+    Examples
+    --------
+    >>> from diffractix import units
+    >>> from diffractix.units import um
+    >>> units.format(4.50213e-5, um)
+    '45.02 um'
     """
     if not isinstance(unit, Unit):
         raise TypeError(f"unit must be a Unit such as mm, got {type(unit).__name__}.")

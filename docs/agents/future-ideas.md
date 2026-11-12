@@ -94,3 +94,74 @@ Following the ambient index would mean keeping the factory inputs (`w0`, waist
 position, ...) and computing `q` at build time once `ambient_n` is known, which
 changes how `GaussianBeam` stores its state. Kept at `n=1` for 0.0.1, documented,
 with the index-mismatch error naming the fix.
+
+## 9. Element-relative symbols
+
+Today a Symbol is bound by a key that is the same for the whole system
+(`ambient_n`, the wavelength), and an element can only read its own incoming medium
+through the special handling of its refractive index. An element cannot ask for
+"the focal length of the element before me" or "the index I am leaving".
+
+Idea: special symbols whose meaning depends on where the element sits, which the
+System binds per placement while it resolves the layout. For example
+`previous("f")` or `incoming("n")`, resolved at build to the expression of the
+preceding element's parameter, or the medium on either side. An element could then
+declare relations to its neighbours (an air-spaced doublet matching curvatures, a
+coating or aperture sized from the surface before it, a compensator that mirrors
+another element) without the user wiring the Parameters together by hand.
+
+This would also give the existing special case a general form: the incoming
+refractive index, currently resolved by dedicated code in the build, would be one
+such symbol.
+
+A concrete case that exists today: `GaussianAperture._matrix_in_medium(n)`. The
+aperture's matrix depends on the index of the medium it sits in, which the element
+does not know when it is declared, so the element has a second matrix method that
+the build calls with the resolved index (a TODO in the code asks to remove it).
+With an element-relative symbol, for instance one generated per element key, the
+ordinary `matrix` property would simply use `incoming("n")`, and the build would
+bind it like any other symbol. No element would need a special method, and the
+build would not need to know which elements have one.
+
+Open questions: what "preceding" means inside composites and for generated gaps
+(the leaf before, or the element the user added); how a repeated element gets a
+different binding at each placement, since bindings are keyed per system today;
+whether to allow reaching further than the direct neighbour (by label or type); and
+what happens at the ends of the system and when the neighbour lacks the parameter.
+Relates to idea 1 (segments), where "preceding" depends on the path.
+
+## 10. Sparse Jacobians and Hessians
+
+The solver builds dense derivatives: the full constraint Jacobian (`m x n`), the
+objective Hessian and the multiplier-weighted constraint Hessian (`n x n` each),
+with forward-mode Jacobians and full Hessians from the backend. That cost grows
+quickly with the number of variables `n` and constraints `m`, while the matrices
+are often mostly zeros: a constraint on one lens's thickness depends on one
+variable, an aperture limit only on the parameters upstream of that element.
+`solver/problem.py` already carries a TODO for this.
+
+Directions, roughly in order of effort:
+
+- Know the sparsity pattern for free. The compiled graph programs record which
+  theta entries each output depends on, so the structural pattern of the Jacobian
+  (and of the Hessian, from pairs that meet in a nonlinear operation) can be read
+  off the program instead of being detected numerically. Runtime result quantities
+  depend on everything upstream of their stage, which gives a block-triangular
+  pattern along the optical path.
+- Hand the pattern to optimizers that use it. IPOPT takes the Jacobian and Hessian
+  structure and only the nonzero values; SciPy's trust-constr accepts sparse
+  matrices and linear operators. SLSQP is dense by design and would stay as it is.
+- Compute fewer derivative passes. With the pattern known, graph colouring lets
+  one forward or reverse pass recover several columns or rows at once (compressed
+  Jacobians), instead of one pass per variable.
+- Avoid forming Hessians at all where possible: Hessian-vector products
+  (a forward pass over the gradient) for methods that only need products, or
+  quasi-Newton approximations (IPOPT's limited-memory mode) for large problems.
+
+Open questions: where the dense-to-sparse switch should happen automatically (small
+problems are faster dense); how sparse results pass through the variable and
+constraint scaling and the constraint reduction, which assume dense arrays today;
+and how the pattern survives JIT, since JAX needs static shapes for the nonzeros.
+Relates to idea 1 (segments): several independent paths make the matrices block
+structured, which is where sparsity pays most.
+

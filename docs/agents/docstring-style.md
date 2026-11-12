@@ -13,6 +13,12 @@ thing is and how to use it, briefly. Derivations belong in the theory pages.
   tracer handling, caching) only where a user is affected, and then in user terms.
 - Say what is exact: signs, defaults, edge values (`inf`, `0`, NaN), and which
   index or wavelength is meant.
+- State defaults a user relies on, even when they are implicit (parameters are
+  fixed until marked variable).
+- Where a function takes user callables, say when they are called and what they
+  must satisfy (differentiable with the backend, values seen at call time).
+- A summary line with a colon must read as one sentence; do not append a loose
+  list after the colon.
 - Avoid vague references such as "this plane" or "the current position" unless
   the class says what they are. A light state describes one position on the
   optical axis; use "the beam's position" or "where the beam starts".

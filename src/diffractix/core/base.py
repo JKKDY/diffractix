@@ -11,15 +11,57 @@ _GRAPH_PARAMETER = object()
 
 
 def parameter(default=None):
-    """Declare a dataclass field as a graph-backed real scalar parameter."""
+    """Declare a dataclass field as a parameter.
+
+    Fields annotated with ``Node`` are parameters automatically. Use this for a
+    parameter whose annotation is something else.
+
+    Parameters
+    ----------
+    default : float or Node, optional
+        Default value. Defaults to ``None``, meaning no value.
+
+    Returns
+    -------
+    dataclasses.Field
+        The field, marked as a parameter.
+
+    Examples
+    --------
+    >>> from dataclasses import dataclass
+    >>> from diffractix import OpticalElement, parameter
+    >>> @dataclass(eq=False, kw_only=True)
+    ... class Lens(OpticalElement):
+    ...     f: float = parameter(0.1)
+    ...
+    ...     @property
+    ...     def matrix(self):
+    ...         return ((1, 0), (-1 / self.f, 1))
+    ...
+    ...     @property
+    ...     def element_length(self):
+    ...         return 0.0
+    >>> Lens().f.value
+    0.1
+    """
     return field(default=default, metadata={_GRAPH_PARAMETER: True})
 
 
 class OpticalBase:
-    """Base class for optical objects with optional graph-backed parameters.
+    """Base class for elements, composites and light states, providing their parameters, labels and constraints.
 
-    Parameters are discovered from Node annotations and dataclass fields
-    declared with parameter().
+    A field annotated with ``Node`` (or declared with :func:`parameter`) is a
+    parameter. Parameters can be made variable and optimized in inverse
+    design. By default they are fixed and act as constants Assigning a number creates a `Parameter` named after the field;
+    assigning a graph expression uses it as is. The attribute is a handle to that
+    value, so ``lens.f.variable()`` and ``lens.f.value`` work, and assigning
+    ``lens.f = 0.2`` later replaces what the handle points to.
+
+    Parameters
+    ----------
+    label : str, optional
+        Name used in results and messages. Defaults to an automatic name such as
+        ``"Slab1"``.
     """
 
     _parameter_names: ClassVar[tuple[str, ...] | None] = None
@@ -54,7 +96,7 @@ class OpticalBase:
     # -------------------
     @property
     def bindings(self):
-        """Symbol bindings this optical object contributes to a system."""
+        """Bindings: values for Symbols that this object provides to the system. Empty by default."""
         return {}
 
     @staticmethod
@@ -70,16 +112,15 @@ class OpticalBase:
 
     @property
     def refractive_index(self):
-        """Refractive index of an input or at an element's output.
+        """Refractive index: the medium the light is in after this object, or ``None`` if the medium does not change.
 
-        None leaves medium resolution to the surrounding system topology.
-        Subclasses expose their own index without requiring a specific field name.
+        For an element with a length, such as a `Space`, this is also the medium inside it.
         """
         return None
 
     @property
     def parameter_names(self) -> tuple[str, ...]:
-        """Names of graph-backed parameters, in declaration order."""
+        """Parameter names: the parameter fields of this class, in declaration order."""
         cls = type(self)
         cached = cls.__dict__.get("_parameter_names")
 
@@ -113,11 +154,12 @@ class OpticalBase:
 
     @property
     def parameters(self) -> tuple[InputNode, ...]:
+        """Parameters: the handle of each parameter, in the order of `parameter_names`."""
         return tuple(getattr(self, name) for name in self.parameter_names)
 
     @property
     def values(self) -> tuple[float | None, ...]:
-        """Return current parameter values, or None if unavailable."""
+        """Values: the current value of each parameter, or ``None`` where it has none (for example an unbound Symbol)."""
         values = []
         for handle in self.parameters:
             try:
@@ -132,11 +174,35 @@ class OpticalBase:
     # ------------
     @property
     def constraints(self) -> tuple:
-        """Constraints attached to this optical object."""
+        """Constraints: those attached with :meth:`require`."""
         return tuple(self._constraints)
 
     def require(self, *constraints, label: str | None = None):
-        """Attach constraints to this optical object; `label` names a single comparison."""
+        """Attach constraints that must hold in any optimization of a system containing this object.
+
+        Parameters
+        ----------
+        *constraints : Comparison, Constraint or callable
+            Comparisons such as ``lens.f > 0``, `Constraint` objects, or callables
+            without arguments that return a comparison.
+        label : str, optional
+            Name for a single comparison, used in reports.
+
+        Returns
+        -------
+        OpticalBase
+            ``self``, so calls can be chained.
+
+        Raises
+        ------
+        ValueError
+            If `label` is given with several constraints or with a `Constraint`.
+
+        Notes
+        -----
+        Callables must be differentiable by the numerical backend; diffractix does
+        not check this.
+        """
         from diffractix.solver.constraint import label_constraints
         self._constraints.extend(label_constraints(constraints, label))
         return self
@@ -198,14 +264,44 @@ class OpticalBase:
         return names
 
     def variable(self, *parameter_names: str, **bounds):
-        """
-        Mark directly stored Parameters as optimization variables.
+        """Mark parameters as optimization variables, optionally with new bounds.
 
-        With no arguments, every parameter directly containing a Parameter is
-        marked variable; derived parameters are skipped. Names mark those
-        parameters variable, and keywords also set their bounds, for example
-        `lens.variable(R1=(90e-3, 500e-3), d=(3e-3, 12e-3))`. The call is atomic:
-        if any name or bounds pair is invalid, nothing changes.
+        Parameters are fixed until marked variable. Call with no arguments to mark
+        every parameter of this object as variable.
+
+        Parameters
+        ----------
+        *parameter_names : str
+            Names of parameters to mark variable. Their bounds stay as they are (default: (-inf, +inf)).
+        **bounds : tuple of float
+            Parameters to mark variable with new bounds, as ``name=(lower, upper)``.
+            A ``None`` endpoint keeps the current one.
+
+        Returns
+        -------
+        OpticalBase
+            ``self``, so calls can be chained.
+
+        Raises
+        ------
+        ValueError
+            If a name is unknown, given both plainly and with bounds, or a bounds pair
+            is invalid or excludes the current value.
+        TypeError
+            If a named parameter holds an expression rather than a `Parameter`.
+
+        Notes
+        -----
+        The call is atomic: if anything is invalid, no parameter changes.
+
+        Examples
+        --------
+        >>> from diffractix import ThickLens
+        >>> from diffractix.units import mm
+        >>> lens = ThickLens(d=6 * mm, n=1.5, R1=100 * mm, R2=-100 * mm)
+        >>> lens = lens.variable(R1=(50 * mm, 200 * mm), d=(3 * mm, 10 * mm))
+        >>> lens.R1.node.is_variable, lens.R2.node.is_variable
+        (True, False)
         """
         duplicated = set(parameter_names) & set(bounds)
         if duplicated:
@@ -239,12 +335,28 @@ class OpticalBase:
         return self
 
     def fixed(self, *parameter_names: str):
-        """
-        Mark directly stored Parameters as fixed.
+        """Mark parameters as fixed, so the optimizer does not change them.
 
-        With no names, every parameter directly containing a
-        Parameter is marked fixed. Derived parameters are skipped.
-        """        
+        Parameters are fixed by default; use this to undo :meth:`variable`. Call with
+        no arguments to fix every parameter of this object that holds a `Parameter`.
+
+        Parameters
+        ----------
+        *parameter_names : str
+            Names of parameters to fix.
+
+        Returns
+        -------
+        OpticalBase
+            ``self``, so calls can be chained.
+
+        Raises
+        ------
+        ValueError
+            If a name is unknown.
+        TypeError
+            If a named parameter holds an expression rather than a `Parameter`.
+        """
         strict = bool(parameter_names)
         names = self._validate_parameter_names(parameter_names)
 

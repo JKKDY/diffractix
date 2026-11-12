@@ -12,22 +12,37 @@ from ..graph import Node
 
 @dataclass(eq=False, kw_only=True)
 class Mirror(OpticalElement):
-    """
-    A curved or flat mirror that reflects the beam.
+    """A flat or curved mirror.
 
-    In a sequential paraxial simulation, the optical path is unfolded so that
-    z continues to increase through the reflection.
+    The optical path is unfolded: after the mirror, light keeps travelling in +z,
+    so a reflecting system is laid out as a straight line.
 
-    Parameters:
-        R: Radius of curvature in meters.
-           R > 0 is concave (converging).
-           R < 0 is convex (diverging).
-           R = inf is flat.
+    Parameters
+    ----------
+    R : float or Node, optional
+        Radius of curvature [m]: positive for a concave (focusing) mirror,
+        negative for a convex one. Defaults to ``inf``, a flat mirror. The focal
+        length is ``R / 2``.
+    label : str, optional
+        Name used in results and messages. Defaults to an automatic name such as
+        ``"Mirror1"``.
+
+    Raises
+    ------
+    ValueError
+        If `R` is zero when the system is built.
     """
 
     R: Node = np.inf
 
     def validate(self):
+        """Check the element, and that the radius is not zero.
+
+        Raises
+        ------
+        ValueError
+            If `R` is zero.
+        """
         super().validate()
         try:
             radius = self.R.value
@@ -38,6 +53,7 @@ class Mirror(OpticalElement):
 
     @property
     def matrix(self):
+        """Ray-transfer matrix: ``((1, 0), (-2/R, 1))``."""
         return (
             (1.0, 0.0),
             (-2.0 / self.R, 1.0),
@@ -45,4 +61,5 @@ class Mirror(OpticalElement):
 
     @property
     def element_length(self):
+        """Element length [m]: 0."""
         return 0.0
