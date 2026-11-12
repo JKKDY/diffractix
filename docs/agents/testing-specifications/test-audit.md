@@ -192,7 +192,7 @@ Deliberately left alone:
 | 4 | `integration/test_system_build.py`: explicit ABCD, GRIN and Space `n` must match the incoming medium; a variable `n` becomes one continuity equality. |
 | 6 | `integration/test_plotting.py`: Gaussian envelope samples against analytic `w(z)` and the plot's millimetre scale; `ax=None`; the `show_elements` and `show_axis` toggles; the 41-ray cap. |
 | 7 | `unit/graph/test_compile.py`: NaN, bool, complex and str mutations on unbounded Parameters. |
-| 8 | `unit/input/test_gaussian_beam.py`: `overlap_with` just inside and just outside its tolerances. |
+| 8 | `unit/states/test_gaussian_beam.py`: `overlap_with` just inside and just outside its tolerances. |
 | 9 | `unit/simulation/test_result.py`: guard that `at`/`after`/`z_at`/`z_after` stay absent. |
 | Q4 | `integration/test_inverse_design.py`: an array `target=` solved per ray, with the residual and cost checked against the formula. |
 
@@ -221,7 +221,7 @@ they pass: Autograd 683 (670 + the 13 other inverse-design cases), JAX 393.
 | `unit/graph/test_construction.py` | `test_sigmoid` and `test_reverse_scalar_math` deleted; their values are now in `test_operations.py`. `test_unary_operations` became a structural check over all 14 unary builders (node type and operand identity). Section headers corrected. |
 | `unit/elements/test_elements.py` | `test_abcd_matrix_override_rejects_wrong_shape` deleted; it was a subset of the atomic-rejection test. The three single-assert GRIN tests became `test_grin_declaration`. The Mirror, ThinLens and Plane "no constraint" tests became one parametrized test. |
 | `unit/composites/test_composites.py` | Four `_structure` tests became one parametrized child-order test. Three `_can_be_variable` tests were deleted: generic base behaviour, already covered by `core`/`composites/test_base.py` and the wiring tests. The two spacing tests are covered by the reassignment and aggregate-matrix tests. The Slab and ThickLens ambient tests became one test parametrized over both. |
-| `unit/input/test_gaussian_beam.py` | The old incompatible-overlap test and `w_R_from_q` rejection test are subsets of the newer tolerance and invalid-`q` tests. The combined tolerance test was reduced to the medium tolerance (symmetric); wavelength is covered by the relative-tolerance test. |
+| `unit/states/test_gaussian_beam.py` | The old incompatible-overlap test and `w_R_from_q` rejection test are subsets of the newer tolerance and invalid-`q` tests. The combined tolerance test was reduced to the medium tolerance (symmetric); wavelength is covered by the relative-tolerance test. |
 | `unit/solver/test_callbacks.py` | The empty-constraint test checks only derivative shapes. "No propagation for parameter-only models" stays only in `test_execution_regressions.py`, where it covers eager and JIT. |
 | `integration/test_inverse_design.py` | My array-target test was removed; the maintainer's array target-and-scale test covers it. |
 
@@ -292,7 +292,7 @@ Consolidated (26 tests merged or removed, none of their assertions lost):
   `unit/backend/test_jax.py` stays, it covers the constraint path).
 - Moved: the element-path test out of `integration/test_plotting.py` into
   `unit/system/test_compilation.py`; the input-label test from the composites file
-  into `unit/input/test_input.py`.
+  into `unit/states/test_state.py`.
 
 Added: `tests/e2e/test_design_workflows.py` (7 workflow tests, see `tests/README.md`),
 and unit tests for previously unexecuted behaviour: `str(program)`, operation

@@ -7,7 +7,7 @@ import pytest
 
 from diffractix.backend import grad, hessian, jacobian, jit, xp
 from diffractix.graph import Literal, Node, Parameter, Program, compile_graph
-from diffractix.input import GaussianBeam, ParaxialState, Ray, RayBundle
+from diffractix.states import GaussianBeam, ParaxialState, Ray, RayBundle
 from diffractix.simulation.info import SimulationInput, SimulationStep
 from diffractix.simulation.result import SimulationResult
 from diffractix.simulation.simulation import Simulation

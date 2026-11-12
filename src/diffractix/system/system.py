@@ -10,7 +10,7 @@ from numbers import Real
 from typing import Any
 from types import MappingProxyType
 
-from diffractix.input.paraxial_input import ParaxialState
+from diffractix.states.paraxial_state import ParaxialState
 from diffractix.composites import CompositeElement
 from diffractix.elements import OpticalElement, Interface, Space, GaussianAperture
 from diffractix.core import OpticalBase

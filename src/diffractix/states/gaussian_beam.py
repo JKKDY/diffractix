@@ -4,7 +4,7 @@ from typing import ClassVar
 import numpy as np
 from diffractix.backend import xp, require
 
-from .paraxial_input import ParaxialState
+from .paraxial_state import ParaxialState
 from diffractix.graph import Node
 from diffractix.system.symbols import AMBIENT_N, WAVELENGTH, make_symbol
 

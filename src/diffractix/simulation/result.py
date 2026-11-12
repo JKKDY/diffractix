@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from diffractix.backend import xp
 
-from diffractix.input.paraxial_input import ParaxialState
+from diffractix.states.paraxial_state import ParaxialState
 from diffractix.graph import Symbol, SymbolicControlFlowError
 if TYPE_CHECKING:
     from diffractix.system.info import ElementData, ParameterData
@@ -83,7 +83,7 @@ def _stage_index(positions, element, occurrence):
 class SimulationResultTracer:
     """Symbolic counterpart of SimulationResultView."""
 
-    class OpticalState:
+    class SymbolicState:
         def __init__(self, state, kind, index=None):
             self._state = state
             self._kind = kind
@@ -123,11 +123,11 @@ class SimulationResultTracer:
 
         @property
         def before(self):
-            return SimulationResultTracer.OpticalState(self._state, ResultSymbolKind.BEFORE, self._index)
+            return SimulationResultTracer.SymbolicState(self._state, ResultSymbolKind.BEFORE, self._index)
 
         @property
         def after(self):
-            return SimulationResultTracer.OpticalState(self._state, ResultSymbolKind.AFTER, self._index)
+            return SimulationResultTracer.SymbolicState(self._state, ResultSymbolKind.AFTER, self._index)
 
         @property
         def z_start(self):
@@ -155,11 +155,11 @@ class SimulationResultTracer:
 
     @property
     def initial(self):
-        return self.OpticalState(self._state, ResultSymbolKind.INITIAL)
+        return self.SymbolicState(self._state, ResultSymbolKind.INITIAL)
 
     @property
     def final(self):
-        return self.OpticalState(self._state, ResultSymbolKind.FINAL)
+        return self.SymbolicState(self._state, ResultSymbolKind.FINAL)
 
     @property
     def stages(self):

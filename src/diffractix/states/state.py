@@ -24,7 +24,7 @@ def _numerical_type(input_type):
 
 
 @dataclass(eq=False, kw_only=True)
-class OpticalInput(OpticalBase):
+class OpticalState(OpticalBase):
     """Base class for the light at one position on the optical axis.
 
     Fields may be numbers or graph expressions (Parameters, Symbols), which are
@@ -45,11 +45,11 @@ class OpticalInput(OpticalBase):
 
     @classmethod
     def numerical_type(cls):
-        """Return the numerical version of this class: the same input, built from numbers instead of graph expressions."""
+        """Return the numerical version of this class: the same state, built from numbers instead of graph expressions."""
         return _numerical_type(cls)
 
     def numeric(self, bindings={}):
-        """Return a numerical copy of this input, with every field evaluated now.
+        """Return a numerical copy of this state, with every field evaluated now.
 
         Parameters
         ----------
@@ -58,8 +58,8 @@ class OpticalInput(OpticalBase):
 
         Returns
         -------
-        OpticalInput
-            The same input holding numbers. Parameters use their current values,
+        OpticalState
+            The same state holding numbers. Parameters use their current values,
             variable ones included.
         """
         # get all fields (including purely numeric ones)

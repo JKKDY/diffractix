@@ -6,7 +6,7 @@ from types import MappingProxyType
 import numpy as np
 import pytest
 
-from diffractix import GaussianBeam, Node, OpticalElement, OpticalInput, Parameter, ParaxialState, Ray, RayBundle, Symbol, parameter
+from diffractix import GaussianBeam, Node, OpticalElement, OpticalState, Parameter, ParaxialState, Ray, RayBundle, Symbol, parameter
 from diffractix.backend import grad, hessian, jit, xp
 from diffractix.graph import ASTCycleError, InputNode, UnresolvedInputError
 from diffractix.system import AMBIENT_N
@@ -25,7 +25,7 @@ class FieldDeclarations:
 
 
 @dataclass(eq=False, kw_only=True)
-class ExampleInput(FieldDeclarations, OpticalInput):
+class ExampleInput(FieldDeclarations, OpticalState):
     pass
 
 
@@ -41,7 +41,7 @@ class ExampleElement(FieldDeclarations, OpticalElement):
 
 
 @dataclass(eq=False, kw_only=True)
-class ParentInput(OpticalInput):
+class ParentInput(OpticalState):
     signal: Node = 2.0
     doubled: Node = field(init=False)
 
@@ -270,7 +270,7 @@ def test_numeric_does_not_evaluate_stale_init_false_fields():
 
 def test_numeric_supports_inputs_without_graph_fields_and_preserves_numerical_data():
     @dataclass(eq=False)
-    class NumericalOnly(OpticalInput):
+    class NumericalOnly(OpticalState):
         value: float
         phase: complex
         samples: np.ndarray

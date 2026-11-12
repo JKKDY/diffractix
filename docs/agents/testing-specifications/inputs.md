@@ -2,14 +2,14 @@
 
 ## References and ownership
 
-Read `input/input.py`, `paraxial_input.py`, Ray, RayBundle, GaussianBeam,
+Read `states/state.py`, `states/paraxial_state.py`, Ray, RayBundle, GaussianBeam,
 `core/base.py`, `system/symbols.py`, and the two current working references.
-Own `tests/unit/input/` only. Preserve existing independent ray/bundle physics
+Own `tests/unit/states/` only. Preserve existing independent ray/bundle physics
 and factory derivatives. Do not edit System or propagation integration tests.
 
 ## Declarative versus numerical lifecycle
 
-OpticalInput is a keyword-only eq=False dataclass inheriting OpticalBase.
+OpticalState is a keyword-only eq=False dataclass inheriting OpticalBase.
 Fields are graph-backed only through Node/subclass annotations or parameter()
 metadata. Ordinary float, bool, array, complex and metadata fields remain
 ordinary. This is the same wrapping contract as elements, not auto-real wrapping.

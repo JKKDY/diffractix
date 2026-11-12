@@ -3,8 +3,8 @@
 # Optical inputs
 from .core import OpticalBase
 from . import units
-from .input import (
-    OpticalInput,
+from .states import (
+    OpticalState,
     ParaxialState,
     GaussianBeam,
     Ray,
@@ -65,7 +65,7 @@ __all__ = [
     # Optical inputs
     "OpticalBase",
     "units",
-    "OpticalInput",
+    "OpticalState",
     "ParaxialState",
     "GaussianBeam",
     "Ray",

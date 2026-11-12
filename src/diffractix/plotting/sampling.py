@@ -1,7 +1,7 @@
 """Concrete plot data from boundary states and known homogeneous intervals."""
 import numpy as np
 
-from diffractix.input import GaussianBeam, Ray, RayBundle
+from diffractix.states import GaussianBeam, Ray, RayBundle
 
 
 def _concrete(value):

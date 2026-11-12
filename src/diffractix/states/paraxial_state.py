@@ -3,10 +3,10 @@
 from abc import ABC, abstractmethod
 from typing import Self, ClassVar
 
-from .input import OpticalInput
+from .state import OpticalState
 
 
-class ParaxialState(OpticalInput, ABC):
+class ParaxialState(OpticalState, ABC):
     """Base class for light described by ray-transfer (ABCD) matrices.
 
     `Ray`, `RayBundle` and `GaussianBeam` are the built-in kinds. Subclass it to

@@ -5,7 +5,7 @@
 - `e2e/`: complete design workflows through the public API only: declare a system with unit constants, build, optimize, read the report and plot. Each is checked against physics worked out independently (hand geometric optics or plain NumPy matrices), and the failure workflows (an infeasible requirement, a stopped optimization continued from its solution) are covered too.
 - `helpers/`: small shared solver snapshots and analytical optimization problems. Other fixtures stay local to their test modules.
 
-Shared optical parameter contracts live in `unit/core/`. `unit/input/` contains
+Shared optical parameter contracts live in `unit/core/`. `unit/states/` contains
 declarative input conversion and independent Ray, RayBundle, and GaussianBeam
 physics tests. `integration/test_input_propagation.py` exercises the complete
 graph-to-numerical-state boundary, including differentiation through bindings.

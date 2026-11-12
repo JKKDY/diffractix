@@ -8,7 +8,7 @@ from diffractix.backend import xp
 from ..graph import Node
 from ..system.symbols import AMBIENT_N, make_symbol
 
-from .paraxial_input import ParaxialState
+from .paraxial_state import ParaxialState
 
 
 

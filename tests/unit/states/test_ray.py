@@ -5,7 +5,7 @@ import pytest
 
 from diffractix import Ray
 from diffractix.backend import grad, hessian, jacobian, jit, xp
-from diffractix.input import Ray as InputRay, ParaxialState
+from diffractix.states import Ray as InputRay, ParaxialState
 
 
 def test_ray_construction_default_medium_and_public_exports():

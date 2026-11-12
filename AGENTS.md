@@ -14,7 +14,7 @@ matrices, and optimize design parameters with gradients from JAX or Autograd.
 - `graph/`: expression graph (`Parameter`, `Symbol`, `Node`), compilation to programs.
 - `core/`: `OpticalBase` (parameters, labels, constraints) and `units` (unit constants).
 - `elements/`, `composites/`: optical elements and composites built from them.
-- `input/`: optical inputs (`Ray`, `RayBundle`, `GaussianBeam`).
+- `states/`: light states (`Ray`, `RayBundle`, `GaussianBeam`), used as inputs and in results.
 - `system/`: `System`, placement and the build into a `Simulation`.
 - `simulation/`: compiled `Simulation`, results, and the symbolic result.
 - `solver/`: `Solver`, `Solution`, objectives, constraints; `optimizers/` wraps SciPy, IPOPT, NLopt.

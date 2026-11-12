@@ -9,7 +9,7 @@ release gaps and unresolved policies, see [QA status](../qa-status.md).
 | Graph | [Graphs](graphs.md) | tests/unit/graph |
 | Shared base and elements | [Elements](elements.md) | tests/unit/core, tests/unit/elements |
 | Composites | [Composites](composites.md) | tests/unit/composites |
-| Inputs | [Inputs](inputs.md) | tests/unit/input |
+| Inputs | [Inputs](inputs.md) | tests/unit/states |
 | System | [System](system.md) | tests/unit/system |
 | Simulation and results | [Simulation](simulation.md) | tests/unit/simulation |
 | Solver package | [Solver](solver.md) | tests/unit/solver |

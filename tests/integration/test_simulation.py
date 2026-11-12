@@ -5,7 +5,7 @@ import pytest
 from diffractix import Parameter, Ray, Space, System, ThinLens
 from diffractix.elements import OpticalElement
 from diffractix.graph import Node
-from diffractix.input.paraxial_input import ParaxialState
+from diffractix.states.paraxial_state import ParaxialState
 from diffractix.backend import xp
 
 
