@@ -25,14 +25,17 @@ def _numerical_type(input_type):
 
 @dataclass(eq=False, kw_only=True)
 class OpticalInput(OpticalBase):
-    """Declarative optical input with graph-backed real scalar dataclass fields.
+    """Base class for the light at one position on the optical axis.
 
-    Node annotations and parameter(...) declarations enable wrapping, exactly
-    as for optical elements. All other fields stay numerical.
+    Fields may be numbers or graph expressions (Parameters, Symbols), which are
+    evaluated when the system is built and run. Results hold numerical copies,
+    made by :meth:`numeric`.
 
-    Numerical subclasses inherit the dataclass constructor and __post_init__.
-    Custom propagation should construct type(self) to retain the numerical type.
-    Subclasses with additional dataclass fields must also use @dataclass.
+    Notes
+    -----
+    To write a custom input, subclass `ParaxialState` with ``@dataclass``. Fields
+    annotated with ``Node`` (or declared with ``parameter()``) accept numbers or
+    graph expressions, as for elements; other fields stay plain values.
     """
 
     label: str | None = None
@@ -42,19 +45,22 @@ class OpticalInput(OpticalBase):
 
     @classmethod
     def numerical_type(cls):
-        """Return the cached class for direct numerical construction, including tracers.
-
-        Supply numerical values explicitly for fields with symbolic defaults.
-        """
+        """Return the numerical version of this class: the same input, built from numbers instead of graph expressions."""
         return _numerical_type(cls)
 
     def numeric(self, bindings={}):
-        """Evaluate current graph fields in a new numerical dataclass instance.
+        """Return a numerical copy of this input, with every field evaluated now.
 
-        Explicit numerical Symbol bindings take precedence over Symbol defaults.
-        Variable Parameters use their current values; no Simulation theta is used.
-        Custom constructors must accept the dataclass init fields as keywords.
-        Derived init=False fields are rebuilt by the numerical constructor.
+        Parameters
+        ----------
+        bindings : Mapping, optional
+            Values for Symbols, by key. They take precedence over Symbol defaults.
+
+        Returns
+        -------
+        OpticalInput
+            The same input holding numbers. Parameters use their current values,
+            variable ones included.
         """
         # get all fields (including purely numeric ones)
         constructor_fields = tuple(item for item in fields(self) if item.init)

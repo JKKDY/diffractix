@@ -37,7 +37,8 @@ affected by a change, and the full suite only before finishing larger work.
 ## Conventions
 
 - Values are SI internally; examples write them with `diffractix.units` (`50 * mm`).
-- NumPy-style docstrings on the public API (what `diffractix.__all__` exports).
+- NumPy-style docstrings on the public API (what `diffractix.__all__` exports),
+  following `docs/agents/docstring-style.md`.
 - Lint only (ruff `F`, `E9`); no formatter. Keep the existing style, including
   aligned blocks. Do not run `ruff check --fix` blindly: it deletes imports that are
   only re-exported.

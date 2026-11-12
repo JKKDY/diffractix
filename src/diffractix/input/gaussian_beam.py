@@ -44,16 +44,54 @@ def _curvature(inv_q_real):
 
 @dataclass
 class GaussianBeam(ParaxialState):
-    """
-    Represents a Gaussian Beam at a specific point in space and medium.
+    """A fundamental (TEM00) Gaussian beam at one position on the optical axis.
 
-    Factories validate concrete inputs. Predicates depending on JIT-traced
-    values follow the unchecked-runtime policy of backend.require().
+    The beam is canonically described by its complex beam parameter ``q``. It is
+    usually created with a factory rather than from ``q`` directly:
+    :meth:`from_waist`, :meth:`from_w_and_R`, :meth:`from_divergence` or
+    :meth:`from_fiber_tip`.
 
-    Attributes:
-        q (complex): The complex beam parameter describing curvature and width.
-        wavelength: Vacuum-wavelength graph input.
-        n: Refractive-index graph input; defaults to the ambient-index Symbol.
+    Parameters
+    ----------
+    q : complex
+        Complex beam parameter [m]: ``q = z + i z_R``, where ``z`` is the distance
+        past the waist and ``z_R`` the Rayleigh range. Its imaginary part must be
+        positive.
+    wavelength : float or Node
+        Vacuum wavelength [m].
+    n : float or Node, optional
+        Refractive index of the medium. Defaults to the system's ambient index
+        (``System(ambient_n=...)``).
+    label : str, optional
+        Name used in results and messages. Defaults to an automatic name such as
+        ``"GaussianBeam1"``.
+
+    Raises
+    ------
+    ValueError
+        If `q` is not finite or its imaginary part is not positive. Checked only
+        for concrete values, not inside JIT-compiled code.
+
+    See Also
+    --------
+    Ray, RayBundle : Geometric rays.
+
+    Notes
+    -----
+    Width and curvature follow from ``1/q = 1/R - i * wavelength / (pi * n * w**2)``.
+    A transformation with ray-transfer matrix ``[[A, B], [C, D]]`` maps ``q`` to
+    ``(A q + B) / (C q + D)``.
+
+    Signs: ``R > 0`` for a diverging beam and ``R < 0`` for a converging one;
+    ``z0 > 0`` when the waist lies ahead.
+
+    Examples
+    --------
+    >>> from diffractix import GaussianBeam, units
+    >>> from diffractix.units import mm, mrad, nm
+    >>> beam = GaussianBeam.from_waist(w0=0.5 * mm, wavelength=1064 * nm)
+    >>> units.format(beam.numeric().divergence_angle, mrad)
+    '0.6774 mrad'
     """
     q: complex
     wavelength: Node
@@ -70,6 +108,20 @@ class GaussianBeam(ParaxialState):
         _require_q(self.q)
 
     def propagate(self, A, B, C, D, n) -> 'GaussianBeam':
+        """Return the beam after a first-order (ABCD) transformation.
+
+        Parameters
+        ----------
+        A, B, C, D : float
+            Elements of the ray-transfer matrix.
+        n : float
+            Refractive index after the transformation.
+
+        Returns
+        -------
+        GaussianBeam
+            The new beam, with ``q' = (A q + B) / (C q + D)``; ``self`` is unchanged.
+        """
         q = (A * self.q + B) / (C * self.q + D)
 
         return type(self)(
@@ -84,75 +136,66 @@ class GaussianBeam(ParaxialState):
     #-----------
     @property
     def refractive_index(self):
+        """Refractive index: the medium the beam is in (the same as ``n``)."""
         return self.n
 
     @property
     def bindings(self):
+        """Bindings: values this beam provides to the system, namely its wavelength for elements that need it."""
         return { WAVELENGTH.key: self.wavelength }
 
     @property
     def w(self) -> float:
-        """Spot size radius (1/e^2 intensity) at the current position."""
+        """Beam radius [m]: where the intensity falls to 1/e² of its peak."""
         inv_q_imag = xp.imag(1.0 / self.q)
         return xp.sqrt(-self.wavelength / (np.pi * self.n * inv_q_imag))
 
     @property
     def R(self) -> float:
-        """Radius of curvature at the current position."""
+        """Wavefront radius of curvature [m]: positive when diverging, negative when converging, ``inf`` at the waist."""
         inv_q_real = xp.real(1.0 / self.q)
         return _curvature(inv_q_real)
 
     @property
     def z_r(self) -> float:
-        """Rayleigh range (in terms of propagation distance z)."""
+        """Rayleigh range [m]: the distance from the waist over which the area doubles."""
         # q = z + i*z_r
         return xp.imag(self.q)
 
     @property
     def z0(self) -> float:
-        """
-        Position of the waist relative to current plane.
-        (+) Waist is in front (Converging). (-) Waist is behind (Diverging).
-        """
+        """Waist position [m]: distance to the waist, positive ahead (converging), negative behind (diverging)."""
         # q = (z - z_waist) + i*z_r
         # Real(q) = z - z_waist. If we define current z=0, then Real(q) = -z_waist.
         return -xp.real(self.q)
 
     @property
     def w0(self) -> float:
-        """Calculate waist radius w0 (minimum radius the beam reaches at its focal point)"""
+        """Waist radius [m]: the smallest radius the beam reaches."""
         # z_r = (pi * w0^2 * n) / lambda
         return xp.sqrt(self.z_r * self.wavelength / (np.pi * self.n))
 
     @property
     def divergence_angle(self) -> float:
-        """Far-field divergence half-angle (radians)."""
+        """Divergence [rad]: the far-field half-angle, ``wavelength / (pi * n * w0)``."""
         return self.wavelength / (np.pi * self.w0 * self.n)
 
     @property
     def NA(self) -> float:
-        """
-        Numerical Aperture (NA). 
-        Approximation: NA ≈ n * theta (for small angles).
-        Useful for fiber coupling or objective lens matching.
-        """
+        """Numerical aperture: ``n * divergence_angle``, for matching fibers or objectives."""
         # theta = lambda / (pi * w0 * n)
         # NA = n * theta = lambda / (pi * w0)
         return self.wavelength / (np.pi * self.w0)
 
     @property
     def gouy_phase(self) -> float:
-        """
-        The Gouy phase shift psi(z) at the current position relative to the waist.
-        psi = arctan(z / z_r)
-        Range: -pi/2 to +pi/2
-        """
+        """Gouy phase [rad]: ``arctan(z / z_R)``, with ``z`` the distance past the waist."""
         # Re(q) is the distance z from the waist. Im(q) is z_r.
         return xp.arctan2(xp.real(self.q), xp.imag(self.q))
 
     @property
     def b(self) -> float:
-        """The Confocal Parameter (twice the Rayleigh range)."""
+        """Confocal parameter [m]: twice the Rayleigh range."""
         return 2 * self.z_r
 
 
@@ -161,27 +204,61 @@ class GaussianBeam(ParaxialState):
     #--------------------
 
     def R_at_z(self, z: float) -> float:
-        """Radius of curvature R at distance z."""
+        """Return the wavefront radius of curvature after free propagation.
+
+        Parameters
+        ----------
+        z : float
+            Distance [m] along the axis from the beam's position; negative values look back.
+
+        Returns
+        -------
+        float
+            Radius of curvature [m]. Assumes a homogeneous medium with no elements in between.
+        """
         q_z = self.q + z
         _, R_new = self.w_R_from_q(q_z, self.wavelength, self.n) 
         return R_new
 
     def w_at_z(self, z: float) -> float:
-        """Calculate spot size w at distance z from current plane."""
+        """Return the beam radius after free propagation.
+
+        Parameters
+        ----------
+        z : float
+            Distance [m] along the axis from the beam's position; negative values look back.
+
+        Returns
+        -------
+        float
+            Beam radius [m]. Assumes a homogeneous medium with no elements in between.
+        """
         q_z = self.q + z
         w_new, _ = self.w_R_from_q(q_z, self.wavelength, self.n)
         return w_new
 
     def overlap_with(self, other: 'GaussianBeam') -> float:
-        """
-        Calculates the power coupling efficiency (0.0 to 1.0) between this beam 
-        and another Gaussian beam (e.g., a fiber mode).
+        """Return the power coupling efficiency between this beam and another one.
 
-        Formula: 4 * Im(1/q1) * Im(1/q2) / |(1/q1)* - (1/q2)|^2
+        Both beams must be described at the same position, for example a beam
+        arriving at a fiber and the fiber's mode.
 
-        (Requires both beams to be at the same z position and in the same n.)
-        Wavelength compatibility uses symmetric relative tolerance 1e-6,
-        with no absolute tolerance.
+        Parameters
+        ----------
+        other : GaussianBeam
+            The beam to couple into, at the same position.
+
+        Returns
+        -------
+        float
+            Fraction of the power coupled, between 0 and 1:
+            ``4 Im(1/q1) Im(1/q2) / |conj(1/q1) - 1/q2|**2``.
+
+        Raises
+        ------
+        ValueError
+            If the beams are in media of different index, or their wavelengths differ
+            by more than a relative 1e-6.
         """
         require(
             xp.abs(self.n - other.n) <= 1e-6,
@@ -217,10 +294,22 @@ class GaussianBeam(ParaxialState):
 
     @staticmethod
     def w_R_from_q(q: complex, wavelength: float, n: float) -> tuple[float, float]:
-        """
-        Extracts beam width (w) and radius of curvature (R) from the complex q-parameter.
+        """Return the beam radius and radius of curvature for a complex beam parameter.
 
-        Math: 1/q = 1/R - i * (lambda / (pi * n * w^2))
+        Parameters
+        ----------
+        q : complex
+            Complex beam parameter [m], with a positive imaginary part.
+        wavelength : float
+            Vacuum wavelength [m].
+        n : float
+            Refractive index of the medium.
+
+        Returns
+        -------
+        w, R : float
+            Beam radius [m] and radius of curvature [m] (``inf`` for a flat wavefront),
+            from ``1/q = 1/R - i * wavelength / (pi * n * w**2)``.
         """
         _require_q(q)
         inv_q = 1.0 / q
@@ -245,12 +334,34 @@ class GaussianBeam(ParaxialState):
 
     @classmethod
     def from_waist(cls, w0: float, wavelength: float, z_waist_loc: float = 0.0, n: float = 1.0) -> 'GaussianBeam':
-        """
-        Create a beam defined by its waist size.
+        """Create a beam from its waist radius and the waist position.
 
-        z_waist_loc: Where the waist is relative to the *current* plane.
-                     0.0 means we are at the waist.
-                     -10.0 means the waist was 10 units ago.
+        Parameters
+        ----------
+        w0 : float
+            Waist radius [m].
+        wavelength : float
+            Vacuum wavelength [m].
+        z_waist_loc : float, optional
+            Waist position [m] relative to where the beam starts: 0 (the default)
+            starts the beam at its waist, a positive value puts the waist ahead, a
+            negative one behind.
+        n : float, optional
+            Refractive index of the medium. Defaults to 1, not to the system's
+            ambient index.
+
+        Returns
+        -------
+        GaussianBeam
+            The new beam.
+
+        Raises
+        ------
+        TypeError
+            If an argument is not a real number.
+        ValueError
+            If `w0`, `wavelength` or `n` is not positive and finite, or `z_waist_loc`
+            is not finite.
         """
         _require_positive(w0=w0, wavelength=wavelength, n=n)
         _require_real(z_waist_loc, "z_waist_loc")
@@ -264,7 +375,31 @@ class GaussianBeam(ParaxialState):
 
     @classmethod
     def from_w_and_R(cls, w: float, R: float, wavelength: float, n: float = 1.0) -> 'GaussianBeam':
-        """Create a beam from spot size w and curvature R at the current plane."""
+        """Create a beam from its radius and wavefront curvature where it starts.
+
+        Parameters
+        ----------
+        w : float
+            Beam radius [m] where the beam starts.
+        R : float
+            Wavefront radius of curvature [m] where the beam starts: positive when
+            diverging, negative when converging, ``inf`` at the waist.
+        wavelength : float
+            Vacuum wavelength [m].
+        n : float, optional
+            Refractive index of the medium. Defaults to 1, not to the system's
+            ambient index.
+
+        Returns
+        -------
+        GaussianBeam
+            The new beam.
+
+        Raises
+        ------
+        ValueError
+            If `w`, `wavelength` or `n` is not positive and finite, or `R` is zero or NaN.
+        """
         _require_positive(w=w, wavelength=wavelength, n=n)
         _require_real(R, "R")
         require(xp.all(~xp.isnan(R) & (R != 0)), "R must be nonzero and not NaN; infinity is allowed.")
@@ -279,10 +414,27 @@ class GaussianBeam(ParaxialState):
 
     @classmethod
     def from_divergence(cls, theta: float, wavelength: float, n: float = 1.0) -> 'GaussianBeam':
-        """
-        Create a beam defined by its far-field divergence half-angle (in radians).
+        """Create a beam at its waist from its far-field divergence.
 
-        Assumes the beam starts AT the waist (z=0, R=inf).
+        Parameters
+        ----------
+        theta : float
+            Far-field divergence half-angle [rad].
+        wavelength : float
+            Vacuum wavelength [m].
+        n : float, optional
+            Refractive index of the medium. Defaults to 1, not to the system's
+            ambient index.
+
+        Returns
+        -------
+        GaussianBeam
+            The new beam, at its waist, with ``w0 = wavelength / (pi * n * theta)``.
+
+        Raises
+        ------
+        ValueError
+            If an argument is not positive and finite.
         """
         _require_positive(theta=theta, wavelength=wavelength, n=n)
         # theta = lambda / (pi * w0 * n)  ->  w0 = lambda / (pi * theta * n)
@@ -292,13 +444,32 @@ class GaussianBeam(ParaxialState):
 
     @classmethod
     def from_fiber_tip(cls, wavelength: float, NA: float = None, MFD: float = None, n: float = 1.0) -> 'GaussianBeam':
-        """
-        Create a beam as it exits a fiber tip.
+        """Create the beam leaving a single-mode fiber, at its waist on the fiber face.
 
-        You must provide either NA or MFD. NA takes precedence if both are supplied.
+        Give either the numerical aperture or the mode field diameter. If both are
+        given, `NA` is used.
 
-        - If NA is provided: w0 = wavelength / (pi * NA)
-        - If MFD is provided: w0 = MFD / 2
+        Parameters
+        ----------
+        wavelength : float
+            Vacuum wavelength [m].
+        NA : float, optional
+            Numerical aperture of the mode (1/e² far-field): ``w0 = wavelength / (pi * NA)``.
+        MFD : float, optional
+            Mode field diameter [m]: ``w0 = MFD / 2``.
+        n : float, optional
+            Refractive index of the medium. Defaults to 1, not to the system's
+            ambient index.
+
+        Returns
+        -------
+        GaussianBeam
+            The new beam.
+
+        Raises
+        ------
+        ValueError
+            If neither `NA` nor `MFD` is given, or a value is not positive and finite.
         """
         if NA is None and MFD is None:
             raise ValueError("Must provide either 'NA' or 'MFD' to characterize the fiber tip.")
@@ -321,10 +492,7 @@ class GaussianBeam(ParaxialState):
     #----------
 
     def __str__(self) -> str:
-        """
-        Human-readable representation assuming n=1.0 (Air/Vacuum).
-        Shows current beam parameters and waist location.
-        """
+        """Return a readable summary: wavelength, radius and curvature here, and the waist."""
         # calculate parameters
         w_current = self.w_at_z(0)
         R_current = self.R_at_z(0)
@@ -351,13 +519,17 @@ class GaussianBeam(ParaxialState):
         )
 
     def plot(self, span: float = None, points: int = 200):
-        """
-        Debug plot: Visualizes the beam's envelope relative to the current position.
+        """Plot this beam's envelope around its position and show it.
 
-        Args:
-            span (float): Total propagation distance to plot centered on the current position.
-                          If None, defaults to 4 * Rayleigh Range or 4 * z_waist (whichever is larger).
-            points (int): Number of plotting points.
+        For whole systems use ``result.plot()`` instead.
+
+        Parameters
+        ----------
+        span : float, optional
+            Length of axis to plot [m], centred on the beam's position. Defaults to
+            four times the larger of the Rayleigh range and the distance to the waist.
+        points : int, optional
+            Number of samples. Defaults to 200.
         """
         import matplotlib.pyplot as plt
 
