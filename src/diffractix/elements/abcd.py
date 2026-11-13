@@ -36,6 +36,10 @@ class ABCD(OpticalElement):
     ------
     ValueError
         If `matrix_val` is not 2 x 2, or `thickness` is a negative number.
+
+    Notes
+    -----
+    When `n` is given, requires ``n > 0``, which matters when it is variable.
     """
 
     A: Node = 1.0

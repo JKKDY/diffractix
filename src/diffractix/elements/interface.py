@@ -65,8 +65,8 @@ class Interface(OpticalElement):
 
     @property
     def matrix(self):
-        # Keep a fixed infinite radius out of products with variable indices.
         """Ray-transfer matrix: ``((1, 0), ((n1 - n2) / (n2 * R), n1 / n2))``, for physical angles."""
+        # Keep a fixed infinite radius out of products with variable indices.
         return (
             (1.0, 0.0),
             (((self.n1 - self.n2) / self.n2) / self.R, self.n1 / self.n2),

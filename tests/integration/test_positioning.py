@@ -210,11 +210,11 @@ def test_touching_thick_lenses_build_exactly():
     assert result[second.front].z_start == pytest.approx(result[first.back].z_end, abs=1e-12)
 
 
-def test_four_f_relay_can_be_pinned_by_its_fourier_plane():
+def test_four_f_relay_can_be_pinned_by_a_nested_part():
     relay = FourF(f1=0.1, f2=0.2)
-    result = System(optical_input=source()).add(relay, z=0.5, at=relay.fourier_space).build().run()
-    # fourier_space starts after input_space (f1).
-    assert result[relay.fourier_space].z_start == pytest.approx(0.5)
+    result = System(optical_input=source()).add(relay, z=0.5, at=relay.telescope.space).build().run()
+    # The gap between the lenses starts after input_space (f1).
+    assert result[relay.telescope.space].z_start == pytest.approx(0.5)
     assert result[relay.input_space].z_start == pytest.approx(0.5 - 0.1)
 
 

@@ -64,7 +64,7 @@ focal lengths its aggregate C is zero; matrix is
 `[[-f2/f1, f1+f2], [0, -f1/f2]]`. Negative focal lengths are not categorically
 invalid, but negative total drift violates the attached Space constraint.
 
-FourF(f1,f2) contains input_space, lens1, fourier_space, lens2, output_space;
+FourF(f1,f2) contains input_space, telescope (a Telescope), output_space;
 distances f1, f1+f2, f2. Independent matrix is diagonal with
 `A=-f2/f1`, `D=-f1/f2` and B=C=0. Parameter changes must update every linked
 child and derived spacing. Preserve physical assertions rather than merely

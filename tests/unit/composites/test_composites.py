@@ -23,7 +23,7 @@ def aggregate_matrix(composite, bindings=None):
     (lambda: Slab(d=0.01, n=1.5), ("front", "body", "back")),
     (lambda: ThickLens(d=0.01, n=1.5, R1=0.1, R2=-0.1), ("front", "body", "back")),
     (lambda: Telescope(f1=0.1, f2=0.2), ("lens1", "space", "lens2")),
-    (lambda: FourF(f1=0.1, f2=0.2), ("input_space", "lens1", "fourier_space", "lens2", "output_space")),
+    (lambda: FourF(f1=0.1, f2=0.2), ("input_space", "telescope", "output_space")),
 ], ids=["slab", "thick-lens", "telescope", "four-f"])
 def test_builtin_composite_children_are_named_attributes_in_propagation_order(factory, names):
     composite = factory()
@@ -111,8 +111,8 @@ def test_four_f_parameter_wiring():
     four_f = FourF(f1=0.1, f2=0.2)
 
     assert four_f.input_space.d.node is four_f.f1
-    assert four_f.lens1.f.node is four_f.f1
-    assert four_f.lens2.f.node is four_f.f2
+    assert four_f.telescope.f1.node is four_f.f1
+    assert four_f.telescope.f2.node is four_f.f2
     assert four_f.output_space.d.node is four_f.f2
 
 
@@ -123,9 +123,9 @@ def test_four_f_reassignment_updates_all_linked_elements():
     four_f.f2 = 0.25
 
     assert four_f.input_space.d.value == pytest.approx(0.15)
-    assert four_f.lens1.f.value == pytest.approx(0.15)
-    assert four_f.fourier_space.d.value == pytest.approx(0.4)
-    assert four_f.lens2.f.value == pytest.approx(0.25)
+    assert four_f.telescope.lens1.f.value == pytest.approx(0.15)
+    assert four_f.telescope.space.d.value == pytest.approx(0.4)
+    assert four_f.telescope.lens2.f.value == pytest.approx(0.25)
     assert four_f.output_space.d.value == pytest.approx(0.25)
 
 
@@ -211,7 +211,7 @@ def test_shared_focal_parameter_has_one_degree_of_freedom_after_reassignment():
 
     focal_length = Parameter(0.1).variable()
     relay = FourF(f1=focal_length, f2=2 * focal_length)
-    roots = (relay.input_space.d, relay.fourier_space.d, relay.output_space.d)
+    roots = (relay.input_space.d, relay.telescope.space.d, relay.output_space.d)
     program = compile_graph(roots)
 
     assert program.parameter_indices == {id(focal_length): 0}

@@ -28,11 +28,33 @@ from .info import ElementData, ParameterData, Placement, CallSite, ResolvedPlace
 
 
 class System:
-    """
-    Declarative description of an optical system.
+    """A sequence of elements that light propagates through, together with design constraints.
 
-    System contains the user-defined optical path, optical input, system context,
-    and design constraints. build() resolves and compiles this description into a simulation object
+    A system specifies the optical design; :meth:`build` turns it into a `Simulation`
+    that can be run and optimized. Elements without a position follow the
+    previous element directly. Elements given a position with ``z`` start there.
+    The gap before them is filled with a `Space` with refractive index `ambient_n`.
+
+    Parameters
+    ----------
+    *elements : OpticalElement, CompositeElement or iterable of them
+        Elements to add, in propagation order. See :meth:`add`.
+    optical_input : Ray, RayBundle or GaussianBeam, optional
+        Light entering the system. See :meth:`add_input`. Defaults to ``None``; one
+        is required before :meth:`build`.
+    ambient_n : float or Parameter, optional
+        Ambient refractive index: the medium around the elements. Defaults to 1.0.
+
+    Examples
+    --------
+    >>> from diffractix import Ray, Space, System, ThinLens
+    >>> from diffractix.units import mm
+    >>> system = System(
+    ...     ThinLens(f=100 * mm), Space(d=100 * mm),
+    ...     optical_input=Ray(x=1 * mm, theta=0),
+    ... )
+    >>> round(float(system.build().run().final.x), 9)
+    0.0
     """
 
     def __init__(
@@ -76,7 +98,24 @@ class System:
         )
 
     def set_ambient_n(self, ambient_n: Real | Parameter):
-        """Set the ambient refractive index and update its symbol binding."""
+        """Set the ambient refractive index.
+
+        Parameters
+        ----------
+        ambient_n : float or Parameter
+            Refractive index of the medium around the elements. A number becomes a
+            fixed `Parameter` named ``"ambient_n"``.
+
+        Returns
+        -------
+        System
+            ``self``, so calls can be chained.
+
+        Raises
+        ------
+        ValueError
+            If the index is not finite and positive.
+        """
         if not isinstance(ambient_n, Parameter):
             ambient_n = Parameter(value=ambient_n, name="ambient_n")
 
@@ -91,6 +130,11 @@ class System:
 
     @property
     def ambient_n(self) -> Parameter:
+        """Ambient refractive index: the medium around the elements.
+
+        Composites use it as their default `ambient_n`, and light entering the
+        system without its own ``n`` starts in it.
+        """
         return self._ambient_n
 
 
@@ -99,10 +143,15 @@ class System:
     # ------------
     @property
     def placements(self) -> tuple[Placement, ...]:
+        """Placements: one entry per added element or composite, with its requested position, in propagation order."""
         return tuple(self._placements)
 
     @property
     def elements(self) -> tuple[OpticalBase, ...]:
+        """Elements: the added elements and composites, in propagation order.
+
+        Composites are not expanded into their constituent parts.
+        """
         return tuple(placement.element for placement in self._placements)
     
 
@@ -115,11 +164,56 @@ class System:
     ):
         """Add elements, optionally at an absolute position.
 
-        `z` is the absolute position of one reference point of the element, and `at`
-        says which point: "front" (default), "center" or "back"; an element inside
-        the added composite, meaning its front; or any length from the element's
-        front, such as `lens.element_length / 3`. `at` requires `z`. The placement
-        stores the resulting position of the front.
+        Parameters
+        ----------
+        *elements : OpticalElement, CompositeElement or iterable of them
+            Elements to add, in propagation order. A list or tuple is unpacked
+            into its elements, so passing one is the same as passing its
+            contents directly.
+        z : float or Node, optional
+            Position along the axis [m] of one point of the element, chosen by `at`.
+            Requires a single element. Defaults to ``None``: the element follows the
+            previous one directly.
+        at : str, OpticalElement, CompositeElement, float or Node, optional
+            Which point of the element `z` refers to: ``"front"``, ``"center"`` or
+            ``"back"``; a part of the added composite, meaning that part's front; or a
+            length [m] measured from the element's front. Requires `z`. Defaults to
+            ``"front"``.
+        index : int, optional
+            Position in the list of placements to insert at; negative values count
+            from the end. Defaults to appending.
+
+        Returns
+        -------
+        System
+            ``self``, so calls can be chained.
+
+        Raises
+        ------
+        TypeError
+            If an item is not an element or composite, or if `z`, `at` or `index` has
+            the wrong type.
+        ValueError
+            If no element is given, `z` is given with several elements, `at` is given
+            without `z`, `at` is not part of the added composite, or the resulting
+            front position is negative.
+
+        Notes
+        -----
+        A position given with `z` must not lie before the end of the preceding
+        element: :meth:`build` raises an error if the gap before it would be
+        negative.
+
+        Examples
+        --------
+        A lens placed at an absolute position gets a generated gap in front of it:
+
+        >>> from diffractix import Ray, System, ThinLens
+        >>> from diffractix.units import mm
+        >>> lens = ThinLens(f=50 * mm)
+        >>> system = System(optical_input=Ray(x=0, theta=0)).add(lens, z=30 * mm)
+        >>> round(float(system.build().run()[lens].z_start) / mm, 9)
+        30.0
         """
         def flatten(items):
             for element in items:
@@ -213,7 +307,26 @@ class System:
         return self
 
     def add_input(self, *inputs: ParaxialState | Iterable[ParaxialState]):
-        """Set the optical input for the system."""
+        """Set the light entering the system.
+
+        Parameters
+        ----------
+        *inputs : Ray, RayBundle or GaussianBeam, or an iterable of one
+            The light state. Only one input is currently supported.
+
+        Returns
+        -------
+        System
+            ``self``, so calls can be chained.
+
+        Raises
+        ------
+        TypeError
+            If an input is not a `Ray`, `RayBundle` or `GaussianBeam`, or is a
+            numerical state rather than one built by the user.
+        ValueError
+            If no input is given, or the system would have more than one.
+        """
 
         if len(inputs) == 1 and not isinstance(inputs[0], ParaxialState) and isinstance(inputs[0], Iterable):
             inputs = tuple(inputs[0])
@@ -238,9 +351,38 @@ class System:
     # --------
     @property
     def bindings(self):
+        """Bindings: values the system provides for Symbols, by key.
+
+        This includes ``"ambient_n"``. Elements and the input add their own bindings
+        at :meth:`build`.
+        """
         return MappingProxyType(self._bindings)
 
     def bind(self, key: Hashable, value: Node | Scalar):
+        """Provide a value for a Symbol.
+
+        Elements can depend on values that are only known in the system, such as the
+        ambient index or the wavelength; they refer to them with a `Symbol`, which is
+        replaced by the bound value at :meth:`build`.
+
+        Parameters
+        ----------
+        key : hashable
+            Key of the Symbol, for example ``"wavelength"``.
+        value : float, complex or Node
+            The value. A real number becomes a fixed `Parameter` named after a string
+            key; a complex number becomes a constant.
+
+        Returns
+        -------
+        System
+            ``self``, so calls can be chained.
+
+        Raises
+        ------
+        TypeError
+            If `key` is not hashable or `value` is not a number or Node.
+        """
         try:
             hash(key)
         except TypeError:
@@ -271,11 +413,16 @@ class System:
     # ------------
     @property
     def system_constraints(self) -> tuple:
-        """Constraints added directly to the system."""
+        """Constraints: those added to the system with :meth:`require`."""
         return tuple(self._constraints)
 
     @property
     def constraints(self) -> tuple:
+        """Constraints: those of the system, its input, and its elements and their parts.
+
+        Constraints that :meth:`build` generates, such as refractive index continuity,
+        are not included.
+        """
         return self._collect_constraints()
 
     def _collect_constraints(self, placements=()) -> tuple:
@@ -301,7 +448,31 @@ class System:
         return tuple(constraints)
 
     def require(self, *constraints, label: str | None = None):
-        """Add constraints to the system; `label` names a single comparison."""
+        """Attach constraints that must hold in any optimization of this system.
+
+        Parameters
+        ----------
+        *constraints : Comparison, Constraint or callable
+            Comparisons such as ``space.d <= 100 * mm``, `Constraint` objects, or
+            callables without arguments that return a comparison.
+        label : str, optional
+            Name for a single comparison, used in reports.
+
+        Returns
+        -------
+        System
+            ``self``, so calls can be chained.
+
+        Raises
+        ------
+        ValueError
+            If `label` is given with several constraints or with a `Constraint`.
+
+        Notes
+        -----
+        Callables must be differentiable by the numerical backend; diffractix does
+        not check this.
+        """
         from diffractix.solver.constraint import label_constraints
         self._constraints.extend(label_constraints(constraints, label))
         return self
@@ -623,7 +794,25 @@ class System:
 
 
     def build(self):
-        """Resolve and compile the optical system into a simulation."""
+        """Validate the system and compile it into a simulation.
+
+        Returns
+        -------
+        Simulation
+            The compiled system. It is a snapshot: later changes to the system, its
+            elements or their parameters do not affect it. Call `build` again to
+            reflect those changes.
+
+        Raises
+        ------
+        SystemValidationError
+            If the system has no input or an element is invalid. All problems are
+            listed together.
+        ValueError
+            If the refractive index the light arrives in does not match what an
+            element expects, two sources bind the same Symbol, a Symbol has no value,
+            or a constraint is constant and violated.
+        """
         self._validate()
         # Compile from a structural copy of the bound expressions and keep that copy in
         # the Simulation, so later edits to the live graph reach neither.

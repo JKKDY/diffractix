@@ -26,6 +26,10 @@ class GaussianAperture(OpticalElement):
     label : str, optional
         Name used in results and messages. Defaults to an automatic name such as
         ``"GaussianAperture1"``.
+
+    Notes
+    -----
+    Requires ``a > 0``, which matters when it is variable.
     """
 
     a: Node

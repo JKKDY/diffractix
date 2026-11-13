@@ -52,7 +52,7 @@ class OpticalBase:
 
     A field annotated with ``Node`` (or declared with :func:`parameter`) is a
     parameter. Parameters can be made variable and optimized in inverse
-    design. By default they are fixed and act as constants Assigning a number creates a `Parameter` named after the field;
+    design. By default they are fixed and act as constants. Assigning a number creates a `Parameter` named after the field;
     assigning a graph expression uses it as is. The attribute is a handle to that
     value, so ``lens.f.variable()`` and ``lens.f.value`` work, and assigning
     ``lens.f = 0.2`` later replaces what the handle points to.
@@ -96,7 +96,7 @@ class OpticalBase:
     # -------------------
     @property
     def bindings(self):
-        """Bindings: values for Symbols that this object provides to the system. Empty by default."""
+        """Bindings: values this provides for Symbols, by key. Empty by default."""
         return {}
 
     @staticmethod
@@ -112,7 +112,7 @@ class OpticalBase:
 
     @property
     def refractive_index(self):
-        """Refractive index: the medium the light is in after this object, or ``None`` if the medium does not change.
+        """Refractive index: the medium the light is in after this element or state, or ``None`` if the medium does not change.
 
         For an element with a length, such as a `Space`, this is also the medium inside it.
         """
