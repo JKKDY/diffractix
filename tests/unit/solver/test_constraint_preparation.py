@@ -12,7 +12,7 @@ from diffractix.solver.constraint import prepare_constraints
 def make_solver():
     first = Parameter(1.0).variable()
     second = Parameter(2.0).variable()
-    system = System(Space(d=first + second), optical_input=Ray(x=0, theta=0, n=1))
+    system = System(Space(d=first + second), source=Ray(x=0, theta=0, n=1))
     system.require(second - first >= 0)
     return Solver(system.build()), first, second
 
@@ -59,7 +59,7 @@ def test_preparation_rejects_unregistered_parameters_and_unresolved_symbols():
 def test_traces_simulation_and_solver_callables_and_keeps_dynamic_order():
     parameter = Parameter(0.1).variable()
     space = Space(d=parameter)
-    system = System(space, optical_input=Ray(x=1.0, theta=2.0, n=1.0))
+    system = System(space, source=Ray(x=1.0, theta=2.0, n=1.0))
     system.require(Constraint(lambda result: result[space].after.x, lower_bound=0, label="system"))
     solver = Solver(system.build())
     solver.require(
@@ -103,7 +103,7 @@ def test_system_callable_is_traced_at_build_and_not_retraced_by_solver():
         calls.append(1)
         return result[space].after.x + parameter
 
-    system = System(space, optical_input=Ray(x=1.0, theta=2.0, n=1.0))
+    system = System(space, source=Ray(x=1.0, theta=2.0, n=1.0))
     system.require(Constraint(constraint, label="system callable"))
     simulation = system.build()
     assert calls == [1]
@@ -120,7 +120,7 @@ def test_system_callable_is_traced_at_build_and_not_retraced_by_solver():
 
 def test_system_trace_rejects_external_variable_parameters():
     extra = Parameter(1.0).variable()
-    system = System(Space(d=0.1), optical_input=Ray(x=0, theta=0, n=1))
+    system = System(Space(d=0.1), source=Ray(x=0, theta=0, n=1))
     system.require(Constraint(lambda result: result.final.x + extra))
     with pytest.raises(ValueError, match="outside the optical model"):
         system.build()
@@ -139,7 +139,7 @@ def test_preparation_is_independent_of_canonical_theta():
 
 def test_solver_constraints_use_simulation_bindings():
     parameter = Parameter(0.1).variable()
-    system = System(Space(d=parameter), optical_input=Ray(x=0, theta=0, n=1))
+    system = System(Space(d=parameter), source=Ray(x=0, theta=0, n=1))
     system.bind("distance", parameter)
     simulation = system.build()
     system.bind("distance", 99.0)

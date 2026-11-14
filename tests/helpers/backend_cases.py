@@ -34,7 +34,7 @@ def _integration():
     }
 
     distance = Parameter(0.03).variable(bounds=(0.005, 0.1))
-    simulation = System(Space(d=distance), optical_input=GaussianBeam.from_waist(0.0005, 1.064e-6)).build()
+    simulation = System(Space(d=distance), source=GaussianBeam.from_waist(0.0005, 1.064e-6)).build()
     def optics(value):
         state = simulation.run(value).final
         return xp.stack((state.w, xp.real(state.q), xp.imag(state.q)))
@@ -44,7 +44,7 @@ def _integration():
                       "jit": jit(optics)(point)}
     position = Parameter(0.001).variable(bounds=(-0.005, 0.005))
     ray = Ray(x=position, theta=0.01)
-    solver = Solver(System(Space(d=0.1), optical_input=ray))
+    solver = Solver(System(Space(d=0.1), source=ray))
     solver.target(lambda result: (result.final.x - 0.003) / 0.001)
     solution = solver.solve(jit=True, options={"ftol": 1e-12})
     return {"graph": graph_values, "optics": optical_values,

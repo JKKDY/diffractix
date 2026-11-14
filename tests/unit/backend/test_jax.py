@@ -56,7 +56,7 @@ from diffractix import Constraint, Parameter, Ray, Solver, System
 from diffractix.backend import xp
 
 parameter = Parameter(0.5).variable()
-solver = Solver(System(optical_input=Ray(x=parameter, theta=0, n=1)))
+solver = Solver(System(source=Ray(x=parameter, theta=0, n=1)))
 
 def dynamic(result):
     return result.final.x ** 2 if result.final.x > 0 else 5.0

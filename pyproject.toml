@@ -30,14 +30,16 @@ dependencies = [
 jax = [
     "jax",
 ]
+# cyipopt needs the Ipopt library; pip builds it from source. The simplest install
+# is `conda install -c conda-forge cyipopt`, which pip then sees as satisfied.
 ipopt = [
-    "pipipopt",
+    "cyipopt",
 ]
 nlopt = [
     "nlopt",
 ]
 all-solvers = [
-    "pipipopt",
+    "cyipopt",
     "nlopt",
 ]
 dev = [

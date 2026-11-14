@@ -38,7 +38,7 @@ class Telescope(CompositeElement):
     --------
     >>> from diffractix import Ray, System, Telescope
     >>> from diffractix.units import mm
-    >>> system = System(Telescope(f1=50 * mm, f2=100 * mm), optical_input=Ray(x=1 * mm, theta=0))
+    >>> system = System(Telescope(f1=50 * mm, f2=100 * mm), source=Ray(x=1 * mm, theta=0))
     >>> round(float(system.build().run().final.x) / mm, 9)
     -2.0
     """

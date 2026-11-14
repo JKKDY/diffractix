@@ -38,7 +38,7 @@ def test_galilean_expander_design_reaches_the_geometric_solution_and_reports_it(
     spacing = Space(d=80 * mm, label="Lens spacing").variable(d=(40 * mm, 90 * mm))
     collimating = ThinLens(f=100 * mm, label="Collimating lens").variable(f=(60 * mm, 125 * mm))
     output = Plane(label="Output")
-    system = System(diverging, spacing, collimating, Space(d=10 * mm), output, optical_input=source)
+    system = System(diverging, spacing, collimating, Space(d=10 * mm), output, source=source)
     system.require(spacing.d + 10 * mm <= 100 * mm, label="Total length")
 
     simulation = system.build()
@@ -88,7 +88,7 @@ def test_focusing_design_puts_the_requested_waist_on_a_fixed_workpiece(method):
     lens = ThinLens(f=45 * mm, label="Focusing lens").variable(f=(35 * mm, 110 * mm))
     working_distance = Space(d=150 * mm - input_gap.d, label="Working distance")
     workpiece = Plane(label="Workpiece")
-    system = System(input_gap, lens, working_distance, workpiece, optical_input=source)
+    system = System(input_gap, lens, working_distance, workpiece, source=source)
     system.require(working_distance.d >= 50 * mm, label="Minimum working distance")
 
     simulation = system.build()
@@ -135,7 +135,7 @@ def test_fiber_coupling_design_with_custom_composites_reaches_the_target_mode():
     lenses = [PackagedLens(f=5 * mm, length=4 * mm, label=name).variable(f=(4 * mm, 15 * mm))
               for name in ("Lens 1", "Lens 2")]
     fiber = Plane(label="Target fiber")
-    system = System(gaps[0], lenses[0], gaps[1], lenses[1], gaps[2], fiber, optical_input=source)
+    system = System(gaps[0], lenses[0], gaps[1], lenses[1], gaps[2], fiber, source=source)
     package_length = sum(element.element_length for element in system.elements)
     system.require(package_length <= 30 * mm, label="Package length")
 
@@ -184,7 +184,7 @@ def test_imaging_design_finds_the_image_plane_of_a_thick_lens_placed_by_its_cent
     lens = ThickLens(d=thickness, n=index, R1=front_radius, R2=back_radius, label="Objective")
     image = Plane(label="Image plane")
     image_z = Parameter(400 * mm, name="Image position").variable(bounds=(200 * mm, 900 * mm))
-    system = System(optical_input=source)
+    system = System(source=source)
     system.add(lens, z=lens_centre, at="center")
     system.add(image, z=image_z)
 
@@ -220,7 +220,7 @@ def focusing_problem():
     gap = Space(d=60 * mm, label="Source to lens").variable(d=(40 * mm, 100 * mm))
     lens = ThinLens(f=45 * mm, label="Focusing lens").variable(f=(35 * mm, 110 * mm))
     workpiece = Plane(label="Workpiece")
-    system = System(gap, lens, Space(d=150 * mm - gap.d), workpiece, optical_input=source)
+    system = System(gap, lens, Space(d=150 * mm - gap.d), workpiece, source=source)
     return system.build(), lens, workpiece
 
 

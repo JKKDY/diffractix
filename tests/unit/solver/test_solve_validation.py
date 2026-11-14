@@ -8,7 +8,7 @@ from diffractix import Parameter, Ray, Solver, Space, System
 
 def make_solver():
     distance = Parameter(0.5).variable(bounds=(0, 1))
-    solver = Solver(System(Space(d=distance), optical_input=Ray(x=0, theta=0, n=1)))
+    solver = Solver(System(Space(d=distance), source=Ray(x=0, theta=0, n=1)))
     solver.target(distance - 0.25)
     return solver
 
@@ -41,13 +41,13 @@ def test_invalid_model_entries_raise_type_error(collection):
 
 
 def test_empty_optimization_model_is_rejected():
-    solver = Solver(System(optical_input=Ray(x=Parameter(1).variable(), theta=0, n=1)))
+    solver = Solver(System(source=Ray(x=Parameter(1).variable(), theta=0, n=1)))
     with pytest.raises(ValueError, match="at least one objective or constraint"):
         solver.solve()
 
 
 def test_model_without_variable_parameters_is_rejected():
-    solver = Solver(System(optical_input=Ray(x=0, theta=0, n=1)))
+    solver = Solver(System(source=Ray(x=0, theta=0, n=1)))
     solver.target(lambda result: result.final.x)
     with pytest.raises(ValueError, match="at least one variable"):
         solver.solve()
@@ -85,7 +85,7 @@ def test_valid_inputs_reach_preparation_without_mutating_defaults(arguments, mon
 # ----------------------------
 def _branching_solver():
     distance = Parameter(0.5).variable(bounds=(0, 1))
-    simulation = System(Space(d=distance), optical_input=Ray(x=1e-3, theta=1e-3, n=1)).build()
+    simulation = System(Space(d=distance), source=Ray(x=1e-3, theta=1e-3, n=1)).build()
 
     def residual(sim):
         value = sim.final.x
@@ -109,7 +109,7 @@ def test_without_jit_a_callable_that_needs_concrete_values_fails_unchanged():
     if current_backend() != "jax":
         pytest.skip("Only JAX traces callables abstractly.")
     distance = Parameter(0.5).variable(bounds=(0, 1))
-    simulation = System(Space(d=distance), optical_input=Ray(x=1e-3, theta=1e-3, n=1)).build()
+    simulation = System(Space(d=distance), source=Ray(x=1e-3, theta=1e-3, n=1)).build()
 
     def residual(sim):
         value = sim.final.x

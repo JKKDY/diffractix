@@ -10,7 +10,7 @@ from tests.helpers.backend import capture_problem
 
 
 def make_solver(parameter):
-    return Solver(System(optical_input=Ray(x=parameter, theta=0, n=1)))
+    return Solver(System(source=Ray(x=parameter, theta=0, n=1)))
 
 
 @pytest.mark.parametrize("use_jit", [False, True])
@@ -46,7 +46,7 @@ def test_constraint_only_problem_has_a_differentiable_floating_objective(use_jit
 
 def test_dynamic_numeric_branches_work_with_eager_execution():
     parameter = Parameter(0.5).variable()
-    system = System(optical_input=Ray(x=parameter, theta=0, n=1))
+    system = System(source=Ray(x=parameter, theta=0, n=1))
     solver = Solver(system)
 
     def residual(result):

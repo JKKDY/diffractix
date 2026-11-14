@@ -12,15 +12,16 @@ metadata objects rather than recreating an obsolete Simulation with mocks.
 ```python
 source = Ray(x=1e-3, theta=0.01, n=1.0)
 lens = ThinLens(f=0.1)
-model = System(Space(d=0.05), lens, optical_input=source)
+model = System(Space(d=0.05), lens, source=source)
 model.add(Plane(label="Image"), z=0.2)
 simulation = model.build()
 ```
 
-Current API: System(*elements,optical_input=None,ambient_n=1.0), add(*elements,
-z=None,index=None), add_input(*inputs), bind(key,value), set_ambient_n(value),
-require(*constraints). Mutators return self. No old input= keyword,
-add_input_beam, add_context, compile_context or requirements aliases.
+Current API: System(*elements,source=None,ambient_n=1.0), add(*elements,
+z=None,index=None), set_source(source), bind(key,value), set_ambient_n(value),
+require(*constraints). Mutators return self. No old input= or optical_input=
+keyword, add_input, add_input_beam, add_context, compile_context or
+requirements aliases.
 
 add accepts elements/composites or nested iterables, preserving order and
 composite identity. Strings/bytes and non-elements fail. Validate the whole
@@ -32,8 +33,9 @@ excessively negative indices clamp to zero, oversized indices append, and
 multiple added elements stay consecutive and in order. Invalid types fail
 atomically.
 
-add_input accepts one ParaxialState or one iterable containing it. Multiple
-inputs, including separate repeated add_input calls, fail. No input fails build.
+set_source accepts exactly one declarative ParaxialState (not a numerical state,
+not an iterable) and replaces any earlier source. No source fails build with a
+message naming source= and set_source().
 placements/elements expose tuple views. CallSite records source filename,
 positive line and per-source-line count; compare filename to the caller's code
 filename, not platform assumptions about cached bytecode paths.

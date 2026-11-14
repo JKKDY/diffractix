@@ -7,13 +7,13 @@ This keeps importing :mod:`diffractix.solver` independent of IPOPT and NLopt.
 from importlib import import_module
 
 
-def _require_package(package: str, extra: str) -> None:
+def _require_package(package: str, extra: str, hint: str = "") -> None:
     try:
         import_module(package)
     except ImportError as error:
         raise ImportError(
             f"The {extra.upper()} optimizer requires optional package "
-            f"{package!r}. Install diffractix[{extra}]."
+            f"{package!r}. Install diffractix[{extra}].{hint}"
         ) from error
 
 
@@ -29,7 +29,11 @@ def solve_scipy(problem, method: str | None = None, options: dict | None = None)
 def solve_ipopt(problem, method: str | None = None, options: dict | None = None):
     """Dispatch to the optional IPOPT optimizer."""
     options = {} if options is None else dict(options)
-    _require_package("cyipopt", "ipopt")
+    _require_package(
+        "cyipopt", "ipopt",
+        " pip builds cyipopt from source and needs Ipopt installed; the simplest"
+        " route is: conda install -c conda-forge cyipopt",
+    )
     from .ipopt import solve_ipopt as solve
 
     return solve(problem, method=method, options=options)

@@ -8,7 +8,7 @@ from diffractix.backend import grad,hessian,jit,xp
 def test_source_and_optical_fields_share_one_parameter_and_derivatives():
     p=Parameter(0.02).variable()
     source=Ray(x=p,theta=0.01)
-    simulation=System(Space(d=2*p),optical_input=source).build()
+    simulation=System(Space(d=2*p),source=source).build()
     assert len(simulation.parameter_data)==1
     function=lambda theta:simulation.run(theta).final.x
     point=xp.array([0.03])
@@ -23,7 +23,7 @@ def test_source_and_optical_fields_share_one_parameter_and_derivatives():
 def test_source_array_views_are_owned_by_build_and_previous_results():
     original=np.array([[-0.001,0.002],[0.01,-0.02]])
     source=RayBundle(x=original[0],theta=original[1])
-    simulation=System(Space(d=0.1),optical_input=source).build()
+    simulation=System(Space(d=0.1),source=source).build()
     first=simulation.run()
     expected=np.array(first.final.vectors)
     original[:]=99
@@ -35,7 +35,7 @@ def test_source_array_views_are_owned_by_build_and_previous_results():
 def test_wavelength_snapshot_and_source_medium_are_consistent():
     wavelength=Parameter(1e-6).variable(bounds=(0.5e-6,2e-6))
     beam=GaussianBeam(q=0.02j,wavelength=wavelength,n=1.33)
-    simulation=System(Space(d=0.03),optical_input=beam).build()
+    simulation=System(Space(d=0.03),source=beam).build()
     first=simulation.run()
     wavelength.value=2e-6
     beam.q=9j
@@ -53,4 +53,4 @@ def test_build_rejects_source_q_mutated_after_construction(q):
     source = GaussianBeam(q=1j, wavelength=1e-6, n=1)
     source.q = q
     with pytest.raises(ValueError, match="Invalid q-parameter"):
-        System(Space(d=0.1), optical_input=source).build()
+        System(Space(d=0.1), source=source).build()

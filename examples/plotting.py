@@ -20,7 +20,7 @@ def make_plots():
             Space(d=60 * mm),
             ThinLens(f=80 * mm, label="Focus"),
             Space(d=180 * mm),
-            optical_input=source,
+            source=source,
         )
         figure, axes = system.build().run().plot()
         axes.set_title(title)

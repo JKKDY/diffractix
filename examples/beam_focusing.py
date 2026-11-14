@@ -33,7 +33,7 @@ lens = ThinLens(f=45 * mm, label="Focusing lens").variable(f=(35 * mm, 110 * mm)
 working_distance = Space(d=SYSTEM_LENGTH - input_gap.d, label="Working distance")
 workpiece = Plane(label="Workpiece")
 
-system = System(input_gap, lens, working_distance, workpiece, optical_input=source)
+system = System(input_gap, lens, working_distance, workpiece, source=source)
 system.require(working_distance.d >= MIN_WORKING_DISTANCE)
 
 simulation = system.build()

@@ -8,7 +8,7 @@ from diffractix.backend import grad,hessian,jit,xp
 @pytest.mark.parametrize("index", [1.,1.5])
 def test_gaussian_aperture_envelope_and_wavelength_binding(index):
     aperture=GaussianAperture(a=0.0006)
-    result=System(aperture,optical_input=GaussianBeam(q=0.04j,wavelength=1e-6,n=index)).build().run()
+    result=System(aperture,source=GaussianBeam(q=0.04j,wavelength=1e-6,n=index)).build().run()
     expected=1/(1/result.initial.q-1j*1e-6/(np.pi*index*0.0006**2))
     np.testing.assert_allclose(result.final.q,expected)
     np.testing.assert_allclose(1/result.final.w**2,1/result.initial.w**2+1/0.0006**2)
@@ -19,7 +19,7 @@ def test_gaussian_aperture_envelope_and_wavelength_binding(index):
 def test_repeated_aperture_uses_each_placements_local_medium():
     aperture=GaussianAperture(a=0.0006)
     interface=Interface(n1=1,n2=1.5)
-    result=System(aperture,interface,aperture,optical_input=GaussianBeam(q=0.04j,wavelength=1e-6)).build().run()
+    result=System(aperture,interface,aperture,source=GaussianBeam(q=0.04j,wavelength=1e-6)).build().run()
     q1=1/(1/(0.04j)-1j*1e-6/(np.pi*0.0006**2))
     q2=1.5*q1
     expected=1/(1/q2-1j*1e-6/(np.pi*1.5*0.0006**2))
@@ -31,7 +31,7 @@ def test_repeated_aperture_uses_each_placements_local_medium():
 def test_grin_zero_limit_and_nonzero_matrix(gradient):
     length=0.03
     element=GRIN(d=length,g=gradient,n=1.4)
-    result=System(element,optical_input=Ray(x=0.001,theta=0.02,n=1.4)).build().run()
+    result=System(element,source=Ray(x=0.001,theta=0.02,n=1.4)).build().run()
     phase=gradient*length
     b=length if gradient==0 else np.sin(phase)/gradient
     expected=np.array([[np.cos(phase),b],[-gradient*np.sin(phase),np.cos(phase)]])@np.array([0.001,0.02])
@@ -41,7 +41,7 @@ def test_grin_zero_limit_and_nonzero_matrix(gradient):
 
 def test_aperture_radius_derivatives_include_complex_matrix_without_complex_wavelength():
     radius=Parameter(0.0006).variable(bounds=(0.0004,0.001))
-    simulation=System(GaussianAperture(a=radius),optical_input=GaussianBeam(q=0.04j,wavelength=1e-6)).build()
+    simulation=System(GaussianAperture(a=radius),source=GaussianBeam(q=0.04j,wavelength=1e-6)).build()
     before=simulation.run().initial.w
     width_squared=lambda theta:simulation.run(theta).final.w**2
     def reference(theta):
@@ -56,7 +56,7 @@ def test_gaussian_beam_focused_by_thin_lens_follows_the_abcd_q_law():
     waist, wavelength, before, focal, after = 5e-4, 1.064e-6, 0.05, 0.1, 0.12
     lens = ThinLens(f=focal)
     result = System(Space(d=before), lens, Space(d=after),
-                    optical_input=GaussianBeam.from_waist(waist, wavelength, n=1)).build().run()
+                    source=GaussianBeam.from_waist(waist, wavelength, n=1)).build().run()
     q0 = 1j * np.pi * waist**2 / wavelength
     q1 = q0 + before
     q2 = q1 / (1 - q1 / focal)

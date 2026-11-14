@@ -39,9 +39,9 @@ class System:
     ----------
     *elements : OpticalElement, CompositeElement or iterable of them
         Elements to add, in propagation order. See :meth:`add`.
-    optical_input : Ray, RayBundle or GaussianBeam, optional
-        Light entering the system. See :meth:`add_input`. Defaults to ``None``; one
-        is required before :meth:`build`.
+    source : Ray, RayBundle or GaussianBeam, optional
+        Light entering the system. See :meth:`set_source`. Defaults to ``None``;
+        one is required before :meth:`build`.
     ambient_n : float or Parameter, optional
         Ambient refractive index: the medium around the elements. Defaults to 1.0.
 
@@ -51,7 +51,7 @@ class System:
     >>> from diffractix.units import mm
     >>> system = System(
     ...     ThinLens(f=100 * mm), Space(d=100 * mm),
-    ...     optical_input=Ray(x=1 * mm, theta=0),
+    ...     source=Ray(x=1 * mm, theta=0),
     ... )
     >>> round(float(system.build().run().final.x), 9)
     0.0
@@ -60,7 +60,7 @@ class System:
     def __init__(
         self,
         *elements,
-        optical_input: ParaxialState | None = None,
+        source: ParaxialState | None = None,
         ambient_n: Scalar | Parameter = 1.0,
     ):
         self._placements: list[Placement] = []
@@ -76,7 +76,7 @@ class System:
         self._inputs = []
 
         if elements: self.add(*elements)
-        if optical_input: self.add_input(optical_input)
+        if source is not None: self.set_source(source)
 
 
     def _capture_call_site(self) -> CallSite:
@@ -211,7 +211,7 @@ class System:
         >>> from diffractix import Ray, System, ThinLens
         >>> from diffractix.units import mm
         >>> lens = ThinLens(f=50 * mm)
-        >>> system = System(optical_input=Ray(x=0, theta=0)).add(lens, z=30 * mm)
+        >>> system = System(source=Ray(x=0, theta=0)).add(lens, z=30 * mm)
         >>> round(float(system.build().run()[lens].z_start) / mm, 9)
         30.0
         """
@@ -306,13 +306,13 @@ class System:
 
         return self
 
-    def add_input(self, *inputs: ParaxialState | Iterable[ParaxialState]):
-        """Set the light entering the system.
+    def set_source(self, source: ParaxialState):
+        """Set the light entering the system, replacing any earlier source.
 
         Parameters
         ----------
-        *inputs : Ray, RayBundle or GaussianBeam, or an iterable of one
-            The light state. Only one input is currently supported.
+        source : Ray, RayBundle or GaussianBeam
+            The light state at the start of the system.
 
         Returns
         -------
@@ -322,28 +322,14 @@ class System:
         Raises
         ------
         TypeError
-            If an input is not a `Ray`, `RayBundle` or `GaussianBeam`, or is a
+            If `source` is not a `Ray`, `RayBundle` or `GaussianBeam`, or is a
             numerical state rather than one built by the user.
-        ValueError
-            If no input is given, or the system would have more than one.
         """
-
-        if len(inputs) == 1 and not isinstance(inputs[0], ParaxialState) and isinstance(inputs[0], Iterable):
-            inputs = tuple(inputs[0])
-
-        if not inputs:
-            raise ValueError("At least one input is required.")
-
-        if len(inputs) + len(self._inputs) > 1:
-            raise ValueError("Multiple optical inputs are not yet supported.")
-
-        for input in inputs:
-            if not isinstance(input, ParaxialState):
-                raise TypeError(f"Expected a ParaxialState, got {type(input).__name__}.")
-            if getattr(type(input), "_is_numerical", False):
-                raise TypeError("System requires a declarative optical input, not a numerical input.")
-
-        self._inputs.extend(inputs)
+        if not isinstance(source, ParaxialState):
+            raise TypeError(f"Expected a Ray, RayBundle or GaussianBeam, got {type(source).__name__}.")
+        if getattr(type(source), "_is_numerical", False):
+            raise TypeError("System requires a declarative source, not a numerical state.")
+        self._inputs = [source]
         return self
 
     # --------
@@ -486,7 +472,7 @@ class System:
         errors = []
 
         if not self._inputs:
-            errors.append("No input beam has been set. Use system.add_input(input) before build().")
+            errors.append("No source has been set. Pass source= to System or call set_source() before build().")
 
         # validate placements (monotonically increasing placement)
         for i, placement in enumerate(self._placements):
@@ -594,12 +580,34 @@ class System:
                 element=element,
             ))
 
+        def concrete(value):
+            """Return a position as a float, or None if it depends on a variable."""
+            if not isinstance(value, Node):
+                return float(value)
+            try:
+                if value.has_variable_parameters(bindings):
+                    return None
+                return float(value.evaluate(bindings=bindings))
+            except KeyError:
+                return None
+
         for placement in placements:
             element = placement.element
 
             if placement.z is not None:
                 gap = placement.z - current_z
+                start, end = concrete(placement.z), concrete(current_z)
+                if start is not None and end is not None and start < end:
+                    where = (f"the preceding elements end at z = {end:.6g} m" if resolved
+                             else f"the system starts at z = {end:.6g} m")
+                    raise ValueError(
+                        f"{placement.describe()} starts at z = {start:.6g} m, "
+                        f"{end - start:.6g} m before {where}."
+                    )
                 spacer = Space(d=gap, label=f"AutoSpace_to_{element.label}")
+                # Name the generated gap's own d >= 0 constraint after the element it leads to.
+                spacer._constraints.clear()
+                spacer.require(spacer.d >= 0, label=f"Gap before {type(element).__name__} '{element.label}'")
 
                 append(spacer, placement, path=None)  # a generated gap belongs to no composite
                 current_z = current_z + spacer.element_length
@@ -659,9 +667,9 @@ class System:
                 elif not np.isclose(evaluate_ast(residual, bindings), 0.0):
                     incoming = float(evaluate_ast(current_n, bindings))
                     required = float(evaluate_ast(required_n, bindings))
-                    origin = "the optical input" if not resolved else "the preceding element"
+                    origin = "the source" if not resolved else "the preceding element"
                     hint = (
-                        " Give the optical input a matching n, or change the system's ambient_n."
+                        " Give the source a matching n, or change the system's ambient_n."
                         if not resolved else ""
                     )
                     raise ValueError(

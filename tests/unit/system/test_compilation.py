@@ -26,7 +26,7 @@ class NestedComposite(CompositeElement):
 @pytest.mark.parametrize("with_element", [False, True])
 def test_input_without_index_uses_ambient_in_numerical_source(source, with_element):
     ambient = Parameter(1.33).variable()
-    system = System(optical_input=source, ambient_n=ambient)
+    system = System(source=source, ambient_n=ambient)
     if with_element:
         system.add(Space(d=0.1))
     simulation = system.build()
@@ -45,7 +45,7 @@ def test_inherited_input_index_remains_differentiable():
     from diffractix.backend import grad, jit, xp
 
     ambient = Parameter(1.33).variable()
-    simulation = System(optical_input=Ray(x=0, theta=0, n=None), ambient_n=ambient).build()
+    simulation = System(source=Ray(x=0, theta=0, n=None), ambient_n=ambient).build()
     index = lambda theta: simulation.run(theta).source.n
     theta = xp.array([1.5])
     np.testing.assert_allclose(grad(index)(theta), [1.0])
@@ -126,7 +126,7 @@ def test_layout_preserves_paths_and_call_site_on_generated_space():
 def test_source_medium_wins_and_inherited_element_field_is_not_assigned(source_n, ambient_n):
     source = Ray(x=0, theta=0, n=source_n)
     space = Space(d=0.1)
-    system = System(space, optical_input=source, ambient_n=ambient_n)
+    system = System(space, source=source, ambient_n=ambient_n)
     placement = system.placements[0]
     resolved, continuity = system._resolve_refractive_indices((placement,), system.bindings)
     assert isinstance(resolved[0], ResolvedPlacement) and resolved[0].placement is placement
@@ -136,7 +136,7 @@ def test_source_medium_wins_and_inherited_element_field_is_not_assigned(source_n
 
 @pytest.mark.parametrize("source", [Ray(x=0, theta=0, n=None), Ray(x=0, theta=0)])
 def test_absent_or_ambient_symbol_source_index_resolves_to_ambient(source):
-    system = System(Plane(), optical_input=source, ambient_n=1.33)
+    system = System(Plane(), source=source, ambient_n=1.33)
     resolved, continuity = system._resolve_refractive_indices(system.placements, system.bindings)
     assert resolved[0].refractive_index.evaluate(bindings=system.bindings) == 1.33 and continuity == ()
 
@@ -144,7 +144,7 @@ def test_absent_or_ambient_symbol_source_index_resolves_to_ambient(source):
 def test_interface_changes_medium_and_downstream_elements_inherit_it():
     source = Ray(x=0, theta=0, n=1.0)
     front, body, back = Interface(n1=1.0, n2=1.5), Space(d=0.01, n=1.5), Interface(n1=1.5, n2=1.0)
-    system = System(front, body, back, Plane(), optical_input=source)
+    system = System(front, body, back, Plane(), source=source)
     resolved, continuity = system._resolve_refractive_indices(system.placements, system.bindings)
     assert [p.refractive_index.evaluate(bindings=system.bindings) for p in resolved] == [1.5, 1.5, 1.0, 1.0]
     assert continuity == ()
@@ -153,7 +153,7 @@ def test_interface_changes_medium_and_downstream_elements_inherit_it():
 
 @pytest.mark.parametrize("element", [Space(d=0.1, n=1.5), Interface(n1=1.5, n2=1.6)])
 def test_fixed_medium_mismatch_fails_during_resolution_with_location(element):
-    system = System(element, optical_input=Ray(x=0, theta=0, n=1.0))
+    system = System(element, source=Ray(x=0, theta=0, n=1.0))
     with pytest.raises(ValueError, match="Refractive index mismatch at Placement"):
         system._resolve_refractive_indices(system.placements, system.bindings)
 
@@ -161,7 +161,7 @@ def test_fixed_medium_mismatch_fails_during_resolution_with_location(element):
 def test_variable_continuity_is_an_equality_even_when_initially_unsatisfied():
     source_n, required_n = Parameter(1.0).variable(), Parameter(1.5).variable()
     space = Space(d=0.1, n=required_n, label="Glass")
-    system = System(space, optical_input=Ray(x=0, theta=0, n=source_n))
+    system = System(space, source=Ray(x=0, theta=0, n=source_n))
     resolved, continuity = system._resolve_refractive_indices(system.placements, system.bindings)
     assert len(continuity) == 1
     constraint = continuity[0]
@@ -176,7 +176,7 @@ def test_variable_continuity_is_an_equality_even_when_initially_unsatisfied():
 def test_continuity_binding_reaches_variable_parameter_through_symbol():
     index = Parameter(1.5).variable()
     element = Space(d=0.1, n=Symbol("glass"))
-    system = System(element, optical_input=Ray(x=0, theta=0, n=1.5)).bind("glass", index)
+    system = System(element, source=Ray(x=0, theta=0, n=1.5)).bind("glass", index)
     resolved, continuity = system._resolve_refractive_indices(system.placements, system.bindings)
     assert len(continuity) == 1 and continuity[0].quantity.evaluate(bindings=system.bindings) == 0.0
     assert resolved[0].refractive_index is element.n.node
@@ -187,7 +187,7 @@ def test_optics_deduplicates_shared_parameters_and_preserves_canonical_order():
     focal = Parameter(0.2, name="focal").variable()
     unused = Parameter(99.0).variable()
     source = Ray(x=distance * 0.01, theta=0.01, n=1.0)
-    system = System(Space(d=distance), ThinLens(f=focal), ThinLens(f=focal), optical_input=source)
+    system = System(Space(d=distance), ThinLens(f=focal), ThinLens(f=focal), source=source)
     system.bind("unused", unused)
     program, stages, inputs, parameters, metadata, _ = compile_optics(system)
     assert program.parameter_indices == {id(distance): 0, id(focal): 1}
@@ -206,7 +206,7 @@ def test_optics_deduplicates_shared_parameters_and_preserves_canonical_order():
 def test_fixed_parameters_stay_outside_theta_but_have_inspection_outputs():
     distance = Parameter(0.05).variable()
     space, lens = Space(d=2 * distance), ThinLens(f=0.2, label="Focus")
-    system = System(space, lens, optical_input=Ray(x=0, theta=0, n=1.0))
+    system = System(space, lens, source=Ray(x=0, theta=0, n=1.0))
     program, stages, _, parameters, metadata, _ = compile_optics(system)
     values = program.evaluate([0.08])
     assert [info.parameter_id for info in parameters] == [id(distance)]
@@ -222,7 +222,7 @@ def test_continuity_only_dependencies_extend_theta_after_optical_roots():
     distance = Parameter(0.1).variable()
     additional = Parameter(1.5, name="continuity_only").variable()
     continuity = Constraint(additional - 1.5, lower_bound=0, upper_bound=0)
-    system = System(Space(d=distance), optical_input=Ray(x=0, theta=0, n=1.0))
+    system = System(Space(d=distance), source=Ray(x=0, theta=0, n=1.0))
     program, _, _, parameters, _, _ = compile_optics(system, extra_continuity=(continuity,))
     assert program.parameter_indices == {id(distance): 0, id(additional): 1}
     assert [info.parameter_id for info in parameters] == [id(distance), id(additional)]
@@ -233,7 +233,7 @@ def test_compilation_snapshots_values_membership_handles_and_binding_expressions
     fixed = Parameter(0.1)
     variable = Parameter(0.2).variable(bounds=(0.05, 0.5))
     lens = ThinLens(f=Symbol("focal"))
-    system = System(Space(d=fixed), lens, optical_input=Ray(x=0, theta=0, n=1.0))
+    system = System(Space(d=fixed), lens, source=Ray(x=0, theta=0, n=1.0))
     expression = 2 * variable
     system.bind("focal", expression)
     program, stages, _, parameters, metadata, _ = compile_optics(system)
@@ -255,7 +255,7 @@ def test_source_snapshot_owns_bundle_arrays_and_reconstructs_graph_fields():
     positions, angles = np.array([-0.001, 0.002]), np.array([0.01, -0.02])
     index = Parameter(1.5).variable()
     source = RayBundle(x=positions, theta=angles, n=index)
-    system = System(Plane(), optical_input=source)
+    system = System(Plane(), source=source)
     program, _, inputs, parameters, _, _ = compile_optics(system)
     assert inputs[0].initial_state is not source
     assert not np.shares_memory(inputs[0].initial_state.x, positions)
@@ -270,7 +270,7 @@ def test_source_snapshot_owns_bundle_arrays_and_reconstructs_graph_fields():
 
 def test_complex_aperture_roots_preserve_real_source_wavelength():
     source = GaussianBeam(q=0.02j, wavelength=1.064e-6, n=1.5)
-    system = System(GaussianAperture(a=0.001), optical_input=source)
+    system = System(GaussianAperture(a=0.001), source=source)
     program, stages, inputs, _, _, _ = compile_optics(system)
     values = program.evaluate([])
     expected_c = -1j * 1.064e-6 / (np.pi * 1.5 * 0.001**2)
@@ -281,14 +281,14 @@ def test_complex_aperture_roots_preserve_real_source_wavelength():
 
 def test_unresolved_optical_symbol_is_rejected():
     system = System(ThinLens(f=Symbol("missing_focal")),
-                    optical_input=Ray(x=0, theta=0, n=1.0))
+                    source=Ray(x=0, theta=0, n=1.0))
     with pytest.raises(ValueError, match="Unresolved optical Symbol.*missing_focal"):
         compile_optics(system)
 
 
 def test_repeated_elements_keep_separate_steps_and_metadata_but_one_theta_slot():
     lens = ThinLens(f=0.1).variable("f")
-    system = System(lens, Space(d=0.2), lens, optical_input=Ray(x=0, theta=0, n=1.0))
+    system = System(lens, Space(d=0.2), lens, source=Ray(x=0, theta=0, n=1.0))
     program, stages, _, parameters, metadata, _ = compile_optics(system)
     assert len(stages) == len(metadata) == 3 and len(parameters) == 1
     assert [data.element_id for data in metadata] == [id(lens), id(system.elements[1]), id(lens)]
@@ -398,20 +398,22 @@ def test_malformed_constraints_fail_normalization(invalid):
         System()._compile_constraints((invalid,), {}, {})
 
 
-def test_generated_gap_constraints_are_collected_and_detect_reversed_fixed_layout():
-    system = System(Space(d=0.2), optical_input=Ray(x=0, theta=0, n=1.0)).add(Plane(), z=0.1)
+def test_generated_gap_constraints_are_collected_and_reversed_fixed_layout_is_rejected():
+    system = System(Space(d=0.2), source=Ray(x=0, theta=0, n=1.0)).add(Plane(), z=0.3)
     bindings = system._collect_bindings()
     placements, _ = system._resolve_layout(system._resolve_elements(), bindings)
     constraints = system._collect_constraints(placements)
     assert len(constraints) == 2 and constraints[1] is placements[1].element.constraints[0]
-    with pytest.raises(ValueError, match="unsatisfiable constant constraint"):
-        system._compile_constraints(constraints, bindings, {})
     assert len(system.constraints) == 1
+
+    reversed_layout = System(Space(d=0.2), source=Ray(x=0, theta=0, n=1.0)).add(Plane(), z=0.1)
+    with pytest.raises(ValueError, match=r"0\.1 m before the preceding elements end at z = 0\.2 m"):
+        reversed_layout._resolve_layout(reversed_layout._resolve_elements(), reversed_layout._collect_bindings())
 
 
 def test_variable_gap_constraint_remains_live_for_later_values():
     distance = Parameter(0.1).variable()
-    system = System(Space(d=distance), optical_input=Ray(x=0, theta=0, n=1.0)).add(Plane(), z=0.2)
+    system = System(Space(d=distance), source=Ray(x=0, theta=0, n=1.0)).add(Plane(), z=0.2)
     bindings = system._collect_bindings()
     placements, _ = system._resolve_layout(system._resolve_elements(), bindings)
     program, descriptors, _ = system._compile_constraints(system._collect_constraints(placements), bindings, {id(distance): 0})
@@ -425,7 +427,7 @@ def test_build_handoff_retains_order_and_does_not_mutate_declarations():
     space, source = Space(d=distance), Ray(x=0, theta=0, n=1.0)
     graph_constraint = Constraint(distance, upper_bound=0.5, label="system limit")
     deferred = Constraint(lambda result: 1.0 if result.final.x > 0 else -1.0, label="deferred")
-    system = System(space, optical_input=source).require(graph_constraint, deferred)
+    system = System(space, source=source).require(graph_constraint, deferred)
     before_system, before_element = system.system_constraints, space.constraints
     first, second = system.build(), system.build()
     assert [data.label for data in first._constraint_descriptors] == ["system limit", None]
@@ -439,7 +441,7 @@ def test_build_handoff_retains_order_and_does_not_mutate_declarations():
 @pytest.mark.parametrize("owner", ["system", "element"])
 def test_malformed_attached_constraint_is_rejected_during_build(owner):
     space = Space(d=0.1)
-    system = System(space, optical_input=Ray(x=0, theta=0, n=1.0))
+    system = System(space, source=Ray(x=0, theta=0, n=1.0))
     (system if owner == "system" else space).require(object())
     with pytest.raises(TypeError, match="Constraint"):
         system.build()
@@ -452,7 +454,7 @@ def test_metadata_holds_the_parameter_and_element_objects_it_indexes_by_id():
 
     distance = Parameter(0.1).variable()
     space = Space(d=distance)
-    system = System(space, optical_input=Ray(x=0, theta=0, n=1.0))
+    system = System(space, source=Ray(x=0, theta=0, n=1.0))
     program, _, _, parameters, metadata, _ = compile_optics(system)
     references = weakref.ref(distance), weakref.ref(space)
     held_parameters, held_metadata = parameters, metadata
@@ -471,7 +473,7 @@ def test_require_label_names_a_single_comparison_on_systems_elements_and_composi
     space = Space(d=distance)
     slab = Slab(d=0.01, n=1.5)
     slab.d.variable(bounds=(0.001, 0.02))
-    system = System(space, slab, optical_input=Ray(x=0, theta=0, n=1))
+    system = System(space, slab, source=Ray(x=0, theta=0, n=1))
     assert system.require(distance >= 0.02, label="system limit") is system
     space.require(distance <= 0.08, label="element limit")
     slab.require(slab.d >= 0.005, label="composite limit")
@@ -483,7 +485,7 @@ def test_require_label_names_a_single_comparison_on_systems_elements_and_composi
 def test_require_label_rejects_multiple_or_prebuilt_constraints_without_changing_state(owner):
     distance = Parameter(0.05)
     space = Space(d=distance)
-    target = System(space, optical_input=Ray(x=0, theta=0, n=1)) if owner == "system" else space
+    target = System(space, source=Ray(x=0, theta=0, n=1)) if owner == "system" else space
     before = list(target._constraints)
     for args in ((), (distance >= 0, distance <= 1), (Constraint(distance, lower_bound=0),)):
         with pytest.raises(ValueError, match="label requires a single comparison"):
@@ -493,18 +495,18 @@ def test_require_label_rejects_multiple_or_prebuilt_constraints_without_changing
 
 def test_index_mismatch_reports_both_indices_and_where_the_light_comes_from():
     slab = Slab(d=0.01, n=1.5)
-    with pytest.raises(ValueError, match=r"arrives in n = 1 \(from the optical input\).*expects n = 1\.33.*ambient_n") as first:
-        System(slab, ambient_n=1.33, optical_input=GaussianBeam.from_waist(1e-3, 1e-6)).build()
+    with pytest.raises(ValueError, match=r"arrives in n = 1 \(from the source\).*expects n = 1\.33.*ambient_n") as first:
+        System(slab, ambient_n=1.33, source=GaussianBeam.from_waist(1e-3, 1e-6)).build()
     assert "Interface" in str(first.value)
     with pytest.raises(ValueError, match=r"arrives in n = 1 \(from the preceding element\).*expects n = 1\.5"):
-        System(Space(d=0.1), Space(d=0.1, n=1.5), optical_input=Ray(x=0, theta=0, n=1.0)).build()
+        System(Space(d=0.1), Space(d=0.1, n=1.5), source=Ray(x=0, theta=0, n=1.0)).build()
 
 
 def test_simulation_bindings_are_a_build_time_structural_snapshot():
     from diffractix import Solver
     variable = Parameter(0.2).variable(bounds=(0.05, 0.5))
     lens = ThinLens(f=Symbol("focal"))
-    system = System(Space(d=0.1), lens, optical_input=Ray(x=1e-3, theta=0, n=1.0))
+    system = System(Space(d=0.1), lens, source=Ray(x=1e-3, theta=0, n=1.0))
     expression = 2 * variable
     system.bind("focal", expression)
     simulation = system.build()
@@ -533,7 +535,7 @@ def test_element_paths_start_with_the_top_level_composite_and_are_none_for_direc
 
     module = Module()
     first = Space(d=0.01)
-    system = System(first, telescope, optical_input=Ray(x=0.001, theta=0.0)).add(module, z=0.5)
+    system = System(first, telescope, source=Ray(x=0.001, theta=0.0)).add(module, z=0.5)
     paths = {info.label: info.path for info in system.build().element_data}
     assert paths[first.label] is None                                   # added directly
     assert paths[f"AutoSpace_to_{module.inner.lens1.label}"] is None    # generated gap

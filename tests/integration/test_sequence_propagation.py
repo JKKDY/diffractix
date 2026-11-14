@@ -8,7 +8,7 @@ from diffractix.graph import Literal
 def test_complex_optical_roots_do_not_promote_real_source_fields():
     p=Parameter(0.02).variable()
     element=ABCD(A=1,B=p,C=Literal(1j*0.1),D=1,thickness=p)
-    simulation=System(element,optical_input=GaussianBeam(q=0.04j,wavelength=1e-6)).build()
+    simulation=System(element,source=GaussianBeam(q=0.04j,wavelength=1e-6)).build()
     function=lambda theta:simulation.run(theta).final.w**2
     def expected(theta):
         q=(0.04j+theta[0])/(1+0.1j*0.04j)
@@ -25,7 +25,7 @@ def test_complex_optical_roots_do_not_promote_real_source_fields():
 def test_float32_bundle_promotion_matches_explicit_scalar_propagation():
     positions=xp.array([-0.001,0.002],dtype=xp.float32)
     angles=xp.array([0.01,-0.02],dtype=xp.float32)
-    simulation=System(Space(d=0.125),optical_input=RayBundle(x=positions,theta=angles)).build()
+    simulation=System(Space(d=0.125),source=RayBundle(x=positions,theta=angles)).build()
     result=simulation.run()
     # Native roots preserve Python scalar semantics without packed-array promotion.
     expected=positions+0.125*angles

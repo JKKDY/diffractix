@@ -31,7 +31,7 @@ class InitialValues:
     --------
     >>> from diffractix import Parameter, Ray, Space, System
     >>> space = Space(d=Parameter(0.05).variable())
-    >>> simulation = System(space, optical_input=Ray(x=0, theta=0)).build()
+    >>> simulation = System(space, source=Ray(x=0, theta=0)).build()
     >>> guess = simulation.initial_values
     >>> guess[space.d] = 0.08
     >>> float(simulation.run(theta=guess.values)[space].z_end)
@@ -173,10 +173,10 @@ class Simulation:
         Raises
         ------
         ValueError
-            If the Simulation does not have exactly one optical input.
+            If the Simulation does not have exactly one source.
         """
         if len(self._optical_inputs) != 1:
-            raise ValueError("Simulation.symbolic requires exactly one optical input.")
+            raise ValueError("Simulation.symbolic requires exactly one source.")
         return SimulationResultTracer(self.element_data, self._optical_inputs[0].initial_state)
 
     @cached_property
@@ -218,19 +218,19 @@ class Simulation:
         Raises
         ------
         ValueError
-            If the Simulation does not have exactly one optical input.
+            If the Simulation does not have exactly one source.
 
         Examples
         --------
         >>> from diffractix import Ray, Space, System, ThinLens
         >>> from diffractix.units import mm
-        >>> system = System(ThinLens(f=100 * mm), Space(d=100 * mm), optical_input=Ray(x=1 * mm, theta=0))
+        >>> system = System(ThinLens(f=100 * mm), Space(d=100 * mm), source=Ray(x=1 * mm, theta=0))
         >>> result = system.build().run()
         >>> round(float(result.final.x), 9)
         0.0
         """
         if len(self._optical_inputs) != 1:
-            raise ValueError("Simulation.run() requires exactly one optical input.")
+            raise ValueError("Simulation.run() requires exactly one source.")
         if theta is None:
             theta = self._initial_values
 

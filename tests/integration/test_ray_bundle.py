@@ -18,8 +18,8 @@ def test_bundle_trace_matches_independent_rays(kind):
     elements = factories[kind]()
     x, angles = np.array([-0.0012, 0, 0.0009]), np.array([0.018, 0, -0.012])
     source = RayBundle(x=x, theta=angles, n=1.33)
-    result = System(*elements, optical_input=source, ambient_n=1.33).build().run()
-    references = [System(*elements, optical_input=Ray(x=a, theta=b, n=1.33), ambient_n=1.33).build().run() for a,b in zip(x,angles)]
+    result = System(*elements, source=source, ambient_n=1.33).build().run()
+    references = [System(*elements, source=Ray(x=a, theta=b, n=1.33), ambient_n=1.33).build().run() for a,b in zip(x,angles)]
     actual = xp.stack([state.vectors for state in result.states])
     expected = xp.stack([xp.stack([state.vector for state in ray.states]) for ray in references], axis=2)
     np.testing.assert_allclose(actual, expected, atol=1e-15)
@@ -32,7 +32,7 @@ def test_bundle_trace_matches_independent_rays(kind):
 @pytest.mark.parametrize("count", [0, 1])
 def test_empty_and_single_bundle_systems(count):
     source = RayBundle(x=xp.array([0.001][:count]), theta=xp.array([0.01][:count]))
-    result = System(Slab(d=0.01,n=1.5), optical_input=source).build().run()
+    result = System(Slab(d=0.01,n=1.5), source=source).build().run()
     assert all(s.vectors.shape == (2,count) for s in result.states)
     assert len(result.states) == 4
     np.testing.assert_allclose(result.final.x, source.x+0.01*source.theta/1.5)
@@ -41,7 +41,7 @@ def test_empty_and_single_bundle_systems(count):
 def test_bundle_derivatives_match_analytical_lens_chain():
     d, f = Parameter(0.02).variable(), Parameter(0.1).variable()
     x, angle = xp.array([-0.001, 0.002]), xp.array([0.01, -0.02])
-    simulation = System(Space(d=d), ThinLens(f=f), optical_input=RayBundle(x=x, theta=angle)).build()
+    simulation = System(Space(d=d), ThinLens(f=f), source=RayBundle(x=x, theta=angle)).build()
     mapping = simulation._optics_program.parameter_indices
     def actual(theta):
         return simulation.run(theta).final.vectors
@@ -58,7 +58,7 @@ def test_bundle_derivatives_match_analytical_lens_chain():
 def test_converging_bundle_reaches_a_common_focus_through_the_system():
     focus = 0.08
     source = RayBundle.converging(radius=2e-3, count=7, focal_distance=focus)
-    result = System(Space(d=focus), Space(d=0.02), optical_input=source).build().run()
+    result = System(Space(d=focus), Space(d=0.02), source=source).build().run()
     np.testing.assert_allclose(result.states[1].x, 0.0, atol=1e-15)
     np.testing.assert_allclose(result.final.x, -0.02 * source.x / focus, atol=1e-15)
     assert result.final.size == 7

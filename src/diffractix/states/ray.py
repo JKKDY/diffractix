@@ -35,7 +35,7 @@ class Ray(ParaxialState):
     >>> from diffractix import Ray, Space, System
     >>> from diffractix.units import mm, mrad
     >>> ray = Ray(x=1 * mm, theta=2 * mrad)
-    >>> result = System(Space(d=100 * mm), optical_input=ray).build().run()
+    >>> result = System(Space(d=100 * mm), source=ray).build().run()
     >>> round(float(result.final.x) / mm, 6)
     1.2
     """

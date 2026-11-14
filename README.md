@@ -51,7 +51,7 @@ lens.f.variable(bounds=(0.05, 0.5))
 # Place elements at absolute positions (meters)
 image_plane = Plane(label="Image plane")
 
-system = System(optical_input=ray)
+system = System(source=ray)
 system.add(lens, z=0.1)
 system.add(image_plane, z=0.2)
 

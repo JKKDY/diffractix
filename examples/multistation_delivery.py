@@ -163,7 +163,7 @@ expander3_z = Parameter(675 * mm, name="Expander 3 position").variable()
 focusing_z = Parameter(720 * mm, name="Focusing lens position").variable()
 positions = (expander1_z, relay1_z, expander2_z, relay2_z, expander3_z, focusing_z)
 
-system = System(optical_input=source)
+system = System(source=source)
 system.add(expander1, z=expander1_z)
 system.add(aom, z=AOM_Z)
 system.add(relay1, z=relay1_z)

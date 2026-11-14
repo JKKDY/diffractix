@@ -8,7 +8,7 @@ from diffractix import Constraint, Parameter, Plane, Ray, Solver, Space, System
 def test_built_constraint_program_retains_handle_before_external_reassignment(owner):
     distance = Parameter(0.05).variable(bounds=(0.01, 0.3))
     space = Space(d=distance)
-    system = System(space, optical_input=Ray(x=0, theta=0.01, n=1))
+    system = System(space, source=Ray(x=0, theta=0.01, n=1))
     getattr(system if owner == "system" else space, "require")(
         Constraint(space.d, upper_bound=0.1, label="original limit"))
     simulation = system.build()
@@ -27,7 +27,7 @@ def test_source_and_model_mutation_cannot_change_an_existing_solution():
     position = Parameter(0.5).variable(bounds=(-2, 2))
     source = Ray(x=position, theta=0.02, n=1)
     space = Space(d=0.1)
-    solver = Solver(System(space, optical_input=source)).target(lambda sim: sim.final.x - 1)
+    solver = Solver(System(space, source=source)).target(lambda sim: sim.final.x - 1)
     solution = solver.solve()
     initial_result = solution.run()
     source.theta = 0.9
@@ -50,7 +50,7 @@ def _weak_references_after_dropping_the_model():
 
     distance = Parameter(0.05).variable(bounds=(0.01, 0.2))
     gap = Space(d=distance)
-    system = System(gap, optical_input=Ray(x=0, theta=0.01, n=1)).add(Plane(), z=0.1)
+    system = System(gap, source=Ray(x=0, theta=0.01, n=1)).add(Plane(), z=0.1)
     simulation = system.build()
     solver = Solver(simulation).target(distance / 0.08 - 1)
     solution = solver.solve(options={"ftol": 1e-12})

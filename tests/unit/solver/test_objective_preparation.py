@@ -82,7 +82,7 @@ def test_solve_optimizes_full_constraints_and_prepares_objectives(monkeypatch):
     import diffractix.solver.solver as solver_module
 
     parameter = Parameter(0.5).variable()
-    solver = Solver(System(optical_input=Ray(x=parameter, theta=0, n=1)))
+    solver = Solver(System(source=Ray(x=parameter, theta=0, n=1)))
     solver.require(parameter >= 0, parameter <= 1)
     solver.target(parameter - 0.25)
     optimized = []
@@ -104,7 +104,7 @@ def test_solve_optimizes_full_constraints_and_prepares_objectives(monkeypatch):
 
 def test_solver_objectives_cannot_introduce_external_variable_parameters():
     parameter, external = Parameter(0.5).variable(), Parameter(1).variable()
-    solver = Solver(System(optical_input=Ray(x=parameter, theta=0, n=1)))
+    solver = Solver(System(source=Ray(x=parameter, theta=0, n=1)))
     solver.target(external)
     with pytest.raises(ValueError, match="Missing required Parameter"):
         solver.solve()

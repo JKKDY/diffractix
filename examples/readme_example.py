@@ -12,7 +12,7 @@ lens = ThinLens(f=200 * mm).variable(f=(50 * mm, 500 * mm))
 image_plane = Plane(label="Image plane")
 
 # Place the elements at absolute positions; the gaps become Spaces automatically.
-system = System(optical_input=ray)
+system = System(source=ray)
 system.add(lens, z=100 * mm)
 system.add(image_plane, z=200 * mm)
 

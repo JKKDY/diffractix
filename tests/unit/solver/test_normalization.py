@@ -9,7 +9,7 @@ from diffractix.solver.constraint import Constraint, normalize_to_constraint
 from diffractix import Ray, Solver, System
 
 def make_solver():
-    return Solver(System(optical_input=Ray(x=Parameter(1).variable(), theta=0, n=1)))
+    return Solver(System(source=Ray(x=Parameter(1).variable(), theta=0, n=1)))
 
 
 @pytest.mark.parametrize("endpoint", ["lower_bound", "upper_bound"])
@@ -207,7 +207,7 @@ def test_value_matching_and_residual_shorthand_match_explicit_objective_derivati
     from diffractix.backend import xp
     from tests.helpers.backend import capture_problem
     p = Parameter(0.5).variable()
-    simulation = System(optical_input=Ray(x=p, theta=0, n=1)).build()
+    simulation = System(source=Ray(x=p, theta=0, n=1)).build()
     solvers = [Solver(simulation) for _ in range(4)]
     solvers[0].target(value=lambda result: result.final.x ** 2, target=0, scale=2, label="match")
     solvers[1].target(lambda result: result.final.x ** 2 / 2, label="match")
@@ -226,7 +226,7 @@ def test_weight_scales_the_cost_of_value_matching_and_single_residual_shorthand(
     from diffractix.backend import xp
     from tests.helpers.backend import capture_problem
     p = Parameter(0.5).variable()
-    simulation = System(optical_input=Ray(x=p, theta=0, n=1)).build()
+    simulation = System(source=Ray(x=p, theta=0, n=1)).build()
     solvers = [Solver(simulation) for _ in range(4)]
     solvers[0].target(value=p, target=1.0, scale=1.0, weight=3, label="match")
     solvers[1].target(p - 1.0, weight=3, label="match")
@@ -271,7 +271,7 @@ def test_value_matching_rejects_any_zero_scale_entry_without_adding_objective(sc
 def test_array_matching_broadcasts_and_preserves_analytical_derivatives(use_jit):
     from diffractix.backend import xp
     parameter = Parameter(0.5).variable()
-    solver = Solver(System(optical_input=Ray(x=parameter, theta=0, n=1)))
+    solver = Solver(System(source=Ray(x=parameter, theta=0, n=1)))
     target, scale = np.array([1., 3.]), np.array([1., 2.])
     solver.target(value=lambda sim: sim.final.x, target=target, scale=scale)
     callbacks = solver._build_cache(use_jit, solver.simulation.initial_values.values).callbacks
@@ -301,17 +301,17 @@ def objective_at(solver, theta):
 ])
 def test_value_matching_scale_defaults_to_the_target_magnitude_or_one(make_value, target, at, residual):
     p = Parameter(0.5).variable()
-    solver = Solver(System(optical_input=Ray(x=p, theta=0, n=1)))
+    solver = Solver(System(source=Ray(x=p, theta=0, n=1)))
     solver.target(value=make_value(p), target=target)
     assert objective_at(solver, at) == pytest.approx(residual ** 2)
 
 
 def test_default_scale_is_elementwise_for_array_targets_and_explicit_scale_wins():
     p = Parameter(0.5).variable()
-    solver = Solver(System(optical_input=Ray(x=p, theta=0, n=1)))
+    solver = Solver(System(source=Ray(x=p, theta=0, n=1)))
     solver.target(value=p * np.array([1., 1.]), target=np.array([2., 0.]))
     assert objective_at(solver, 3.0) == pytest.approx(0.5 ** 2 + 3.0 ** 2)
-    explicit = Solver(System(optical_input=Ray(x=p, theta=0, n=1)))
+    explicit = Solver(System(source=Ray(x=p, theta=0, n=1)))
     explicit.target(value=p, target=2.0, scale=4.0)
     assert objective_at(explicit, 3.0) == pytest.approx((1 / 4) ** 2)
 

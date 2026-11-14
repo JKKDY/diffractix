@@ -9,7 +9,7 @@ from diffractix.graph import Symbol
 def test_bound_relaxation_restores_constraints_and_keeps_earlier_solution(use_jit):
     distance = Parameter(0.03).variable(bounds=(0.01, 0.3))
     space = Space(d=distance)
-    solver = Solver(System(space, optical_input=Ray(x=0, theta=0.01, n=1)))
+    solver = Solver(System(space, source=Ray(x=0, theta=0.01, n=1)))
     solver.target(lambda sim: sim.final.x / 0.002 - 1)
     solver.require(Constraint(distance, upper_bound=0.15, label="mechanical clearance"))
     first = solver.solve(jit=use_jit, x_upper=[0.1], options={"ftol": 1e-12})
@@ -31,7 +31,7 @@ def test_bound_relaxation_restores_constraints_and_keeps_earlier_solution(use_ji
 
 def test_conflicting_runtime_constraints_return_unsuccessful_infeasible_solution():
     position = Parameter(0.5).variable(bounds=(-2, 2))
-    solver = Solver(System(optical_input=Ray(x=position, theta=0, n=1)))
+    solver = Solver(System(source=Ray(x=position, theta=0, n=1)))
     solver.target(position)
     # Result Symbols keep this contradiction outside affine preprocessing.
     solver.require(Constraint(lambda sim: sim.final.x, lower_bound=1, label="minimum"),
@@ -46,7 +46,7 @@ def test_conflicting_runtime_constraints_return_unsuccessful_infeasible_solution
 
 def test_iteration_limit_is_distinct_from_feasibility():
     position = Parameter(0.5).variable(bounds=(-2, 2))
-    solver = Solver(System(optical_input=Ray(x=position, theta=0, n=1)))
+    solver = Solver(System(source=Ray(x=position, theta=0, n=1)))
     solver.target(lambda sim: sim.final.x ** 2 - 1)
     solution = solver.solve(options={"maxiter": 1})
     assert solution.iterations == 1 and solution.function_evaluations >= 1
@@ -59,7 +59,7 @@ def test_iteration_limit_is_distinct_from_feasibility():
 
 def test_new_solver_from_solved_simulation_preserves_reduced_constraints():
     distance = Parameter(0.03).variable(bounds=(0.01, 0.3))
-    solver = Solver(System(Space(d=distance), optical_input=Ray(x=0, theta=0.01, n=1)))
+    solver = Solver(System(Space(d=distance), source=Ray(x=0, theta=0.01, n=1)))
     solver.target(lambda sim: sim.final.x / 0.002 - 1)
     solver.require(Constraint(distance, upper_bound=0.15, label="clearance"))
     first = solver.solve(x_upper=[0.1], options={"ftol": 1e-12})
@@ -85,7 +85,7 @@ def test_new_solver_from_solved_simulation_preserves_reduced_constraints():
 def test_native_scipy_restores_partially_fixed_canonical_coordinates():
     position = Parameter(0.2).variable(bounds=(-1, 1))
     angle = Parameter(0.1).variable(bounds=(-1, 1))
-    solver = Solver(System(Space(d=1), optical_input=Ray(x=position, theta=angle, n=1)))
+    solver = Solver(System(Space(d=1), source=Ray(x=position, theta=angle, n=1)))
     solver.target(lambda sim: sim.final.x - 1)
     indices = solver.simulation._optics_program.parameter_indices
     lower, upper = np.full(2, -1.), np.full(2, 1.)
@@ -111,7 +111,7 @@ def test_value_reads_derived_design_quantities_after_a_real_solve():
     distance = Parameter(0.05).variable(bounds=(0.02, 0.12))
     first = Space(d=distance, label="First gap")
     remainder = Space(d=system_length - distance, label="Remainder")
-    system = System(first, remainder, optical_input=Ray(x=0, theta=0.01, n=1))
+    system = System(first, remainder, source=Ray(x=0, theta=0.01, n=1))
     system.bind("double", 2 * distance)
     solver = Solver(system).target(lambda sim: sim[first].z_end / 0.08 - 1)
     solution = solver.solve(options={"ftol": 1e-12})

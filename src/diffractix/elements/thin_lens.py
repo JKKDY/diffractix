@@ -32,7 +32,7 @@ class ThinLens(OpticalElement):
 
     >>> from diffractix import Ray, Space, System, ThinLens
     >>> from diffractix.units import mm
-    >>> system = System(ThinLens(f=100 * mm), Space(d=100 * mm), optical_input=Ray(x=1 * mm, theta=0))
+    >>> system = System(ThinLens(f=100 * mm), Space(d=100 * mm), source=Ray(x=1 * mm, theta=0))
     >>> round(float(system.build().run().final.x) / mm, 9)
     0.0
     """

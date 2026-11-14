@@ -15,7 +15,7 @@ from tests.helpers.backend import capture_problem
 @pytest.fixture
 def solver():
     parameter = Parameter(1.5).variable(bounds=(1.0, 4.0))
-    return Solver(System(optical_input=Ray(x=parameter, theta=0, n=1))).target(parameter - 0.2)
+    return Solver(System(source=Ray(x=parameter, theta=0, n=1))).target(parameter - 0.2)
 
 
 @pytest.mark.parametrize("argument", ["x0", "x_lower", "x_upper"])
@@ -88,7 +88,7 @@ def test_invalid_later_solve_preserves_cache_and_next_solve_defaults(solver):
 
 def test_simulation_cannot_be_reassigned_even_before_first_solve(solver):
     original = solver.simulation
-    other = System(optical_input=Ray(x=Parameter(2).variable(), theta=0, n=1)).build()
+    other = System(source=Ray(x=Parameter(2).variable(), theta=0, n=1)).build()
     for replacement in (original, other):
         with pytest.raises(AttributeError):
             solver.simulation = replacement
@@ -99,7 +99,7 @@ def test_simulation_cannot_be_reassigned_even_before_first_solve(solver):
 @pytest.mark.parametrize("use_jit", [False, True])
 def test_repeated_guesses_and_changed_bounds_reuse_core_and_restore_constraint(use_jit):
     parameter = Parameter(0.5).variable(bounds=(0, 3))
-    solver = Solver(System(optical_input=Ray(x=parameter, theta=0, n=1)))
+    solver = Solver(System(source=Ray(x=parameter, theta=0, n=1)))
     solver.target(parameter - 2)
     solver.require(Constraint(parameter, upper_bound=1, label="needed after relaxation"))
     restrictive = capture_problem(solver, jit=use_jit, x_upper=[0.75])
@@ -118,7 +118,7 @@ def test_repeated_guesses_and_changed_bounds_reuse_core_and_restore_constraint(u
 @pytest.mark.parametrize("use_jit", [False, True])
 def test_vector_duplicates_select_rows_and_expand_hessian_weights(use_jit):
     parameter = Parameter(0.5).variable(bounds=(-3, 3))
-    solver = Solver(System(optical_input=Ray(x=parameter, theta=0, n=1)))
+    solver = Solver(System(source=Ray(x=parameter, theta=0, n=1)))
     vector = Literal(np.array([1., 2.])) * parameter ** 2
     solver.target(parameter ** 2)
     solver.require(Constraint(vector, upper_bound=10),
@@ -135,7 +135,7 @@ def test_jax_core_does_not_retrace_for_new_guesses_or_bounds(monkeypatch):
     if current_backend() != "jax":
         pytest.skip("JAX executable tracing contract")
     parameter = Parameter(0.5).variable(bounds=(0, 3))
-    solver = Solver(System(optical_input=Ray(x=parameter, theta=0, n=1)))
+    solver = Solver(System(source=Ray(x=parameter, theta=0, n=1)))
     solver.target(lambda result: result.final.x ** 2)
     solver.require(Constraint(lambda result: result.final.x ** 2, upper_bound=2))
     traces = []
@@ -165,7 +165,7 @@ def test_jax_core_does_not_retrace_for_new_guesses_or_bounds(monkeypatch):
 @pytest.mark.parametrize("operation", ["target", "require"])
 def test_model_definitions_freeze_after_preparation(operation):
     parameter = Parameter(0.5).variable()
-    solver = Solver(System(optical_input=Ray(x=parameter, theta=0, n=1)))
+    solver = Solver(System(source=Ray(x=parameter, theta=0, n=1)))
     solver.target(parameter - 1)
     capture_problem(solver)
     entry = parameter if operation == "target" else parameter >= 0

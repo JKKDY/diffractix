@@ -11,7 +11,7 @@ from diffractix.solver import solver as solver_module
 def test_whole_solver_callbacks_jit_and_nested_derivatives(monkeypatch):
     distance = Parameter(0.03).variable(bounds=(0.01, 0.06))
     space = Space(d=distance)
-    simulation = System(space, optical_input=GaussianBeam.from_waist(0.0005, 1.064e-6)).build()
+    simulation = System(space, source=GaussianBeam.from_waist(0.0005, 1.064e-6)).build()
     solver = Solver(simulation)
     solver.target(lambda sim: sim[space].after.w * 1000)
     solver.require(Constraint(lambda sim: sim[space].after.w * 1000,
@@ -92,7 +92,7 @@ def test_jit_propagation_preserves_python_and_custom_states(kind):
               RayBundle(x=np.array([0.001, 0.002]), theta=np.array([0.02, -0.01]))
               if kind == 'bundle' else CustomState(0.001, 0.02))
     distance = Parameter(0.03).variable()
-    simulation = System(ABCD(A=1, B=distance, C=0, D=1), optical_input=source).build()
+    simulation = System(ABCD(A=1, B=distance, C=0, D=1), source=source).build()
 
     def values(theta):
         result = simulation.run(theta)
@@ -115,7 +115,7 @@ def test_complex_optical_derivatives_against_central_differences():
     focal_length = Parameter(0.12).variable()
     simulation = System(Space(d=distance), ThinLens(f=focal_length),
                         GaussianAperture(a=0.001), Space(d=0.04),
-                        optical_input=GaussianBeam.from_waist(0.0005, 1.064e-6)).build()
+                        source=GaussianBeam.from_waist(0.0005, 1.064e-6)).build()
 
     def values(theta):
         state = simulation.run(theta).final

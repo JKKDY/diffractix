@@ -32,13 +32,13 @@ does not define `m` or `mm`; import them from `diffractix.units` (implemented in
 
 The normal workflow is:
 
-1. Declare an optical input and an ordered sequence of elements.
+1. Declare a source state (`source=`) and an ordered sequence of elements.
 2. Mark selected real scalar parameters variable and choose bounds.
 3. Build a `System` into a `Simulation`.
 4. Run it, inspect a `SimulationResult`, or optimize with `Solver`.
 5. Check `solution.success` and `solution.feasible` before using a solution.
 
-A System currently supports one optical input. A Simulation snapshots compiled
+A System currently supports one source. A Simulation snapshots compiled
 expressions and input values at build time; later edits to the declarative model
 do not update it. Rebuild the System to include those changes. Python callable
 captures remain the caller's responsibility. Bindings containing mutable graph
@@ -84,7 +84,7 @@ RayBundle n can be graph-backed.
 space = Space(d=0.05)                 # n=None inherits the incoming medium
 lens = ThinLens(f=0.1, label="Lens")
 plane = Plane(label="Image")
-system = System(space, lens, Space(d=0.1), plane, optical_input=ray)
+system = System(space, lens, Space(d=0.1), plane, source=ray)
 simulation = system.build()
 result = simulation.run()
 print(result.final.x)
@@ -134,7 +134,7 @@ symbolic expressions in Python `if` or convert them to bool.
 `simulation.initial_values` returns an editable copy:
 
 ```python
-simulation = System(space, lens, plane, optical_input=ray).build()
+simulation = System(space, lens, plane, source=ray).build()
 guess = simulation.initial_values
 guess[distance] = 0.08
 new_result = simulation.run(theta=guess.values)
@@ -223,7 +223,7 @@ from diffractix import Plane, Ray, Solver, System, ThinLens
 lens = ThinLens(f=0.2, label="Focus")
 lens.f.variable(bounds=(0.05, 0.5))
 image = Plane(label="Image")
-system = System(optical_input=Ray(x=0.01, theta=0.0))
+system = System(source=Ray(x=0.01, theta=0.0))
 system.add(lens, z=0.1)
 system.add(image, z=0.2)
 simulation = system.build()

@@ -37,7 +37,7 @@ system = System(
     lens2,
     Space(d=OUTPUT_DRIFT, label="Output drift"),
     output,
-    optical_input=source,
+    source=source,
 )
 optical_length = sum(element.element_length for element in system.elements)
 system.require(optical_length <= MAX_OPTICAL_LENGTH)

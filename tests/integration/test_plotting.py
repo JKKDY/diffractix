@@ -26,7 +26,7 @@ def test_result_plot_uses_existing_axes_and_preserves_simulation(kind, monkeypat
                "bundle": RayBundle(x=np.array([0.001, -0.001]), theta=np.array([0.01, -0.01])),
                "beam": GaussianBeam.from_waist(0.0003, 1.064e-6)}
     simulation = System(Space(d=0.02), ThinLens(f=0.1), Space(d=0.03),
-                        optical_input=sources[kind]).build()
+                        source=sources[kind]).build()
     result = simulation.run()
     before = np.array(result.z, copy=True)
     fig, ax = plt.subplots()
@@ -44,7 +44,7 @@ def test_result_plot_uses_existing_axes_and_preserves_simulation(kind, monkeypat
 def test_ray_samples_follow_physical_angles_on_both_sides_of_lens():
     lens = ThinLens(f=0.1)
     result = System(Space(d=0.02), lens, Space(d=0.03),
-                    optical_input=Ray(x=0.001, theta=0.01)).build().run()
+                    source=Ray(x=0.001, theta=0.01)).build().run()
     kind, _, _, segments = sample(result)
     assert kind == "ray"
     entrance, exit = segments
@@ -56,7 +56,7 @@ def test_ray_samples_follow_physical_angles_on_both_sides_of_lens():
 
 
 def test_empty_path_plot_does_not_invent_trajectory():
-    result = System(optical_input=Ray(x=0.001, theta=0.01)).build().run()
+    result = System(source=Ray(x=0.001, theta=0.01)).build().run()
     assert sample(result)[3] == []
     _, ax = plot(result)
     assert not ax.lines or all(len(line.get_xdata()) <= 2 for line in ax.lines)
@@ -66,7 +66,7 @@ def test_empty_path_plot_does_not_invent_trajectory():
 def test_thick_grin_plot_keeps_boundaries_without_inventing_interior_samples():
     grin = GRIN(d=0.03, g=2, n=1)
     result = System(Space(d=0.02), grin, Space(d=0.04),
-                    optical_input=Ray(x=0.001, theta=0.01, n=1)).build().run()
+                    source=Ray(x=0.001, theta=0.01, n=1)).build().run()
     kind, boundaries_z, boundaries_x, segments = sample(result)
     assert kind == "ray"
     assert len(segments) == 2
@@ -87,7 +87,7 @@ def test_thick_grin_plot_keeps_boundaries_without_inventing_interior_samples():
 
 def test_gaussian_samples_follow_analytic_envelope_and_plot_in_millimetres():
     waist, wavelength = 3e-4, 1.064e-6
-    result = System(Space(d=0.05), optical_input=GaussianBeam.from_waist(waist, wavelength)).build().run()
+    result = System(Space(d=0.05), source=GaussianBeam.from_waist(waist, wavelength)).build().run()
     kind, _, _, segments = sample(result)
     assert kind == "beam"
     (z, width), = segments
@@ -100,7 +100,7 @@ def test_gaussian_samples_follow_analytic_envelope_and_plot_in_millimetres():
 
 
 def test_plot_without_axes_creates_and_returns_a_new_figure():
-    result = System(Space(d=0.02), optical_input=Ray(x=0.001, theta=0.01)).build().run()
+    result = System(Space(d=0.02), source=Ray(x=0.001, theta=0.01)).build().run()
     existing = plt.figure()
     fig, ax = plot(result)
     assert fig is not existing and ax.figure is fig
@@ -112,7 +112,7 @@ def test_plot_without_axes_creates_and_returns_a_new_figure():
 def test_element_and_axis_overlays_are_optional(show_elements, show_axis):
     lens = ThinLens(f=0.1, label="Objective")
     result = System(Space(d=0.05), lens, Space(d=0.05),
-                    optical_input=Ray(x=0.001, theta=0.0)).build().run()
+                    source=Ray(x=0.001, theta=0.0)).build().run()
     _, ax = plot(result, show_elements=show_elements, show_axis=show_axis)
     assert ("Objective" in element_names(ax)) is show_elements
     axis_lines = [line for line in ax.lines
@@ -122,7 +122,7 @@ def test_element_and_axis_overlays_are_optional(show_elements, show_axis):
 
 @pytest.mark.parametrize("count", [5, 41, 42, 100])
 def test_bundle_plot_shows_at_most_41_rays(count):
-    result = System(Space(d=0.05), optical_input=RayBundle.parallel(radius=1e-3, count=count)).build().run()
+    result = System(Space(d=0.05), source=RayBundle.parallel(radius=1e-3, count=count)).build().run()
     _, ax = plot(result, show_elements=False, show_axis=False)
     assert len(ax.lines) == min(count, 41)
 
@@ -134,7 +134,7 @@ def test_composites_are_named_once_and_shaded_and_element_kinds_have_one_legend_
     second = ThinLens(f=0.2, label="Tube lens")
     result = System(Space(d=0.02), first, Space(d=0.02), lens, Space(d=0.02), second,
                     Space(d=0.02), Plane(label="Camera"),
-                    optical_input=GaussianBeam.from_waist(3e-4, 1.064e-6)).build().run()
+                    source=GaussianBeam.from_waist(3e-4, 1.064e-6)).build().run()
     _, ax = plot(result)
     names = element_names(ax)
     assert names == ["Objective", "Doublet", "Tube lens", "Camera"]
@@ -154,7 +154,7 @@ def test_composites_are_named_once_and_shaded_and_element_kinds_have_one_legend_
 def test_names_of_nearly_coincident_elements_merge_into_one_label():
     from diffractix import Plane
     result = System(Space(d=0.1), Plane(label="Scanner"), Space(d=0.0005), ThinLens(f=0.1, label="Lens"),
-                    Space(d=0.1), Plane(label="Screen"), optical_input=Ray(x=0.001, theta=0.0)).build().run()
+                    Space(d=0.1), Plane(label="Screen"), source=Ray(x=0.001, theta=0.0)).build().run()
     _, ax = plot(result)
     assert element_names(ax) == ["Scanner / Lens", "Screen"]
 
@@ -195,7 +195,7 @@ def test_sampling_rejects_unknown_sources_and_malformed_traces():
 
 
 def test_a_nonfinite_result_cannot_be_plotted():
-    result = System(Space(d=0.1), optical_input=Ray(x=0.001, theta=0.0)).build().run([])
+    result = System(Space(d=0.1), source=Ray(x=0.001, theta=0.0)).build().run([])
     result.states[-1].x = float("nan")
     with pytest.raises(ValueError, match="finite numerical values"):
         plot(result)

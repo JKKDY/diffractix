@@ -54,7 +54,7 @@ for gap in (input_gap, middle_gap, output_gap):
 for package in (lens1, lens2):
     package.variable(f=(4 * mm, 15 * mm))
 
-system = System(input_gap, lens1, middle_gap, lens2, output_gap, target, optical_input=source)
+system = System(input_gap, lens1, middle_gap, lens2, output_gap, target, source=source)
 package_length = sum(element.element_length for element in system.elements)
 system.require(package_length <= MAX_PACKAGE_LENGTH)
 

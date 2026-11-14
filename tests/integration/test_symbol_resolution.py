@@ -8,7 +8,7 @@ from diffractix.graph import Symbol
 def test_bound_expression_composes_with_runtime_state_and_solution_reporting(alias):
     distance = Parameter(0.03).variable(bounds=(0.01, 0.2))
     space = Space(d=distance)
-    system = System(space, optical_input=Ray(x=0, theta=0.01, n=1))
+    system = System(space, source=Ray(x=0, theta=0.01, n=1))
     system.bind("distance_twice", 2 * distance)
     if alias:
         system.bind("objective_distance", Symbol("distance_twice"))
@@ -27,7 +27,7 @@ def test_unknown_symbols_and_external_variables_fail_before_native_optimization(
     position = Parameter(0.5).variable(bounds=(0, 2))
     for expression, message in ((Symbol("missing"), "unresolved Symbol"),
                                 (Parameter(1).variable(), "Missing required Parameter")):
-        solver = Solver(System(optical_input=Ray(x=position, theta=0, n=1)))
+        solver = Solver(System(source=Ray(x=position, theta=0, n=1)))
         if consumer == "objective":
             solver.target(expression)
         else:

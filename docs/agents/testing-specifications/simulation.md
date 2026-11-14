@@ -45,7 +45,7 @@ not another graph. Tests should include zero-variable initial vectors.
 
 ## Run and numerical invariants
 
-run(theta=None) defaults to frozen build values. Exactly one optical input is
+run(theta=None) defaults to frozen build values. Exactly one source is
 required. Evaluate optics_program exactly once, preserving native mixed
 real/complex/array output types; reconstruct source, then propagate in stage
 order. Each step reads its metadata indices rather than assuming a contiguous

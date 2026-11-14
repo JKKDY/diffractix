@@ -13,7 +13,7 @@ def test_repeated_component_trace_and_occurrence_errors():
     distance = Parameter(0.02).variable()
     repeated = Space(d=distance)
     lens = ThinLens(f=0.1)
-    simulation = System(repeated, lens, repeated, optical_input=Ray(x=0.001, theta=0.01)).build()
+    simulation = System(repeated, lens, repeated, source=Ray(x=0.001, theta=0.01)).build()
     guess = simulation.initial_values
     guess[distance] = 0.03
     result = simulation.run(guess.values)
@@ -61,7 +61,7 @@ class CustomTranslation(OpticalElement):
 def test_custom_state_and_element_use_same_compilation_pipeline():
     parameter=Parameter(0.2).variable()
     source=CustomState(height=0.001,slope=0.01)
-    simulation=System(CustomTranslation(distance=parameter),optical_input=source).build()
+    simulation=System(CustomTranslation(distance=parameter),source=source).build()
     result=simulation.run(xp.array([0.3]))
     assert isinstance(result.final,CustomState)
     assert type(result.final) is CustomState.numerical_type()
@@ -73,7 +73,7 @@ def test_custom_state_and_element_use_same_compilation_pipeline():
 
 def test_empty_path_and_invalid_theta_do_not_corrupt_next_run():
     p=Parameter(0.001).variable()
-    simulation=System(optical_input=Ray(x=p,theta=0.01)).build()
+    simulation=System(source=Ray(x=p,theta=0.01)).build()
     with pytest.raises(ValueError, match="Expected 1"):
         simulation.run([])
     result=simulation.run([0.002])
@@ -86,7 +86,7 @@ def test_empty_path_and_invalid_theta_do_not_corrupt_next_run():
 def test_symbolic_result_follows_the_numerical_result_lookup():
     from diffractix.simulation.result import ResultSymbolKey, ResultSymbolKind
     lens = ThinLens(f=0.1)
-    simulation = System(Space(d=0.02), lens, optical_input=Ray(x=0.001, theta=0.01)).build()
+    simulation = System(Space(d=0.02), lens, source=Ray(x=0.001, theta=0.01)).build()
     sim = simulation.symbolic
     assert sim is simulation.symbolic
     assert sim[lens].after.x.key == ResultSymbolKey(ResultSymbolKind.AFTER, 1, "x")

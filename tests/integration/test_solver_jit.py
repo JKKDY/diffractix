@@ -8,7 +8,7 @@ from diffractix import Constraint, Parameter, Ray, Solver, Space, System
 def test_vector_optical_constraints_and_scalar_target_solve_together(use_jit):
     position = Parameter(0.2).variable(bounds=(-2, 2))
     angle = Parameter(0.1).variable(bounds=(-1, 1))
-    solver = Solver(System(Space(d=1), optical_input=Ray(x=position, theta=angle, n=1)))
+    solver = Solver(System(Space(d=1), source=Ray(x=position, theta=angle, n=1)))
     solver.target(lambda sim: sim.final.x - 1)
     solver.require(Constraint(lambda sim: sim.final.vector, lower_bound=-0.25, upper_bound=0.4))
     solution = solver.solve(jit=use_jit, options={"ftol": 1e-12})
@@ -22,7 +22,7 @@ def test_vector_optical_constraints_and_scalar_target_solve_together(use_jit):
 
 def test_dynamic_branch_optimizes_numerical_outputs_eagerly():
     position = Parameter(0.5).variable(bounds=(0.1, 2))
-    solver = Solver(System(optical_input=Ray(x=position, theta=0, n=1)))
+    solver = Solver(System(source=Ray(x=position, theta=0, n=1)))
 
     def residual(sim):
         if sim.final.x > 0:
@@ -38,7 +38,7 @@ def test_dynamic_branch_optimizes_numerical_outputs_eagerly():
 
 def test_deferred_returned_node_fails_instead_of_becoming_a_live_graph():
     position = Parameter(0.5).variable(bounds=(0.1, 2))
-    solver = Solver(System(optical_input=Ray(x=position, theta=0, n=1)))
+    solver = Solver(System(source=Ray(x=position, theta=0, n=1)))
 
     def residual(sim):
         return position - 1 if sim.final.x > 0 else 10.
@@ -50,7 +50,7 @@ def test_deferred_returned_node_fails_instead_of_becoming_a_live_graph():
 
 def test_user_failure_is_preserved_and_preparation_can_be_retried():
     position = Parameter(0.5).variable(bounds=(0.1, 2))
-    solver = Solver(System(optical_input=Ray(x=position, theta=0, n=1)))
+    solver = Solver(System(source=Ray(x=position, theta=0, n=1)))
     fail = [True]
 
     def residual(sim):

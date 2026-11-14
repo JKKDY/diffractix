@@ -53,7 +53,7 @@ incompatible target shape fails at solve time with NumPy's broadcast error.
 ### B1. Elements passed to the `System(...)` constructor report a library call site
 
 ```python
-s = System(Space(d=0.1), ThinLens(f=0.0), optical_input=Ray(x=0, theta=0, n=1))
+s = System(Space(d=0.1), ThinLens(f=0.0), source=Ray(x=0, theta=0, n=1))
 s.add(ThinLens(f=0.0))
 s.build()
 # 1. Placement #1 (ThinLens 'ThinLens1') added at ...\src\diffractix\system\system.py:56

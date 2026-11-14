@@ -27,7 +27,7 @@ def build_callbacks(solver):
 def test_full_callbacks_match_analytical_values_and_derivatives(wrap_in_jit):
     """Eager callbacks are also traceable when wrapped in jit; Solver JIT is tested in test_cache."""
     position, angle = Parameter(0.4).variable(), Parameter(0.3).variable()
-    solver = Solver(System(Space(d=1), optical_input=Ray(x=position, theta=angle, n=1)))
+    solver = Solver(System(Space(d=1), source=Ray(x=position, theta=angle, n=1)))
     solver.target(Objective(position ** 2, weight=3), Objective(lambda result: result.final.x - 1, weight=2), lambda result: 7)
     solver.require(Constraint(position * angle), Constraint(lambda result: result.final.vector), Constraint(position * angle))
     callbacks, graph_rows, callable_rows = build_callbacks(solver)
@@ -61,7 +61,7 @@ def test_full_callbacks_match_analytical_values_and_derivatives(wrap_in_jit):
 def test_all_result_symbol_kinds_and_lazy_result_sharing(monkeypatch):
     position = Parameter(0.4).variable()
     space = Space(d=1)
-    simulation = System(space, optical_input=Ray(x=position, theta=0.3, n=1)).build()
+    simulation = System(space, source=Ray(x=position, theta=0.3, n=1)).build()
     solver = Solver(simulation)
     solver.target(lambda result: result.initial.x + result.final.x)
     solver.require(*(Constraint(function) for function in (
@@ -90,7 +90,7 @@ def test_all_result_symbol_kinds_and_lazy_result_sharing(monkeypatch):
 def test_empty_constraints_have_correct_derivative_shapes():
     # Avoiding propagation for parameter-only models is tested in test_execution_regressions.
     parameter = Parameter(0.5).variable()
-    solver = Solver(System(optical_input=Ray(x=parameter, theta=0, n=1)))
+    solver = Solver(System(source=Ray(x=parameter, theta=0, n=1)))
     solver.target(parameter - 1)
     callbacks, graph_rows, callable_rows = build_callbacks(solver)
     assert graph_rows == callable_rows == ()
@@ -104,7 +104,7 @@ def test_empty_constraints_have_correct_derivative_shapes():
 def test_gaussian_runtime_symbols_preserve_complex_propagation_derivatives():
     distance = Parameter(0.5).variable()
     wavelength = 1e-6
-    solver = Solver(System(Space(d=distance), optical_input=GaussianBeam(q=1j, wavelength=wavelength, n=1)))
+    solver = Solver(System(Space(d=distance), source=GaussianBeam(q=1j, wavelength=wavelength, n=1)))
     solver.target(lambda result: result.final.w)
     solver.require(Constraint(lambda result: result.final.w ** 2))
     callbacks, _, _ = build_callbacks(solver)

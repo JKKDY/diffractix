@@ -9,7 +9,7 @@ def test_source_angle_and_lens_focal_length_recover_known_ray_design(use_jit):
     angle = Parameter(0.01).variable(bounds=(-0.1, 0.1))
     focal = Parameter(0.15).variable(bounds=(0.05, 0.3))
     lens = ThinLens(f=focal)
-    system = System(Space(d=0.1), lens, optical_input=Ray(x=0.002, theta=angle, n=1))
+    system = System(Space(d=0.1), lens, source=Ray(x=0.002, theta=angle, n=1))
     solver = Solver(system)
     solver.target(value=lambda sim: sim[lens].before.x, target=0.004, scale=0.004, label="lens height")
     solver.target(value=lambda sim: sim.final.theta, target=0, scale=0.02, label="collimated")
@@ -26,7 +26,7 @@ def test_source_angle_and_lens_focal_length_recover_known_ray_design(use_jit):
 def test_gaussian_waist_position_is_optimized_through_real_propagation(method):
     distance = Parameter(0.04).variable(bounds=(0.01, 0.15))
     space = Space(d=distance)
-    solver = Solver(System(space, optical_input=GaussianBeam(q=-0.08+0.03j, wavelength=1e-6, n=1)))
+    solver = Solver(System(space, source=GaussianBeam(q=-0.08+0.03j, wavelength=1e-6, n=1)))
     solver.target(lambda sim: sim.final.z0 / 0.08)
     solution = solver.solve(method=method, options={"maxiter": 150})
     assert solution.success and solution.feasible
@@ -41,7 +41,7 @@ def test_system_composite_element_and_solver_constraints_change_physical_optimum
     slab = Slab(d=thickness, n=1.5)
     slab.require(Constraint(slab.d, upper_bound=0.03, label="composite maximum"))
     slab.body.require(Constraint(slab.body.d, lower_bound=0.01, label="element minimum"))
-    system = System(slab, optical_input=Ray(x=0, theta=0.03, n=1))
+    system = System(slab, source=Ray(x=0, theta=0.03, n=1))
     system.require(Constraint(thickness, upper_bound=0.025, label="system maximum"))
     solver = Solver(system)
     solver.target(value=lambda sim: sim.final.x, target=0.001, scale=0.001)
@@ -60,7 +60,7 @@ def test_independent_indices_remain_continuous_during_optimization():
     upstream = Parameter(1.2).variable(bounds=(1, 2))
     incoming = Parameter(1.2).variable(bounds=(1, 2))
     interface = Interface(n1=incoming, n2=1)
-    solver = Solver(System(interface, optical_input=Ray(x=0, theta=0.01, n=upstream)))
+    solver = Solver(System(interface, source=Ray(x=0, theta=0.01, n=upstream)))
     solver.target(upstream - 1.6, incoming - 1.1)
     solution = solver.solve(options={"ftol": 1e-12})
     assert solution.success and solution.feasible
@@ -74,7 +74,7 @@ def test_independent_indices_remain_continuous_during_optimization():
 def test_repeated_space_occurrence_traces_longitudinal_and_state_quantities():
     distance = Parameter(0.03).variable(bounds=(0.01, 0.2))
     repeated = Space(d=distance)
-    solver = Solver(System(repeated, repeated, optical_input=Ray(x=0, theta=0.02, n=1)))
+    solver = Solver(System(repeated, repeated, source=Ray(x=0, theta=0.02, n=1)))
     solver.target(lambda sim: sim[repeated, 1].z_end / 0.2 - 1)
     solver.require(Constraint(lambda sim: sim[repeated, 0].after.x, upper_bound=0.003))
     solution = solver.solve()
@@ -90,7 +90,7 @@ def test_repeated_space_occurrence_traces_longitudinal_and_state_quantities():
 def test_generated_gap_constraint_prevents_optimized_element_crossing_station():
     distance = Parameter(0.05).variable(bounds=(0.01, 0.2))
     upstream, station = Space(d=distance), Plane()
-    system = System(upstream, optical_input=Ray(x=0, theta=0.01, n=1))
+    system = System(upstream, source=Ray(x=0, theta=0.01, n=1))
     system.add(station, z=0.1)
     solver = Solver(system).target(distance / 0.2 - 1)
     solution = solver.solve(options={"ftol": 1e-12})
@@ -106,7 +106,7 @@ def test_coupled_optical_gaps_keep_mechanical_clearance_at_small_scale():
     middle = Parameter(0.008).variable(bounds=(0.005, 0.014))
     output = Space(d=0.025 - first - middle)
     solver = Solver(System(Space(d=first), Space(d=middle), output,
-                           optical_input=Ray(x=0, theta=0.01, n=1)))
+                           source=Ray(x=0, theta=0.01, n=1)))
     solver.target((first - 0.01) / 0.01, (middle - 0.014) / 0.01)
     solver.require(Constraint(output.d, lower_bound=0.004, label="output clearance"))
     solution = solver.solve(options={"ftol": 1e-12})
@@ -125,7 +125,7 @@ def test_ray_bundle_array_residual_recovers_analytical_focus(use_jit):
     positions = np.array([-radius, 0., radius])
     focal = Parameter(0.15).variable(bounds=(0.05, 0.3))
     solver = Solver(System(ThinLens(f=focal), Space(d=length),
-                           optical_input=RayBundle(x=positions, theta=np.zeros(3), n=1)))
+                           source=RayBundle(x=positions, theta=np.zeros(3), n=1)))
     solver.target(lambda sim: sim.final.x / radius, label="bundle focus")
     solution = solver.solve(jit=use_jit, options={"ftol": 1e-12, "maxiter": 100})
     assert solution.success and solution.feasible
@@ -149,7 +149,7 @@ def test_ray_bundle_array_target_and_scale_recover_nonzero_image(use_jit):
     scale = np.array([0.001, 0.002, 0.003])
     focal = Parameter(0.15).variable(bounds=(0.06, 0.3))
     solver = Solver(System(ThinLens(f=focal), Space(d=0.05),
-                           optical_input=RayBundle(x=positions, theta=np.zeros(3), n=1)))
+                           source=RayBundle(x=positions, theta=np.zeros(3), n=1)))
     solver.target(value=lambda sim: sim.final.x, target=target, scale=scale, label="image")
     solution = solver.solve(jit=use_jit, options={"ftol": 1e-12})
     assert solution.success and solution.feasible
@@ -170,7 +170,7 @@ def test_quick_start_workflow_focuses_a_ray_onto_the_axis():
     lens = ThinLens(f=0.2)
     lens.f.variable(bounds=(0.05, 0.5))
     image_plane = Plane(label="Image plane")
-    system = System(optical_input=ray)
+    system = System(source=ray)
     system.add(lens, z=0.1)
     system.add(image_plane, z=0.2)
     simulation = system.build()
@@ -191,7 +191,7 @@ def test_quick_start_workflow_focuses_a_ray_onto_the_axis():
 def test_symbolic_result_expressions_define_objectives_and_labelled_inequalities():
     distance = Parameter(0.04).variable(bounds=(0.01, 0.15))
     space = Space(d=distance)
-    simulation = System(space, optical_input=GaussianBeam(q=-0.08+0.03j, wavelength=1e-6, n=1)).build()
+    simulation = System(space, source=GaussianBeam(q=-0.08+0.03j, wavelength=1e-6, n=1)).build()
     sim = simulation.symbolic
     solver = Solver(simulation)
     solver.target(value=sim.final.z0, target=0.0, scale=0.08, label="waist at the end")
@@ -207,7 +207,7 @@ def test_symbolic_result_expressions_define_objectives_and_labelled_inequalities
 
 def test_value_expression_with_default_scale_is_a_relative_preference():
     thickness = Parameter(0.01).variable(bounds=(0.001, 0.05))
-    solver = Solver(System(optical_input=Ray(x=thickness, theta=0, n=1)))
+    solver = Solver(System(source=Ray(x=thickness, theta=0, n=1)))
     solver.target(value=thickness, target=0.02, label="preferred thickness")
     solution = solver.solve(options={"ftol": 1e-14})
     assert solution.value(thickness) == pytest.approx(0.02, abs=1e-7)
@@ -218,7 +218,7 @@ def test_a_limit_on_every_stage_of_the_system_is_one_loop_over_symbolic_stages()
     distance = Parameter(0.05).variable(bounds=(0.01, 0.15))
     lens = ThinLens(f=0.1)
     simulation = System(Space(d=distance), lens, Space(d=0.1),
-                        optical_input=GaussianBeam(q=-0.05 + 0.02j, wavelength=1e-6, n=1)).build()
+                        source=GaussianBeam(q=-0.05 + 0.02j, wavelength=1e-6, n=1)).build()
     sim = simulation.symbolic
     solver = Solver(simulation)
     solver.target(value=sim.final.w, target=2e-4)

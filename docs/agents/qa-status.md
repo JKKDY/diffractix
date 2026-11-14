@@ -16,7 +16,7 @@ or CI matrix cells pass.
 
 ## API and QA scope
 
-Current names: System(optical_input=...), result[element].before/after,
+Current names: System(source=...), result[element].before/after,
 result[element, occurrence], stage.z_start/z_end, solution.value(parameter_or_expression).
 No legacy System(input=...), ctx.at(), Solution indexing or value_of() contract.
 The README quick start uses the current API. Examples and wheel/example scripts

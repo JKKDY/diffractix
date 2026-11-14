@@ -58,8 +58,8 @@ def test_make_symbol_creates_independent_instances_with_the_key(key):
 def test_variadic_constructor_matches_incremental_registration():
     first, second = Space(d=0.1), ThinLens(f=0.2)
     source = Ray(x=0.001, theta=0.01)
-    variadic = System(first, second, optical_input=source)
-    incremental = System().add(first).add(second).add_input(source)
+    variadic = System(first, second, source=source)
+    incremental = System().add(first).add(second).set_source(source)
     assert variadic.elements == incremental.elements == (first, second)
     assert variadic._inputs[0] is incremental._inputs[0] is source
     assert variadic.ambient_n.value == 1.0 and not variadic.ambient_n.is_variable
@@ -188,29 +188,38 @@ def test_placement_description_includes_identity_and_location():
     assert "#2" in text and "ThinLens" in text and "Focus" in text and "design.py:42" in text
 
 
-def test_add_input_rejects_numerical_states_without_mutating_system():
+def test_set_source_rejects_numerical_states_without_mutating_system():
     system = System()
     numerical = Ray(x=0.001, theta=0.0, n=1.0).numeric()
 
-    with pytest.raises(TypeError, match="declarative optical input"):
-        system.add_input(numerical)
-    with pytest.raises(TypeError, match="declarative optical input"):
-        System(optical_input=numerical)
+    with pytest.raises(TypeError, match="declarative source"):
+        system.set_source(numerical)
+    with pytest.raises(TypeError, match="declarative source"):
+        System(source=numerical)
 
-    assert system.add_input(Ray(x=0.001, theta=0.0, n=1.0)) is system
+    assert system._inputs == []
+    assert system.set_source(Ray(x=0.001, theta=0.0, n=1.0)) is system
 
 
-def test_add_input_rejects_invalid_and_additional_inputs_without_replacement():
-    system = System()
-    with pytest.raises(TypeError, match="ParaxialState"):
-        system.add_input(object())
-    with pytest.raises(ValueError, match="At least one"):
-        system.add_input([])
+@pytest.mark.parametrize("invalid", [object(), [Ray(x=0, theta=0)], None])
+def test_set_source_rejects_anything_but_a_single_state(invalid):
     first = Ray(x=0, theta=0)
-    assert system.add_input([first]) is system
-    with pytest.raises(ValueError, match="Multiple"):
-        system.add_input(Ray(x=0.001, theta=0))
+    system = System(source=first)
+    with pytest.raises(TypeError, match="Ray, RayBundle or GaussianBeam"):
+        system.set_source(invalid)
     assert system._inputs == [first]
+
+
+def test_set_source_replaces_the_earlier_source():
+    first, second = Ray(x=0, theta=0), Ray(x=0.001, theta=0)
+    system = System(source=first).set_source(second)
+    assert system._inputs == [second]
+    assert system.build().run().source.x == 0.001
+
+
+def test_build_without_a_source_explains_how_to_set_one():
+    with pytest.raises(SystemValidationError, match=r"No source.*source=.*set_source\(\)"):
+        System(Space(d=0.1)).build()
 
 
 @pytest.mark.parametrize("key", ["", None, 123, False, ("calibration", 1)])
@@ -250,7 +259,7 @@ def test_collect_bindings_combines_sources_and_deduplicates_reused_elements():
     first = BoundPlane(supplied_bindings={"calibration": Parameter(2)})
     second = BoundPlane(supplied_bindings={("phase", 0): Literal(1j)})
     source = GaussianBeam(q=0.02j, wavelength=1.064e-6, n=1.0)
-    system = System(first, second, first, optical_input=source).bind("user", 3)
+    system = System(first, second, first, source=source).bind("user", 3)
     combined = system._collect_bindings()
     assert combined["wavelength"] is source.wavelength
     assert combined["calibration"] is first.bindings["calibration"]
@@ -272,7 +281,7 @@ def test_collect_bindings_rejects_collisions_instead_of_overriding():
 
 def test_system_binding_cannot_silently_override_source_wavelength():
     source = GaussianBeam(q=0.02j, wavelength=1.064e-6, n=1.0)
-    system = System(optical_input=source).bind("wavelength", 1.55e-6)
+    system = System(source=source).bind("wavelength", 1.55e-6)
     with pytest.raises(ValueError, match="Duplicate symbol binding.*wavelength"):
         system._collect_bindings()
     assert source.wavelength.value == 1.064e-6
@@ -283,7 +292,7 @@ def test_constraints_collect_system_input_composite_and_children_once_in_order()
     source = Ray(x=0, theta=0, n=1.0)
     slab = Slab(d=0.01, n=1.5)
     direct, input_constraint, composite_constraint = source.x >= -1, source.theta <= 1, slab.d <= 0.02
-    system = System(slab, slab, optical_input=source).require(direct)
+    system = System(slab, slab, source=source).require(direct)
     source.require(input_constraint)
     slab.require(composite_constraint)
     expected = (direct, input_constraint, composite_constraint,
@@ -300,7 +309,7 @@ def test_validation_aggregates_missing_input_and_nested_element_errors():
         system._validate()
     assert len(error.value.errors) == 3
     text = str(error.value)
-    assert "No input" in text and "Broken direct" in text and "child 'bad'" in text
+    assert "No source" in text and "Broken direct" in text and "child 'bad'" in text
     assert "intentional validation failure" in text and "Placement #0" in text
 
 
@@ -317,7 +326,7 @@ def test_structural_equality_is_rejected_before_batch_mutation():
 
 def test_summary_describes_design_without_resolving_or_mutating_it():
     lens = ThinLens(f=0.1, label="Focus").variable("f")
-    system = System(lens, optical_input=Ray(x=0, theta=0, n=1.0))
+    system = System(lens, source=Ray(x=0, theta=0, n=1.0))
     constraint = lens.f >= 0.05
     assert system.require(constraint) is system
     before = system.placements
@@ -330,7 +339,7 @@ def test_summary_describes_design_without_resolving_or_mutating_it():
 def test_variadic_constructor_records_user_call_site_and_build_error_location():
     import inspect
     line = inspect.currentframe().f_lineno + 1
-    system = System(ThinLens(f=0), Plane(), optical_input=Ray(x=0, theta=0, n=1))
+    system = System(ThinLens(f=0), Plane(), source=Ray(x=0, theta=0, n=1))
     sites = [placement.call_site for placement in system.placements]
     filename = test_variadic_constructor_records_user_call_site_and_build_error_location.__code__.co_filename
     assert all(site.file == filename and site.line == line for site in sites)
@@ -477,7 +486,7 @@ def test_shared_provider_in_two_composites_of_one_system_contributes_once():
             self.shared = shared
 
     shared = BoundPlane(supplied_bindings={"calibration": 1.5})
-    system = System(Pair(shared), Pair(shared), optical_input=Ray(x=0, theta=0, n=1))
+    system = System(Pair(shared), Pair(shared), source=Ray(x=0, theta=0, n=1))
     assert system.build().bindings["calibration"] == 1.5
 
 
@@ -487,7 +496,7 @@ def test_summary_marks_variable_fixed_derived_and_empty_parameters():
         Space(d=distance, label="Gap"),                 # variable length, inherited index
         ThinLens(f=2 * distance, label="Derived"),      # an expression of the variable
         ThinLens(f=0.25, label="Fixed"),
-        optical_input=Ray(x=0, theta=0, n=1.0),
+        source=Ray(x=0, theta=0, n=1.0),
     )
     rows = {line.split()[3]: line for line in str(system).splitlines() if "relative" in line}
 
@@ -497,7 +506,7 @@ def test_summary_marks_variable_fixed_derived_and_empty_parameters():
 
 
 def test_summary_shows_absolute_positions_as_numbers_or_expressions():
-    system = System(optical_input=Ray(x=0, theta=0, n=1.0))
+    system = System(source=Ray(x=0, theta=0, n=1.0))
     system.add(ThinLens(f=0.1, label="Number"), z=0.2)
     system.add(ThinLens(f=0.1, label="Fixed"), z=Parameter(0.4))
     system.add(ThinLens(f=0.1, label="Derived"), z=2 * Parameter(0.3))
@@ -510,7 +519,7 @@ def test_summary_shows_absolute_positions_as_numbers_or_expressions():
 
 def test_summary_names_constraints_by_label_then_function_name_then_expression():
     distance = Parameter(0.1, name="distance").variable()
-    system = System(Space(d=distance), optical_input=Ray(x=0, theta=0, n=1.0))
+    system = System(Space(d=distance), source=Ray(x=0, theta=0, n=1.0))
 
     def stay_short():
         return distance <= 1

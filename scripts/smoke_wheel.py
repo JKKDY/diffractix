@@ -24,7 +24,7 @@ def main():
     lens = ThinLens(f=0.2)
     lens.f.variable(bounds=(0.05, 0.5))
     target = Plane(label="Image plane")
-    system = System(optical_input=Ray(x=0.01, theta=0.0))
+    system = System(source=Ray(x=0.01, theta=0.0))
     system.add(lens, z=0.1).add(target, z=0.2)
     simulation = system.build()
     np.testing.assert_allclose(simulation.run()[target].after.x, 0.005, atol=1e-12)

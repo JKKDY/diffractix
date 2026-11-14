@@ -40,7 +40,7 @@ system = System(
     Space(d=0.05),
     lens,
     Space(d=0.1),
-    optical_input=source,
+    source=source,
 )
 simulation = system.build()
 ```
@@ -66,7 +66,7 @@ can contribute Symbol bindings through their `bindings` properties. Use
 
 Build performs these steps:
 
-1. Validate the declared elements and require one optical input.
+1. Validate the declared elements and require one source.
 2. Collect bindings from the input, elements, composites and System.
 3. Flatten composites. Retain each leaf's path, label and identity.
 4. Resolve absolute placements and insert gap Spaces.

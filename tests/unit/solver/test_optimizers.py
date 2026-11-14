@@ -157,7 +157,7 @@ def test_solver_dispatch_matrix_forwards_options(
     from diffractix.solver import solver as solver_module
 
     parameter = Parameter(1.0).variable(bounds=(0.0, 2.0))
-    solver = Solver(System(optical_input=Ray(x=parameter, theta=0, n=1))).target(parameter - 1.0)
+    solver = Solver(System(source=Ray(x=parameter, theta=0, n=1))).target(parameter - 1.0)
     received = {}
 
     def solve(problem, method=None, options=None):
@@ -236,8 +236,9 @@ def test_lazy_optimizer_reports_missing_optional_dependency(monkeypatch, entry, 
 
     monkeypatch.setattr(optimizers, "import_module", missing)
 
-    with pytest.raises(ImportError, match=rf"diffractix\[{extra}\]"):
+    with pytest.raises(ImportError, match=rf"diffractix\[{extra}\]") as error:
         getattr(optimizers, entry)("problem")
+    assert ("conda install -c conda-forge cyipopt" in str(error.value)) == (extra == "ipopt")
 
 
 def fake_result(**updates):
@@ -787,7 +788,7 @@ print('lazy')
 def test_optimizer_can_be_selected_by_name(monkeypatch, name, function_name):
     from diffractix.solver import solver as solver_module
     parameter = Parameter(1.0).variable(bounds=(0.0, 2.0))
-    solver = Solver(System(optical_input=Ray(x=parameter, theta=0, n=1))).target(parameter - 1.0)
+    solver = Solver(System(source=Ray(x=parameter, theta=0, n=1))).target(parameter - 1.0)
     called = []
 
     def fake(problem, method=None, options=None):
@@ -801,7 +802,7 @@ def test_optimizer_can_be_selected_by_name(monkeypatch, name, function_name):
 
 def test_unknown_optimizer_is_rejected_with_the_choices_and_solve_is_keyword_only():
     parameter = Parameter(1.0).variable(bounds=(0.0, 2.0))
-    solver = Solver(System(optical_input=Ray(x=parameter, theta=0, n=1))).target(parameter - 1.0)
+    solver = Solver(System(source=Ray(x=parameter, theta=0, n=1))).target(parameter - 1.0)
     with pytest.raises(ValueError, match="'scipy', 'ipopt', 'nlopt'|choose one of"):
         solver.solve(optimizer="gradient-descent")
     with pytest.raises(ValueError, match="Unsupported optimizer"):

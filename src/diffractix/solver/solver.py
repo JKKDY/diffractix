@@ -97,7 +97,7 @@ class Solver:
     >>> from diffractix import Parameter, Ray, Solver, Space, System
     >>> from diffractix.units import mm
     >>> distance = Parameter(0.05).variable()
-    >>> solver = Solver(System(Space(d=distance), optical_input=Ray(x=0, theta=0.01, n=1)))
+    >>> solver = Solver(System(Space(d=distance), source=Ray(x=0, theta=0.01, n=1)))
     >>> solver = solver.target(value=lambda sim: sim.final.x, target=2 * mm)
     >>> solution = solver.solve()
     >>> round(float(solution.value(distance)), 6)

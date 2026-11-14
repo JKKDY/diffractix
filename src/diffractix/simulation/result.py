@@ -193,7 +193,7 @@ class SimulationResult:
         --------
         >>> from diffractix import Ray, Space, System, ThinLens
         >>> lens = ThinLens(f=0.1)
-        >>> result = System(lens, optical_input=Ray(x=1e-3, theta=0)).build().run()
+        >>> result = System(lens, source=Ray(x=1e-3, theta=0)).build().run()
         >>> float(result[lens].before.x), float(result[lens].after.x)
         (0.001, 0.001)
         """
@@ -415,7 +415,7 @@ class SimulationResultTracer:
 
     >>> from diffractix import Parameter, Ray, Solver, Space, System, ThinLens
     >>> space = Space(d=Parameter(0.05).variable())
-    >>> system = System(ThinLens(f=0.1), space, optical_input=Ray(x=1e-3, theta=0))
+    >>> system = System(ThinLens(f=0.1), space, source=Ray(x=1e-3, theta=0))
     >>> simulation = system.build()
     >>> sim = simulation.symbolic
     >>> solver = Solver(simulation).target(value=sim.final.x, target=0.0, scale=1e-3)

@@ -16,7 +16,7 @@ def test_nested_composite_paths_shared_theta_and_absolute_gap():
     distance=Parameter(0.01).variable(bounds=(0.005,0.02))
     relay=Relay(distance)
     target=ThinLens(f=0.1,label="target")
-    system=System(relay,optical_input=Ray(x=0.001,theta=0.01))
+    system=System(relay,source=Ray(x=0.001,theta=0.01))
     system.add(target,z=0.05)
     simulation=system.build()
     result=simulation.run()
@@ -43,7 +43,7 @@ def test_nested_composite_paths_shared_theta_and_absolute_gap():
 @pytest.mark.parametrize("attach", ["system","element"])
 def test_unsatisfiable_fixed_constraints_fail_build(attach):
     element=Space(d=0.01)
-    system=System(element,optical_input=Ray(x=0,theta=0))
+    system=System(element,source=Ray(x=0,theta=0))
     (system if attach=="system" else element).require(element.d>=0.02)
     with pytest.raises(ValueError,match="unsatisfiable"):
         system.build()
@@ -52,7 +52,7 @@ def test_unsatisfiable_fixed_constraints_fail_build(attach):
 def test_binding_aliases_capture_shared_parameter_once():
     p=Parameter(0.02).variable()
     element=Space(d=Symbol("length"))
-    system=System(element,optical_input=Ray(x=0.001,theta=0.01)).bind("length",2*p)
+    system=System(element,source=Ray(x=0.001,theta=0.01)).bind("length",2*p)
     simulation=system.build()
     assert len(simulation.parameter_data)==1
     assert simulation.run().z[-1] == pytest.approx(0.04)
@@ -62,7 +62,7 @@ def test_binding_aliases_capture_shared_parameter_once():
 
 
 @pytest.mark.parametrize("case,error,message", [
-    ("missing-input", SystemValidationError, "No input"),
+    ("missing-input", SystemValidationError, "No source"),
     ("unresolved", ValueError, "Unresolved optical Symbol.*missing"),
     ("external-variable", ValueError, "outside the optical model"),
     ("fixed-medium-mismatch", ValueError, "Refractive index mismatch"),
@@ -71,12 +71,12 @@ def test_invalid_models_fail_before_propagation(case, error, message):
     if case=="missing-input":
         system=System(Space(d=0.01))
     elif case=="unresolved":
-        system=System(Space(d=Symbol("missing")),optical_input=Ray(x=0,theta=0))
+        system=System(Space(d=Symbol("missing")),source=Ray(x=0,theta=0))
     elif case=="external-variable":
-        system=System(Space(d=0.01),optical_input=Ray(x=0,theta=0))
+        system=System(Space(d=0.01),source=Ray(x=0,theta=0))
         system.require(Parameter(0.1).variable()>=0)
     else:
-        system=System(Interface(n1=1.5,n2=1),optical_input=Ray(x=0,theta=0,n=1))
+        system=System(Interface(n1=1.5,n2=1),source=Ray(x=0,theta=0,n=1))
     with pytest.raises(error, match=message):
         system.build()
 
@@ -89,8 +89,8 @@ def test_invalid_models_fail_before_propagation(case, error, message):
 def test_explicit_element_index_must_match_incoming_medium(factory):
     """Only Interface changes the medium; other explicit indices are continuity checks."""
     with pytest.raises(ValueError, match="Refractive index mismatch"):
-        System(factory(), optical_input=Ray(x=0, theta=0, n=1)).build()
-    result = System(factory(), optical_input=Ray(x=0.001, theta=0.01, n=1.5)).build().run()
+        System(factory(), source=Ray(x=0, theta=0, n=1)).build()
+    result = System(factory(), source=Ray(x=0.001, theta=0.01, n=1.5)).build().run()
     assert result.final.n == pytest.approx(1.5)
 
 
@@ -100,7 +100,7 @@ def test_explicit_element_index_must_match_incoming_medium(factory):
 ], ids=["abcd", "grin"])
 def test_variable_explicit_index_becomes_a_continuity_equality(factory):
     index = Parameter(1.5).variable(bounds=(1.0, 2.0))
-    simulation = System(factory(index), optical_input=Ray(x=0, theta=0, n=1)).build()
+    simulation = System(factory(index), source=Ray(x=0, theta=0, n=1)).build()
     equalities = [entry for entry in simulation._constraint_descriptors
                   if entry.lower_bound == entry.upper_bound == 0]
     assert len(equalities) == 1 and "continuity" in equalities[0].label
@@ -117,7 +117,7 @@ def test_requirement_order_survives_nested_and_repeated_components_without_mutat
     from diffractix import Constraint
     p=Parameter(0.01).variable()
     relay=Relay(p)
-    system=System(relay,relay,optical_input=Ray(x=0,theta=0))
+    system=System(relay,relay,source=Ray(x=0,theta=0))
     system.require(Constraint(p,upper_bound=0.1,label="system"))
     relay.require(Constraint(p,lower_bound=0.001,label="composite"))
     relay.window.body.require(Constraint(p,upper_bound=0.02,label="child"))
@@ -138,10 +138,10 @@ def test_negative_generated_gap_is_fixed_infeasibility_or_optimizable_constraint
     upstream=Parameter(0.01)
     if variable:
         upstream.variable(bounds=(0,0.02))
-    system=System(Space(d=upstream),optical_input=Ray(x=0,theta=0.01))
+    system=System(Space(d=upstream),source=Ray(x=0,theta=0.01))
     system.add(ThinLens(f=0.1),z=0.005)
     if not variable:
-        with pytest.raises(ValueError,match="unsatisfiable"):
+        with pytest.raises(ValueError,match=r"0\.005 m before the preceding elements end at z = 0\.01 m"):
             system.build()
         return
     simulation=system.build()
@@ -157,7 +157,7 @@ def test_negative_generated_gap_is_fixed_infeasibility_or_optimizable_constraint
 def test_element_inspection_parameters_are_evaluated_expressions_not_live_fields():
     p=Parameter(0.02).variable()
     element=Space(d=2*p)
-    simulation=System(element,optical_input=Ray(x=0,theta=0)).build()
+    simulation=System(element,source=Ray(x=0,theta=0)).build()
     result=simulation.run([0.03])
     info=result.element_data[0]
     parameters=dict(zip(info.parameter_names,[result._optical_values[i] for i in info.parameter_indices]))

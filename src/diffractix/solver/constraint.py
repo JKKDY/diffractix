@@ -543,7 +543,8 @@ def _reduce_box_constraints(forms, output_indices, descriptors, parameter_lower,
         if effective is None:
             continue
         if not any(coefficients):
-            raise ValueError(f"Constraint {descriptor.position} is an unsatisfiable constant constraint.")
+            name = descriptor.label or f"Constraint {descriptor.position}"
+            raise ValueError(f"{name} is an unsatisfiable constant constraint.")
         retained_indices.append(output_index)
         retained.append(effective)
     return tuple(retained_indices), tuple(retained)

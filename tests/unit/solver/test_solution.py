@@ -17,7 +17,7 @@ def make_solution(*, solver=None, x=(2.,), lower=None, upper=None,
                   success=True, tolerance=DEFAULT_FEASIBILITY_TOLERANCE,
                   iterations=None, function_evaluations=None):
     if solver is None:
-        solver = Solver(System(optical_input=Ray(x=Parameter(0.5).variable(), theta=0, n=1)))
+        solver = Solver(System(source=Ray(x=Parameter(0.5).variable(), theta=0, n=1)))
     cache = solver._build_cache(False, solver.simulation.initial_values.values)
     result = SolverResult(np.array(x), success, 7.5, "stopped",
                           iterations=iterations, function_evaluations=function_evaluations)
@@ -84,7 +84,7 @@ def test_wrong_tolerance_type(tolerance):
 def test_updated_simulation_and_canonical_value_lookup():
     p = Parameter(0.5).variable()
     source = Ray(x=p, theta=0, n=1)
-    solver = Solver(System(optical_input=source))
+    solver = Solver(System(source=source))
     solution, _ = make_solution(solver=solver, x=(2.,), lower=[1.], upper=[3.])
     assert solution.simulation is not solver.simulation
     assert solution.value(p) == solution.value(source.x) == 2
@@ -104,7 +104,7 @@ def test_updated_simulation_and_canonical_value_lookup():
 
 def test_complete_evaluations_preserve_interleaved_order_and_vector_shapes():
     p = Parameter(0.5).variable()
-    system = System(optical_input=Ray(x=p, theta=0, n=1))
+    system = System(source=Ray(x=p, theta=0, n=1))
     system.require(Constraint(p, lower_bound=0, label="system"))
     solver = Solver(system)
 
@@ -139,7 +139,7 @@ def test_complete_evaluations_preserve_interleaved_order_and_vector_shapes():
 ])
 def test_constraint_margins_and_violations(lower, upper, x, margin):
     p = Parameter(0.5).variable()
-    solver = Solver(System(optical_input=Ray(x=p, theta=0, n=1)))
+    solver = Solver(System(source=Ray(x=p, theta=0, n=1)))
     solver.require(Constraint(p, lower_bound=lower, upper_bound=upper))
     solution, _ = make_solution(solver=solver, x=(x,))
     entry = solution.constraints[0]
@@ -164,7 +164,7 @@ def test_bound_violation_reporting_respects_tolerance(bound, direction, toleranc
 
 def test_reporting_shares_one_optical_result(monkeypatch):
     p = Parameter(0.5).variable()
-    solver = Solver(System(optical_input=Ray(x=p, theta=0, n=1)))
+    solver = Solver(System(source=Ray(x=p, theta=0, n=1)))
     solver.target(lambda result: result.final.x)
     solver.require(Constraint(lambda result: result.final.x, upper_bound=1))
     solution, _ = make_solution(solver=solver)
@@ -193,7 +193,7 @@ def test_solve_reports_reduced_constraints_and_keeps_overrides_local(monkeypatch
 
     monkeypatch.setattr(solver_module, "solve_scipy", backend)
     p = Parameter(0.5).variable(bounds=(0, 5))
-    solver = Solver(System(optical_input=Ray(x=p, theta=0, n=1)))
+    solver = Solver(System(source=Ray(x=p, theta=0, n=1)))
     solver.target(p - 3)
     solver.require(Constraint(p, lower_bound=1, label="bound-redundant"))
     solution = solver.solve(x0=[1.5], x_lower=[1], x_upper=[2])
@@ -214,7 +214,7 @@ def test_solve_reports_reduced_constraints_and_keeps_overrides_local(monkeypatch
 @pytest.mark.parametrize("value,satisfied", [(2.125, True), (2.25, False)])
 def test_constraint_reporting_tolerance(value, satisfied):
     p = Parameter(0.5).variable()
-    solver = Solver(System(optical_input=Ray(x=p, theta=0, n=1)))
+    solver = Solver(System(source=Ray(x=p, theta=0, n=1)))
     solver.require(Constraint(p, lower_bound=2, upper_bound=2))
     solution, _ = make_solution(solver=solver, x=(value,), tolerance=0.125)
     assert solution.constraints[0].satisfied is satisfied
@@ -223,7 +223,7 @@ def test_constraint_reporting_tolerance(value, satisfied):
 
 def test_empty_reporting_and_value_lookup_need_no_propagation(monkeypatch):
     p = Parameter(0.5).variable()
-    solver = Solver(System(optical_input=Ray(x=p, theta=0, n=1)))
+    solver = Solver(System(source=Ray(x=p, theta=0, n=1)))
     solution, _ = make_solution(solver=solver)
 
     def unexpected_run(*args):
@@ -238,7 +238,7 @@ def test_empty_reporting_and_value_lookup_need_no_propagation(monkeypatch):
 def test_parameter_bound_checks_cover_all_canonical_coordinates():
     first = Parameter(0.5).variable()
     second = Parameter(0.25).variable()
-    solver = Solver(System(optical_input=Ray(x=first, theta=second, n=1)))
+    solver = Solver(System(source=Ray(x=first, theta=second, n=1)))
     solution, _ = make_solution(solver=solver, x=(2., -3.),
                                 lower=[-np.inf, 0], upper=[np.inf, 1])
     assert solution.value(first) == 2
@@ -252,7 +252,7 @@ def test_parameter_bound_checks_cover_all_canonical_coordinates():
 @pytest.mark.parametrize("invalid", [np.nan, np.inf, -np.inf])
 def test_nonfinite_reporting_is_rejected(kind, invalid):
     p = Parameter(0.5).variable()
-    solver = Solver(System(optical_input=Ray(x=p, theta=0, n=1)))
+    solver = Solver(System(source=Ray(x=p, theta=0, n=1)))
 
     def residual(result):
         if result.final.x > 1:
@@ -271,7 +271,7 @@ def test_nonfinite_reporting_is_rejected(kind, invalid):
 def two_parameter_solution(**bindings):
     """Solution with first=2 and second=-3, whatever the canonical order of the two."""
     first, second = Parameter(0.5).variable(), Parameter(0.25).variable()
-    system = System(optical_input=Ray(x=first, theta=second, n=1))
+    system = System(source=Ray(x=first, theta=second, n=1))
     for key, build in bindings.items():
         system.bind(key, build(first, second))
     solver = Solver(system)
@@ -364,7 +364,7 @@ def test_str_summarizes_status_variables_objectives_and_constraints():
     gap = Space(d=0.5)
     gap.d.variable(bounds=(0, 1))
     lens = ThinLens(f=0.1)
-    simulation = System(gap, lens, optical_input=Ray(x=1e-3, theta=1e-3, n=1)).build()
+    simulation = System(gap, lens, source=Ray(x=1e-3, theta=1e-3, n=1)).build()
     sim = simulation.symbolic
     solver = Solver(simulation)
     solver.target(value=sim[lens].after.x, target=0.0, label="focus")
@@ -378,7 +378,7 @@ def test_str_summarizes_status_variables_objectives_and_constraints():
 
 
 def test_str_omits_sections_with_no_entries():
-    solver = Solver(System(optical_input=Ray(x=0.5, theta=0, n=1)))
+    solver = Solver(System(source=Ray(x=0.5, theta=0, n=1)))
     solution, _ = make_solution(solver=solver, x=())
     text = str(solution)
     assert text.startswith("Solution: converged, feasible")
@@ -387,7 +387,7 @@ def test_str_omits_sections_with_no_entries():
 
 def test_reporting_rejects_a_deferred_callable_that_returns_a_graph_node():
     p = Parameter(0.5).variable()
-    solver = Solver(System(optical_input=Ray(x=p, theta=0, n=1)))
+    solver = Solver(System(source=Ray(x=p, theta=0, n=1)))
 
     def residual(result):
         return p if result.final.x > 1 else result.final.x   # a Node only at the solved point
@@ -401,7 +401,7 @@ def test_reporting_rejects_a_deferred_callable_that_returns_a_graph_node():
 @pytest.mark.filterwarnings("ignore:overflow encountered:RuntimeWarning")
 def test_reporting_rejects_a_finite_residual_whose_cost_overflows():
     p = Parameter(0.5).variable()
-    solver = Solver(System(optical_input=Ray(x=p, theta=0, n=1)))
+    solver = Solver(System(source=Ray(x=p, theta=0, n=1)))
     solver.target(lambda result: 1e200 if result.final.x > 1 else result.final.x, label="huge")
     solution, _ = make_solution(solver=solver)
     with pytest.raises(ValueError, match="'huge' cost is non-finite"):
