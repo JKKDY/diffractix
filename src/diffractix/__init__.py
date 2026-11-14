@@ -2,8 +2,9 @@
 
 # Optical inputs
 from .core import OpticalBase
-from .input import (
-    OpticalInput,
+from . import units
+from .states import (
+    OpticalState,
     ParaxialState,
     GaussianBeam,
     Ray,
@@ -63,7 +64,8 @@ from .solver import (
 __all__ = [
     # Optical inputs
     "OpticalBase",
-    "OpticalInput",
+    "units",
+    "OpticalState",
     "ParaxialState",
     "GaussianBeam",
     "Ray",

@@ -10,8 +10,28 @@ from ..system import AMBIENT_N
 
 
 class Slab(CompositeElement):
-    """
-    A sequence representing a physical block of material (Window, Filter, Crystal).
+    """A block of material with flat faces, such as a window, filter or crystal.
+
+    Parameters
+    ----------
+    d : float or Node
+        Thickness [m].
+    n : float or Node
+        Refractive index of the material.
+    ambient_n : float or Node, optional
+        Refractive index outside the block. Defaults to the system's ambient index.
+    label : str, optional
+        Name used in results and messages. Defaults to an automatic name such as
+        ``"Slab1"``.
+
+    Attributes
+    ----------
+    front : Interface
+        Entry face, from `ambient_n` to `n`.
+    body : Space
+        The material, of length `d`.
+    back : Interface
+        Exit face, from `n` to `ambient_n`.
     """
 
     d: Node

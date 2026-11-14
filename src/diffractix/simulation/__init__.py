@@ -7,4 +7,6 @@ __all__ = [
     "SimulationResultView",
     "SimulationResultTracer",
     "Simulation",
+    "SimulationStep",
+    "SimulationInput",
 ]

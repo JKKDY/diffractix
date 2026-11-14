@@ -69,7 +69,9 @@ def test_flattening_preserves_paths_identity_call_site_and_first_absolute_positi
     system = System().add(relay, z=0.5)
     original = system.placements[0]
     resolved = system._resolve_elements()
-    assert [p.path for p in resolved] == ["lens", "slab.front", "slab.body", "slab.back"]
+    name = relay.label
+    assert [p.path for p in resolved] == [
+        (name, "lens"), (name, "slab", "front"), (name, "slab", "body"), (name, "slab", "back")]
     assert all(p.element is leaf for p, leaf in zip(resolved, relay.leaf_elements))
     assert [p.z for p in resolved] == [0.5, None, None, None]
     assert all(p.call_site is original.call_site for p in resolved)
@@ -112,9 +114,11 @@ def test_layout_preserves_paths_and_call_site_on_generated_space():
     system = System().add(slab, z=0.1)
     original = system.placements[0]
     resolved, metadata = system._resolve_layout(system._resolve_elements(), system.bindings)
-    assert [p.path for p in resolved] == ["front", "front", "body", "back"]
+    # The generated gap belongs to no composite; the slab's parts carry its label.
+    expected = [None, (slab.label, "front"), (slab.label, "body"), (slab.label, "back")]
+    assert [p.path for p in resolved] == expected
     assert all(p.call_site is original.call_site for p in resolved)
-    assert [info.path for info in metadata] == ["front", "front", "body", "back"]
+    assert [info.path for info in metadata] == expected
     assert all(info.element_id == id(p.element) for info, p in zip(metadata, resolved))
 
 
@@ -126,7 +130,7 @@ def test_source_medium_wins_and_inherited_element_field_is_not_assigned(source_n
     placement = system.placements[0]
     resolved, continuity = system._resolve_refractive_indices((placement,), system.bindings)
     assert isinstance(resolved[0], ResolvedPlacement) and resolved[0].placement is placement
-    assert resolved[0].refractive_index.evaluate(system.bindings) == source_n
+    assert resolved[0].refractive_index.evaluate(bindings=system.bindings) == source_n
     assert continuity == () and space.n.node is None
 
 
@@ -134,7 +138,7 @@ def test_source_medium_wins_and_inherited_element_field_is_not_assigned(source_n
 def test_absent_or_ambient_symbol_source_index_resolves_to_ambient(source):
     system = System(Plane(), optical_input=source, ambient_n=1.33)
     resolved, continuity = system._resolve_refractive_indices(system.placements, system.bindings)
-    assert resolved[0].refractive_index.evaluate(system.bindings) == 1.33 and continuity == ()
+    assert resolved[0].refractive_index.evaluate(bindings=system.bindings) == 1.33 and continuity == ()
 
 
 def test_interface_changes_medium_and_downstream_elements_inherit_it():
@@ -142,7 +146,7 @@ def test_interface_changes_medium_and_downstream_elements_inherit_it():
     front, body, back = Interface(n1=1.0, n2=1.5), Space(d=0.01, n=1.5), Interface(n1=1.5, n2=1.0)
     system = System(front, body, back, Plane(), optical_input=source)
     resolved, continuity = system._resolve_refractive_indices(system.placements, system.bindings)
-    assert [p.refractive_index.evaluate(system.bindings) for p in resolved] == [1.5, 1.5, 1.0, 1.0]
+    assert [p.refractive_index.evaluate(bindings=system.bindings) for p in resolved] == [1.5, 1.5, 1.0, 1.0]
     assert continuity == ()
     assert all(p.element is declared for p, declared in zip(resolved, system.elements))
 
@@ -163,9 +167,9 @@ def test_variable_continuity_is_an_equality_even_when_initially_unsatisfied():
     constraint = continuity[0]
     assert constraint.lower_bound == constraint.upper_bound == 0.0
     assert "Refractive index continuity at" in constraint.label and "Glass" in constraint.label
-    assert constraint.evaluate.evaluate() == -0.5
+    assert constraint.quantity.evaluate() == -0.5
     source_n.value = 1.5
-    assert constraint.evaluate.evaluate() == 0.0
+    assert constraint.quantity.evaluate() == 0.0
     assert resolved[0].refractive_index is required_n
 
 
@@ -174,7 +178,7 @@ def test_continuity_binding_reaches_variable_parameter_through_symbol():
     element = Space(d=0.1, n=Symbol("glass"))
     system = System(element, optical_input=Ray(x=0, theta=0, n=1.5)).bind("glass", index)
     resolved, continuity = system._resolve_refractive_indices(system.placements, system.bindings)
-    assert len(continuity) == 1 and continuity[0].evaluate.evaluate(system.bindings) == 0.0
+    assert len(continuity) == 1 and continuity[0].quantity.evaluate(bindings=system.bindings) == 0.0
     assert resolved[0].refractive_index is element.n.node
 
 
@@ -275,8 +279,8 @@ def test_complex_aperture_roots_preserve_real_source_wavelength():
     assert not np.iscomplexobj(numerical.wavelength) and numerical.wavelength == 1.064e-6
 
 
-def test_unresolved_optical_symbol_is_rejected_even_with_interpreter_default():
-    system = System(ThinLens(f=Symbol("missing_focal", default=0.1)),
+def test_unresolved_optical_symbol_is_rejected():
+    system = System(ThinLens(f=Symbol("missing_focal")),
                     optical_input=Ray(x=0, theta=0, n=1.0))
     with pytest.raises(ValueError, match="Unresolved optical Symbol.*missing_focal"):
         compile_optics(system)
@@ -298,7 +302,7 @@ def test_satisfied_fixed_constraints_are_removed_including_exact_boundaries(cons
     constraint = Constraint(expression, lower, upper, label="constant")
     program, descriptors, callables = System()._compile_constraints((constraint,), {}, {})
     assert program.evaluate([]) == () and descriptors == () and callables == ()
-    assert constraint.evaluate is expression and expression.left.left.value == constant
+    assert constraint.quantity is expression and expression.left.left.value == constant
 
 
 @pytest.mark.parametrize("value", [-1.0, 3.0])
@@ -332,10 +336,9 @@ def test_constraints_cannot_introduce_variables_outside_model_theta(through_symb
         System()._compile_constraints((expression >= 0,), bindings, {})
 
 
-@pytest.mark.parametrize("default", [None, 1.0])
-def test_constraint_symbols_need_explicit_compile_bindings(default):
+def test_constraint_symbols_need_explicit_compile_bindings():
     with pytest.raises(ValueError, match="unresolved Symbol binding.*missing"):
-        System()._compile_constraints((Symbol("missing", default=default) >= 0,), {}, {})
+        System()._compile_constraints((Symbol("missing") >= 0,), {}, {})
 
 
 def test_bound_symbol_resolves_and_fixed_external_parameter_is_allowed():
@@ -517,3 +520,22 @@ def test_simulation_bindings_are_a_build_time_structural_snapshot():
     solution = solver.solve()
     assert solution.value(variable) == pytest.approx(0.15, rel=1e-4)
     assert solution.value(Symbol("focal")) == pytest.approx(0.3, rel=1e-4)
+
+
+def test_element_paths_start_with_the_top_level_composite_and_are_none_for_direct_elements_and_gaps():
+    from diffractix.composites import Telescope
+    telescope = Telescope(f1=0.05, f2=0.1, label="Relay")
+
+    class Module(CompositeElement):
+        def __init__(self):
+            super().__init__(label="Module")
+            self.inner = Telescope(f1=0.02, f2=0.02, label="Inner")
+
+    module = Module()
+    first = Space(d=0.01)
+    system = System(first, telescope, optical_input=Ray(x=0.001, theta=0.0)).add(module, z=0.5)
+    paths = {info.label: info.path for info in system.build().element_data}
+    assert paths[first.label] is None                                   # added directly
+    assert paths[f"AutoSpace_to_{module.inner.lens1.label}"] is None    # generated gap
+    assert paths[telescope.lens1.label] == ("Relay", "lens1")
+    assert paths[module.inner.lens1.label] == ("Module", "inner", "lens1")

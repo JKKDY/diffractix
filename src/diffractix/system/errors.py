@@ -1,16 +1,14 @@
-from numbers import Real
-
-import numpy as np
-
-from diffractix.input.paraxial_input import ParaxialState
-from diffractix.composites.composite import CompositeElement
-from diffractix.elements import OpticalElement
-from diffractix.graph import Node
 
 
 
 class SystemValidationError(ValueError):
-    """Raised when a declarative System contains invalid input."""
+    """Raised by `System.build` when the system is invalid, listing every problem found.
+
+    Attributes
+    ----------
+    errors : tuple of str
+        One message per problem.
+    """
 
     def __init__(self, errors: list[str]):
         self.errors = tuple(errors)

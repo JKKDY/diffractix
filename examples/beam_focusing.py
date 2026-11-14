@@ -3,19 +3,21 @@
 The optimizer moves a single lens and chooses its focal length so that the beam
 waist lands on the workpiece with the requested spot radius. The workpiece stays
 at the same absolute position because the working distance is defined as the
-remaining system length. All lengths are in metres.
+remaining system length. Values are written with unit constants; diffractix
+computes in SI.
 """
 
-from diffractix import GaussianBeam, Plane, Solver, Space, System, ThinLens
+from diffractix import GaussianBeam, Plane, Solver, Space, System, ThinLens, units
+from diffractix.units import mm, mrad, nm, um
 
-WAVELENGTH = 1064e-9
-INPUT_RADIUS = 0.75e-3
-TARGET_WAIST_RADIUS = 30e-6
-SYSTEM_LENGTH = 150e-3
-MIN_WORKING_DISTANCE = 50e-3
-LENS_CLEAR_DIAMETER = 4e-3
-MAX_DIVERGENCE = 0.03  # Gaussian far-field half-angle in radians: paraxial limit
-DEFOCUS = 2e-3         # Workpiece positioning error to inspect
+WAVELENGTH = 1064 * nm
+INPUT_RADIUS = 0.75 * mm
+TARGET_WAIST_RADIUS = 30 * um
+SYSTEM_LENGTH = 150 * mm
+MIN_WORKING_DISTANCE = 50 * mm
+LENS_CLEAR_DIAMETER = 4 * mm
+MAX_DIVERGENCE = 30 * mrad  # Gaussian far-field half-angle: paraxial limit
+DEFOCUS = 2 * mm            # Workpiece positioning error to inspect
 
 
 # ------
@@ -26,10 +28,8 @@ DEFOCUS = 2e-3         # Workpiece positioning error to inspect
 source = GaussianBeam.from_waist(w0=INPUT_RADIUS, wavelength=WAVELENGTH)
 target_focus = GaussianBeam.from_waist(w0=TARGET_WAIST_RADIUS, wavelength=WAVELENGTH).numeric()
 
-input_gap = Space(d=60e-3, label="Source to lens")
-input_gap.d.variable(bounds=(40e-3, None))
-lens = ThinLens(f=45e-3, label="Focusing lens")
-lens.f.variable(bounds=(35e-3, 110e-3))
+input_gap = Space(d=60 * mm, label="Source to lens").variable(d=(40 * mm, None))
+lens = ThinLens(f=45 * mm, label="Focusing lens").variable(f=(35 * mm, 110 * mm))
 working_distance = Space(d=SYSTEM_LENGTH - input_gap.d, label="Working distance")
 workpiece = Plane(label="Workpiece")
 
@@ -72,8 +72,10 @@ def table(title):
     print("-" * 56)
 
 
-def row(label, before, after, scale=1.0, unit=""):
-    print(f"{label:<26} {before * scale:>12.4f} {after * scale:>12.4f} {unit}")
+def row(label, before, after, unit=None):
+    """A row of values in unit (a unit constant), or as plain numbers without one."""
+    scale, symbol = (unit, unit.symbol) if unit is not None else (1.0, "")
+    print(f"{label:<26} {float(before) / scale:>12.4f} {float(after) / scale:>12.4f} {symbol}")
 
 
 print(f"Optimization: success={solution.success}, feasible={solution.feasible}, "
@@ -82,27 +84,28 @@ print(f"Optimization: success={solution.success}, feasible={solution.feasible}, 
 print(f"  {solution.message}")
 
 table("Design")
-row("Source to lens", input_gap.d.value, solution.value(input_gap.d), 1e3, "mm")
-row("Lens focal length", lens.f.value, solution.value(lens.f), 1e3, "mm")
-row("Working distance", working_distance.d.value, solution.value(working_distance.d), 1e3, "mm")
-row("System length", initial.z[-1], optimized.z[-1], 1e3, "mm")
-print(f"Minimum working distance: {MIN_WORKING_DISTANCE * 1e3:.1f} mm")
+row("Source to lens", input_gap.d.value, solution.value(input_gap.d), mm)
+row("Lens focal length", lens.f.value, solution.value(lens.f), mm)
+row("Working distance", working_distance.d.value, solution.value(working_distance.d), mm)
+row("System length", initial.z[-1], optimized.z[-1], mm)
+print(f"Minimum working distance: {units.format(MIN_WORKING_DISTANCE, mm)}")
 
 before, after = initial[workpiece].after, optimized[workpiece].after
 table("Focus at the workpiece")
-row("Spot radius", before.w, after.w, 1e6, "um")
-row("Waist offset", before.z0, after.z0, 1e3, "mm")
-row("Waist radius", before.w0, after.w0, 1e6, "um")
-row("Confocal parameter", before.b, after.b, 1e3, "mm")
-row(f"Spot {DEFOCUS * 1e3:.0f} mm before", before.w_at_z(-DEFOCUS), after.w_at_z(-DEFOCUS), 1e6, "um")
-row(f"Spot {DEFOCUS * 1e3:.0f} mm after", before.w_at_z(DEFOCUS), after.w_at_z(DEFOCUS), 1e6, "um")
-print(f"Target waist radius: {target_focus.w * 1e6:.1f} um")
+row("Spot radius", before.w, after.w, um)
+row("Waist offset", before.z0, after.z0, mm)
+row("Waist radius", before.w0, after.w0, um)
+row("Confocal parameter", before.b, after.b, mm)
+row(f"Spot {units.format(DEFOCUS, mm)} before", before.w_at_z(-DEFOCUS), after.w_at_z(-DEFOCUS), um)
+row(f"Spot {units.format(DEFOCUS, mm)} after", before.w_at_z(DEFOCUS), after.w_at_z(DEFOCUS), um)
+print(f"Target waist radius: {units.format(target_focus.w, um)}")
 
 table("Model checks")
-row("Beam radius at lens", initial[lens].after.w, optimized[lens].after.w, 1e3, "mm")
+row("Beam radius at lens", initial[lens].after.w, optimized[lens].after.w, mm)
 row("Divergence after lens", initial[lens].after.divergence_angle,
-    optimized[lens].after.divergence_angle, unit="rad")
-print(f"Limits: radius {LENS_CLEAR_DIAMETER / 4 * 1e3:.2f} mm, divergence {MAX_DIVERGENCE} rad")
+    optimized[lens].after.divergence_angle, mrad)
+print(f"Limits: radius {units.format(LENS_CLEAR_DIAMETER / 4, mm)}, "
+      f"divergence {units.format(MAX_DIVERGENCE, mrad)}")
 
 print("\nObjectives at the optimum")
 for objective in solution.objectives:

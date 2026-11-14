@@ -33,13 +33,13 @@ def test_bounds_have_one_spelling_in_constructor_variable_and_property():
     assert constructed.bounds == marked.bounds == assigned.bounds == (4e-3, 10e-3)
     assert not constructed.is_variable and not assigned.is_variable
     assert (marked.lower_bound, marked.upper_bound) == (4e-3, 10e-3)
+    assert Parameter(5e-3).bounds == Parameter(5e-3, bounds=(-np.inf, np.inf)).bounds == (-np.inf, np.inf)
 
 
 @pytest.mark.parametrize("bounds, expected", [
     ((None, 2.0), (0.5, 2.0)),
     ((0.0, None), (0.0, 1.5)),
     ((None, None), (0.5, 1.5)),
-    (None, (0.5, 1.5)),
     ((-np.inf, np.inf), (-np.inf, np.inf)),
 ])
 def test_none_keeps_the_current_endpoint_and_infinities_remove_it(bounds, expected):
@@ -56,6 +56,13 @@ def test_variable_without_bounds_keeps_existing_bounds():
     assert parameter.is_variable and parameter.bounds == (0.0, 2.0)
 
 
+def test_assigning_none_bounds_is_rejected():
+    parameter = Parameter(1.0, bounds=(0.0, 2.0))
+    with pytest.raises(ValueError, match="pair"):
+        parameter.bounds = None
+    assert parameter.bounds == (0.0, 2.0)
+
+
 def test_variable_accepts_bounds_only_by_keyword_and_has_no_endpoint_arguments():
     parameter = Parameter(1.0)
     for call in (lambda: parameter.variable(0.0, 2.0), lambda: parameter.variable(lower_bound=0.0),
@@ -66,12 +73,14 @@ def test_variable_accepts_bounds_only_by_keyword_and_has_no_endpoint_arguments()
 
 
 @pytest.mark.parametrize("bounds, error", [
-    ((2.0, 0.0), ValueError), ((0.0, 0.5), ValueError),
-    ((True, 2.0), TypeError), ((np.nan, 2.0), ValueError),
-    ((0.0,), ValueError), ((0.0, 1.0, 2.0), ValueError), (5.0, ValueError),
+    ((2.0, 0.0), ValueError),                                   # inverted
+    ((1.2, 1.4), ValueError), ((0.6, 0.8), ValueError),         # current value outside
+    ((True, 1.5), TypeError), ((0.5, "invalid"), TypeError),    # not real numbers
+    ((np.nan, 1.5), ValueError), ((None, np.nan), ValueError),
+    ((0.5,), ValueError), ((0.5, 1.0, 1.5), ValueError), (5.0, ValueError),   # not a pair
 ])
 def test_bounds_validation_is_atomic_for_every_spelling(bounds, error):
-    parameter = Parameter(1.0)
+    parameter = Parameter(1.0, bounds=(0.5, 1.5))
     with pytest.raises(error):
         parameter.variable(bounds=bounds)
     with pytest.raises(error):
@@ -79,7 +88,7 @@ def test_bounds_validation_is_atomic_for_every_spelling(bounds, error):
     with pytest.raises(error):
         Parameter(1.0, bounds=bounds)
     assert not parameter.is_variable
-    assert parameter.bounds == (-np.inf, np.inf)
+    assert parameter.bounds == (0.5, 1.5)
 
 
 # ---------------------------
@@ -247,57 +256,6 @@ def test_parameter_constructor_can_make_variable():
     assert x.is_variable is True
 
 
-def test_parameter_bounds():
-    """Bounds are stored as a pair and reject an inverted interval."""
-    x = Parameter(10, name="x")
-
-    x.bounds = (5, 20)
-    assert x.lower_bound == 5
-    assert x.upper_bound == 20
-
-    with pytest.raises(ValueError):
-        x.bounds = (20, 5)
-
-
-@pytest.mark.parametrize("bound", (True, "invalid"))
-def test_parameter_rejects_nonreal_bounds(bound):
-    with pytest.raises(TypeError, match="bound"):
-        Parameter(1.0, bounds=(bound, None))
-
-    with pytest.raises(TypeError, match="bound"):
-        Parameter(1.0, bounds=(None, bound))
-
-
-@pytest.mark.parametrize("bound", (np.nan,))
-def test_parameter_rejects_nan_bounds(bound):
-    with pytest.raises(ValueError, match="NaN"):
-        Parameter(1.0, bounds=(bound, None))
-
-    with pytest.raises(ValueError, match="NaN"):
-        Parameter(1.0, bounds=(None, bound))
-
-
-def test_parameter_allows_infinite_bounds():
-    parameter = Parameter(1.0, bounds=(-np.inf, np.inf))
-
-    assert parameter.lower_bound == -np.inf
-    assert parameter.upper_bound == np.inf
-
-
-def test_parameter_variable_validates_and_preserves_bounds_atomically():
-    parameter = Parameter(1.0, bounds=(0.0, 2.0))
-
-    with pytest.raises(ValueError, match="lower_bound"):
-        parameter.variable(bounds=(2.0, 0.0))
-
-    assert not parameter.is_variable
-    assert parameter.lower_bound == 0.0
-    assert parameter.upper_bound == 2.0
-
-    with pytest.raises(TypeError, match="lower_bound"):
-        parameter.variable(bounds=(True, None))
-
-
 def test_parameter_without_name():
     """Standalone Parameters do not require names."""
     x = Parameter(10)
@@ -459,28 +417,6 @@ def test_symbol_has_no_standalone_value():
         _ = symbol.value
 
 
-def test_symbol_none_default_is_unset():
-    absent = Symbol("ambient_n")
-    explicit_none = Symbol("ambient_n", default=None)
-
-    assert absent.default is None
-    assert absent.has_default is False
-    assert explicit_none.default is None
-    assert explicit_none.has_default is False
-
-
-def test_symbol_set_default_updates_value_and_returns_symbol():
-    symbol = Symbol("ambient_n")
-
-    assert symbol.set_default(1.5) is symbol
-    assert symbol.default == 1.5
-    assert symbol.has_default is True
-
-    assert symbol.set_default(None) is symbol
-    assert symbol.default is None
-    assert symbol.has_default is False
-
-
 def test_symbols_are_not_interned():
     """
     Equal Symbol keys need not imply object identity.
@@ -517,40 +453,22 @@ def test_scalar_comparison_preserves_operands_and_relation(operation, relation):
 # ----------------
 # NODE OPERANDS
 # ----------------
-def test_comparison_preserves_node_operands():
-    x = Parameter(1.0)
-    y = Parameter(2.0)
+@pytest.mark.parametrize("make_left, make_right, relation", [
+    pytest.param(lambda x, y: x, lambda x, y: y, operator.le, id="parameters"),
+    pytest.param(lambda x, y: x + y, lambda x, y: 3.0, operator.eq, id="expression-and-scalar"),
+    pytest.param(lambda x, y: x + 1.0, lambda x, y: 2.0 * y, operator.ge, id="two-expressions"),
+])
+def test_comparison_keeps_node_and_expression_operands_by_identity(make_left, make_right, relation):
+    x, y = Parameter(1.0), Parameter(2.0)
+    left, right = make_left(x, y), make_right(x, y)
+    comparison = relation(left, right)
 
-    comparison = x <= y
-
-    assert comparison.left is x
-    assert comparison.right is y
-
-
-def test_comparison_accepts_expression_operands():
-    x = Parameter(1.0)
-    y = Parameter(2.0)
-
-    expression = x + y
-    comparison = expression == 3.0
-
-    assert comparison.relation is Relation.EQ
-    assert comparison.left is expression
-    assert isinstance(comparison.right, Literal)
-    assert comparison.right.value == 3.0
-
-
-def test_comparison_between_expressions():
-    x = Parameter(1.0)
-    y = Parameter(2.0)
-
-    left = x + 1.0
-    right = 2.0 * y
-    comparison = left >= right
-
-    assert comparison.relation is Relation.GE
+    assert isinstance(comparison, Comparison)
     assert comparison.left is left
-    assert comparison.right is right
+    if isinstance(right, Node):
+        assert comparison.right is right
+    else:
+        assert isinstance(comparison.right, Literal) and comparison.right.value == right
 
 
 # ---------------------
@@ -578,24 +496,12 @@ def test_reflected_scalar_comparison_preserves_operands_and_relation(operation, 
 # -------------------
 # BOOLEAN SEMANTICS
 # -------------------
-def test_symbolic_comparison_has_no_truth_value():
-    x = Parameter(1.0)
-    comparison = x == 1.0
-
-    with pytest.raises(
-        SymbolicControlFlowError,
-        match="cannot be used as Python booleans",
-    ):
-        bool(comparison)
-
-
-def test_symbolic_comparison_fails_in_if_statement():
+def test_symbolic_comparison_has_no_truth_value_in_bool_or_if():
     x = Parameter(1.0)
 
-    with pytest.raises(
-        SymbolicControlFlowError,
-        match="cannot be used as Python booleans",
-    ):
+    with pytest.raises(SymbolicControlFlowError, match="cannot be used as Python booleans"):
+        bool(x == 1.0)
+    with pytest.raises(SymbolicControlFlowError, match="cannot be used as Python booleans"):
         if x == 1.0:
             pass
 
@@ -699,3 +605,16 @@ def test_parameter_rejects_nan_at_construction(bounds, variable, name):
     with pytest.raises(ValueError, match="NaN") as error:
         Parameter(np.nan, name=name, variable=variable, **bounds)
     assert repr(name or "<parameter>") in str(error.value)
+
+
+def test_full_name_combines_the_owner_label_with_the_parameter_name():
+    """Used in messages and reports: owner label, then the field name when there is one."""
+    from diffractix.elements import ThinLens
+    lens = ThinLens(f=0.1, label="Objective")
+
+    assert lens.f.node.full_name == "Objective.f"
+    assert Parameter(1.0, owner=lens).full_name == "Objective"
+    assert Parameter(1.0, name="spacing").full_name == "spacing"
+    assert Parameter(1.0).full_name == "<parameter>"
+    assert repr(Parameter(1.5, name="spacing").variable()) == "spacing=1.5[V]"
+    assert repr(Parameter(1.5, name="spacing")) == "spacing=1.5[F]"

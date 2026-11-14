@@ -1,6 +1,7 @@
 """Constraint reduction preserves the feasible set of a full compiled program."""
 
 from itertools import product
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -10,7 +11,7 @@ from diffractix.solver.constraint import Constraint, ConstraintDescriptor, prepa
 
 
 def make_problem(*constraints):
-    program = precompile(tuple(item.evaluate for item in constraints))
+    program = precompile(tuple(item.quantity for item in constraints))
     descriptors = tuple(
         ConstraintDescriptor(3 * index + 2, item.lower_bound, item.upper_bound, item.label, str(item))
         for index, item in enumerate(constraints)
@@ -109,6 +110,10 @@ def test_conflicting_duplicate_intervals_raise():
     (lambda x: x ** 1, -1, 2),
     (lambda x: x ** 0, 1, 1),
     (lambda x: x - x, 0, 0),
+    (lambda x: x * 2, -2, 4),                            # constant on the right
+    (lambda x: abs(Literal(-2.0)) + x, 1, 4),            # operations on constants only
+    (lambda x: Literal(1.0).maximum(2.0) + x, 1, 4),
+    (lambda x: Literal(1.0).minimum(2.0) + x, 0, 3),
 ])
 def test_affine_box_extrema_include_exact_boundaries(expression, lower_bound, upper_bound):
     x = Parameter(1).variable()
@@ -378,6 +383,9 @@ def test_structural_matching_preserves_signed_zero_constants():
     (lambda x: abs(x), [-2], [3], (0, 3)),
     (lambda x: abs(x) + 2, [-2], [3], (2, 5)),
     (lambda x: -(x ** 2), [-2], [3], (-9, 0)),
+    (lambda x: (+x) * x, [1], [3], (1, 9)),
+    (lambda x: x ** 1 * x, [1], [3], (1, 9)),
+    (lambda x: x ** 0 * (x * x), [1], [3], (1, 9)),
 ])
 def test_interval_bounds_remove_nonlinear_constraints_at_exact_extrema(expression, lower, upper, expected_bounds):
     x = Parameter(1).variable()
@@ -631,3 +639,66 @@ def test_reduced_polygon_has_same_independent_halfplane_feasible_region():
             actual = all(d.lower_bound <= values[i] <= d.upper_bound for i, d in zip(indices, active))
             expected = first >= 0 and second >= 0 and first + second <= 2
             assert actual == expected, (first, second)
+
+
+@pytest.mark.parametrize("lower, upper", [(np.nan, 1.0), (2.0, 1.0)])
+def test_invalid_constraint_bounds_raise(lower, upper):
+    program = precompile((Parameter(0).variable(),))
+    with pytest.raises(ValueError, match="Invalid constraint bounds"):
+        reduce(program, (ConstraintDescriptor(0, lower, upper, None, "x"),))
+
+
+def test_affine_reduction_drops_an_implied_equality_and_an_implied_lower_side():
+    x, y = Parameter(1).variable(), Parameter(1).variable()
+    program, descriptors = make_problem(
+        Constraint(3 * x, lower_bound=3, upper_bound=3, label="equality"),  # implied by the next two
+        Constraint(2 * x, upper_bound=2),
+        Constraint(x, lower_bound=1),
+        Constraint(x + y, lower_bound=0, upper_bound=5, label="sum"),       # x >= 1, y >= -1 imply sum >= 0
+        Constraint(y, lower_bound=-1),
+    )
+    indices, active = reduce(program, descriptors)
+    remaining = {item.label: item for item in active}
+    assert "equality" not in remaining
+    assert (remaining["sum"].lower_bound, remaining["sum"].upper_bound) == (-np.inf, 5)
+    assert_same_feasible_points(program, descriptors, indices, active, product((0, 1, 2), (-2, -1, 0, 4, 5, 6)))
+
+
+def implied_and_independent_constraints():
+    x, y = Parameter(0).variable(), Parameter(0).variable()
+    return make_problem(
+        Constraint(x, upper_bound=1), Constraint(y, upper_bound=2),
+        Constraint(x + y, upper_bound=3),   # implied, but only an LP certificate shows it
+    )
+
+
+@pytest.mark.parametrize("error", [ValueError, OverflowError, FloatingPointError])
+def test_a_failing_lp_solver_keeps_every_constraint(monkeypatch, error):
+    def linprog(*args, **kwargs):
+        raise error("LP failed")
+    monkeypatch.setattr("diffractix.solver.constraint.linprog", linprog)
+    program, descriptors = implied_and_independent_constraints()
+    indices, active = reduce(program, descriptors)
+    assert indices == (0, 1, 2) and active == descriptors
+
+
+@pytest.mark.parametrize("certificate", [
+    SimpleNamespace(success=False, status=2, x=None),                  # no certificate found
+    SimpleNamespace(success=True, status=0, x=np.array([np.nan] * 8)),  # non-finite weights
+    SimpleNamespace(success=True, status=0, x=np.zeros(8)),             # no active rows
+    SimpleNamespace(success=True, status=0, x=np.ones(8)),              # must be verified exactly
+], ids=["failed", "non-finite", "empty", "unverified"])
+def test_unverified_lp_answers_never_report_a_feasible_problem_as_infeasible(monkeypatch, certificate):
+    def linprog(c, A_ub=None, **kwargs):
+        if A_ub is not None:   # the feasibility check: wrongly claim infeasibility
+            return SimpleNamespace(success=False, status=2, x=None)
+        return replace_size(certificate, len(c))
+    monkeypatch.setattr("diffractix.solver.constraint.linprog", linprog)
+    program, descriptors = implied_and_independent_constraints()
+    indices, active = reduce(program, descriptors)
+    assert_same_feasible_points(program, descriptors, indices, active, product((-1, 0, 1, 2), (-1, 0, 2, 3)))
+
+
+def replace_size(answer, size):
+    x = None if answer.x is None else np.resize(answer.x, size)
+    return SimpleNamespace(success=answer.success, status=answer.status, x=x)

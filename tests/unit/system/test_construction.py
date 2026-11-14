@@ -44,21 +44,15 @@ class BoundPlane(Plane):
         return self.supplied_bindings
 
 
-@pytest.mark.parametrize("default", [1.5, 0.0, None])
-def test_make_symbol_copies_metadata_into_independent_instances(default):
-    prototype = Symbol(("medium", 1), default=default)
-
+@pytest.mark.parametrize("key", [Symbol(("medium", 1)), ("medium", 1)])
+def test_make_symbol_creates_independent_instances_with_the_key(key):
     @dataclass
     class Holder:
-        symbol: Symbol = make_symbol(prototype)
+        symbol: Symbol = make_symbol(key)
 
     first, second = Holder().symbol, Holder().symbol
-    assert first is not prototype and second is not first
-    assert first.key == second.key == prototype.key
-    assert first.default == second.default == default
-    assert first.has_default is (default is not None)
-    first.set_default(9.0)
-    assert prototype.default == second.default == default
+    assert first is not key and second is not first
+    assert first.key == second.key == ("medium", 1)
 
 
 def test_variadic_constructor_matches_incremental_registration():
@@ -333,7 +327,6 @@ def test_summary_describes_design_without_resolving_or_mutating_it():
     assert system.placements == before and system.system_constraints[0] is constraint
 
 
-
 def test_variadic_constructor_records_user_call_site_and_build_error_location():
     import inspect
     line = inspect.currentframe().f_lineno + 1
@@ -486,3 +479,48 @@ def test_shared_provider_in_two_composites_of_one_system_contributes_once():
     shared = BoundPlane(supplied_bindings={"calibration": 1.5})
     system = System(Pair(shared), Pair(shared), optical_input=Ray(x=0, theta=0, n=1))
     assert system.build().bindings["calibration"] == 1.5
+
+
+def test_summary_marks_variable_fixed_derived_and_empty_parameters():
+    distance = Parameter(0.1).variable()
+    system = System(
+        Space(d=distance, label="Gap"),                 # variable length, inherited index
+        ThinLens(f=2 * distance, label="Derived"),      # an expression of the variable
+        ThinLens(f=0.25, label="Fixed"),
+        optical_input=Ray(x=0, theta=0, n=1.0),
+    )
+    rows = {line.split()[3]: line for line in str(system).splitlines() if "relative" in line}
+
+    assert "d=0.1 [VAR]" in rows["Gap"] and "n=-" in rows["Gap"]
+    assert "[EXPR]" in rows["Derived"] and "[VAR]" not in rows["Derived"]
+    assert "f=0.25 [FIX]" in rows["Fixed"]
+
+
+def test_summary_shows_absolute_positions_as_numbers_or_expressions():
+    system = System(optical_input=Ray(x=0, theta=0, n=1.0))
+    system.add(ThinLens(f=0.1, label="Number"), z=0.2)
+    system.add(ThinLens(f=0.1, label="Fixed"), z=Parameter(0.4))
+    system.add(ThinLens(f=0.1, label="Derived"), z=2 * Parameter(0.3))
+    lines = str(system).splitlines()
+    row = {label: next(line for line in lines if f" {label} " in line)
+           for label in ("Number", "Fixed", "Derived")}
+    assert "@0.2 " in row["Number"] and "@0.4 " in row["Fixed"]
+    assert "@(" in row["Derived"] and "0.3" in row["Derived"]
+
+
+def test_summary_names_constraints_by_label_then_function_name_then_expression():
+    distance = Parameter(0.1, name="distance").variable()
+    system = System(Space(d=distance), optical_input=Ray(x=0, theta=0, n=1.0))
+
+    def stay_short():
+        return distance <= 1
+
+    system.require(distance <= 2, label="Hard stop")
+    system.require(stay_short)
+    system.require(distance >= 0.01)
+    text = str(system)
+
+    listed = text.split("Constraints\n\n")[1].splitlines()
+    assert [line.split(maxsplit=1)[1] for line in listed[:3]] == [
+        "Hard stop", "stay_short", "distance=0.1[V] >= 0.01"]
+    assert "Constraints: 4" in text    # the three above and the Space's own d >= 0

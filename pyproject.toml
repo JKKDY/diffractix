@@ -42,6 +42,9 @@ all-solvers = [
 ]
 dev = [
     "pytest",
+    "coverage",
+    "ruff==0.17.4",  # keep in step with .pre-commit-config.yaml
+    "pre-commit",
 ]
 
 [project.urls]
@@ -68,6 +71,15 @@ where = ["src"]
 include = ["diffractix*"]
 namespaces = false
 
+[tool.ruff]
+target-version = "py311"
+extend-exclude = ["*.ipynb"]
+
+[tool.ruff.lint]
+# Start with the rules that find bugs (pyflakes and syntax errors); style rules
+# and the formatter can follow in a dedicated formatting commit.
+select = ["F", "E9"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
@@ -76,4 +88,19 @@ markers = [
     "scipy: integration tests using the real SciPy optimizer",
     "ipopt: integration tests requiring the optional cyipopt package",
     "nlopt: integration tests requiring the optional nlopt package",
+]
+
+# python -m coverage run -m pytest tests; python -m coverage combine; python -m coverage report
+[tool.coverage.run]
+branch = true
+source = ["diffractix"]
+parallel = true
+relative_files = true
+
+[tool.coverage.paths]
+# CI tests a non-editable install; map site-packages back to the source tree.
+source = [
+    "src/diffractix",
+    "*/site-packages/diffractix",
+    "*\\site-packages\\diffractix",
 ]

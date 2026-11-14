@@ -36,6 +36,21 @@ DEFAULT_FEASIBILITY_TOLERANCE = 1e-8
 
 @dataclass(frozen=True)
 class ObjectiveResult:
+    """One objective's value, weight and cost, at the solution.
+
+    Attributes
+    ----------
+    position : int
+        Index of the objective in the order it was given to :meth:`Solver.target`.
+    label : str or None
+        Name given to the objective, or ``None``.
+    value : array_like
+        The residual's value at the solution.
+    weight : float
+        Weight used in the total cost.
+    cost : float
+        ``weight * sum(value**2)``.
+    """
     position: int
     label: str | None
     value: object
@@ -45,6 +60,30 @@ class ObjectiveResult:
 
 @dataclass(frozen=True)
 class ConstraintResult:
+    """One constraint's value and feasibility, at the solution.
+
+    Attributes
+    ----------
+    position : int
+        Index of the constraint among all the solved problem's constraints: the
+        System's first, then the Solver's, each in the order they were given.
+    label : str or None
+        Name given to the constraint, or ``None``.
+    description : str
+        Readable description, used when `label` is ``None``.
+    value : array_like
+        The constrained quantity's value at the solution.
+    lower_bound : float
+        Lower bound.
+    upper_bound : float
+        Upper bound.
+    violation : array_like
+        How far `value` lies outside the bounds; 0 where it is within them.
+    margin : array_like
+        How far `value` lies inside the bounds; negative where it violates them.
+    satisfied : bool
+        Whether `violation` is within the solution's `feasibility_tolerance`.
+    """
     position: int
     label: str | None
     description: str
@@ -58,6 +97,27 @@ class ConstraintResult:
 
 @dataclass(frozen=True)
 class ParameterBoundResult:
+    """One variable Parameter's bound violation, at the solution.
+
+    Attributes
+    ----------
+    parameter : ParameterData
+        The Parameter's metadata, including its name.
+    value : float
+        Solved value.
+    lower_bound : float
+        Lower bound.
+    upper_bound : float
+        Upper bound.
+    violation : float
+        How far `value` lies outside the bounds; 0 where it is within them.
+    margin : float
+        How far `value` lies inside the bounds; negative where it violates them.
+    satisfied : bool
+        Whether the bound holds. Always ``False`` here, since a
+        ParameterBoundResult is only created for a violated bound; the field
+        matches `ConstraintResult`, so every entry of `Solution.violations` has it.
+    """
     parameter: ParameterData
     value: float
     lower_bound: float
@@ -68,12 +128,62 @@ class ParameterBoundResult:
 
 
 class Solution:
-    """Solved values and complete model evaluations in physical coordinates."""
+    """Solved Parameter values, and the model's objectives, constraints and bounds evaluated there.
+
+    Returned by :meth:`Solver.solve`. All quantities are in physical SI
+    coordinates, regardless of the optimizer's internal scaling.
+
+    Parameters
+    ----------
+    result : SolverResult
+        The backend's raw result.
+    problem : Problem
+        The scaled optimization problem that was solved.
+    simulation : Simulation
+        The Simulation the Solver optimized.
+    objective_program, constraint_program : Program
+        Compiled graph-expression objectives and constraints.
+    objective_descriptors, constraint_descriptors : tuple
+        Metadata for the compiled objectives and constraints.
+    callable_objectives, callable_constraints : tuple
+        Deferred objective and constraint callables, with their declaration
+        positions.
+    feasibility_tolerance : float, optional
+        Maximum constraint or bound violation still counted as feasible. Defaults
+        to `DEFAULT_FEASIBILITY_TOLERANCE`.
+
+    Raises
+    ------
+    TypeError
+        If `feasibility_tolerance` is not a real numeric scalar.
+    ValueError
+        If `feasibility_tolerance` is not finite or is negative, or the
+        backend result does not match `simulation`.
+
+    Examples
+    --------
+    >>> from diffractix import Parameter, Ray, Solver, Space, System
+    >>> from diffractix.units import mm
+    >>> distance = Parameter(0.05).variable()
+    >>> solver = Solver(System(Space(d=distance), optical_input=Ray(x=0, theta=0.01, n=1)))
+    >>> solver = solver.target(value=lambda sim: sim.final.x, target=2 * mm)
+    >>> solution = solver.solve()
+    >>> solution.success, round(float(solution.value(distance)), 6)
+    (True, 0.2)
+    """
 
     def __init__(
-        self, result: SolverResult, problem, simulation: Simulation, *,
-        objective_program, objective_descriptors, callable_objectives,
-        constraint_program, constraint_descriptors, callable_constraints,
+        self,
+        result: SolverResult,
+        problem,
+        simulation: Simulation,
+        *,
+        objective_program,
+        objective_descriptors,
+        callable_objectives,
+        constraint_program,
+        constraint_descriptors,
+        callable_constraints,
         feasibility_tolerance=DEFAULT_FEASIBILITY_TOLERANCE,
     ):
         if isinstance(feasibility_tolerance, bool) or not isinstance(feasibility_tolerance, Real):
@@ -114,37 +224,43 @@ class Solution:
 
     @property
     def simulation(self):
-        """Separate simulation with solved initial values and current-solve bounds."""
+        """Simulation: a copy of the optimized Simulation, with the solved values as initial values and the current bounds."""
         return self._simulation
 
     @property
     def x(self):
+        """x: the solved values of the variable Parameters (theta), in
+        `simulation.parameter_data` order."""
         return self._x
 
     @property
     def cost(self):
+        """Cost: the total objective cost at the solution."""
         return self._result.cost
 
     @property
     def success(self):
+        """Success: whether the optimizer reports successful termination."""
         return self._result.success
 
     @property
     def message(self):
+        """Message: the termination message from the optimizer."""
         return self._result.message
 
     @property
     def iterations(self):
-        """Optimizer iterations, or None if the backend does not report them."""
+        """Iterations: optimizer iterations, or ``None`` if the backend does not report them."""
         return self._result.iterations
 
     @property
     def function_evaluations(self):
-        """Objective evaluations, or None if the backend does not report them."""
+        """Function evaluations: objective evaluations, or ``None`` if the backend does not report them."""
         return self._result.function_evaluations
 
     @property
     def feasibility_tolerance(self):
+        """Feasibility tolerance: the maximum constraint or bound violation still counted as feasible."""
         return self._feasibility_tolerance
 
     @cached_property
@@ -152,20 +268,40 @@ class Solution:
         return self.simulation.run(self.x)
 
     def run(self):
-        """Return the optical result at the solved parameter vector."""
+        """Evaluate the simulation at the solved parameter vector.
+
+        Returns
+        -------
+        SimulationResult
+            The result; cached, so repeated calls return the same object.
+        """
         return self._optical_result
 
     def value(self, quantity):
-        """Return a design Parameter, or an expression of them, at the solution.
+        """Return a design Parameter, or an expression of them, evaluated at the solution.
 
-        A Parameter that was variable in the model (or a handle directly holding
-        one) returns its solved value. Any other graph expression is evaluated
-        with the interpreter: solved values replace the model's variable
-        Parameters, fixed Parameters keep their current value, and the
-        Simulation's bindings resolve its Symbols. KeyError is raised for
-        anything the solution cannot determine, namely a variable Parameter
-        outside the model, an unbound Symbol (its default is ignored), or a
-        runtime result quantity (read those from run()).
+        Parameters
+        ----------
+        quantity : Parameter, InputNode or Node
+            A variable Parameter in the model (or its direct handle) to read its
+            solved value, or any other graph expression to evaluate, such as a
+            derived gap.
+
+        Returns
+        -------
+        float or array_like
+            The value. Solved values replace the model's variable Parameters, fixed
+            Parameters keep their current value, and the Simulation's bindings
+            resolve its Symbols.
+
+        Raises
+        ------
+        TypeError
+            If `quantity` is not a Parameter or graph expression.
+        KeyError
+            If `quantity` depends on a variable Parameter outside the model, an
+            unbound Symbol, or a runtime result quantity;
+            read that from :meth:`run`.
         """
         if isinstance(quantity, Parameter) or (
             isinstance(quantity, InputNode) and isinstance(quantity.node, Parameter)
@@ -205,7 +341,7 @@ class Solution:
         if callables:
             view = self.run().view()
             for position, entry in callables:
-                value = entry.evaluate(view)
+                value = entry.quantity(view)
                 if isinstance(value, Node):
                     raise TypeError("Deferred solver callables must return numerical scalars or arrays.")
                 entries.append((position, entry, value))
@@ -221,6 +357,7 @@ class Solution:
 
     @cached_property
     def objectives(self):
+        """Objectives: one `ObjectiveResult` per objective, evaluated at the solution."""
         results = []
         for position, entry, value in self._evaluate(
             self._objective_program, self._objective_descriptors,
@@ -234,6 +371,11 @@ class Solution:
 
     @cached_property
     def constraints(self):
+        """Constraints: one `ConstraintResult` per constraint, evaluated at the solution.
+
+        Includes the Simulation's own generated constraints, such as refractive
+        index continuity.
+        """
         results = []
         for position, entry, value in self._evaluate(
             self.simulation._constraint_program, self.simulation._constraint_descriptors,
@@ -256,7 +398,11 @@ class Solution:
 
     @cached_property
     def violations(self):
-        """Violated model constraints, followed by violated parameter bounds."""
+        """Violations: constraints and Parameter bounds the solution does not satisfy within `feasibility_tolerance`.
+
+        Violated constraints come first, as `ConstraintResult`, followed by violated
+        Parameter bounds as `ParameterBoundResult`.
+        """
         violations = [entry for entry in self.constraints if not entry.satisfied]
         for info, value in zip(self.simulation.parameter_data, self.x, strict=True):
             margin = min(value - info.lower_bound, info.upper_bound - value)
@@ -271,6 +417,7 @@ class Solution:
 
     @property
     def feasible(self):
+        """Feasible: whether the solution has no `violations`."""
         return not self.violations
 
     def __str__(self) -> str:

@@ -37,40 +37,37 @@ def test_explicit_parameter_mapping_requires_fixed_and_variable_entries(variable
         parameter.evaluate(parameter_values={})
 
 
-def test_bindings_follow_nodes_and_aliases_and_override_defaults():
+def test_bindings_follow_nodes_and_aliases():
     parameter = Parameter(2.0)
     key = ("input", 42, "offset")
-    outer = Symbol(key, default=100.0)
-    expression = 3 * outer + 1
+    expression = 3 * Symbol(key) + 1
     bindings = {key: Symbol("inner"), "inner": InputNode(parameter + 1)}
-    assert expression.evaluate(bindings) == 10.0
-    assert outer.default == 100.0
-    assert expression.evaluate() == 301.0
+    assert expression.evaluate(bindings=bindings) == 10.0
     parameter.value = 4.0
-    assert expression.evaluate(bindings) == 16.0
+    assert expression.evaluate(bindings=bindings) == 16.0
     assert bindings[key].key == "inner"
 
 
-def test_node_valued_symbol_defaults_are_evaluated_with_parameter_overrides():
+def test_node_valued_bindings_are_evaluated_with_parameter_overrides():
     parameter = Parameter(2.0)
-    symbol = Symbol("derived", default=parameter * 3)
-    assert symbol.evaluate(parameter_values={id(parameter): 4.0}) == 12.0
-    assert symbol.evaluate({"derived": 0.0}, parameter_values={}) == 0.0
+    symbol = Symbol("derived")
+    bindings = {"derived": parameter * 3}
+    assert symbol.evaluate(bindings=bindings, parameter_values={id(parameter): 4.0}) == 12.0
+    assert symbol.evaluate(bindings={"derived": 0.0}, parameter_values={}) == 0.0
 
 
 def test_runtime_array_binding_is_not_packed_or_cast():
     values = xp.array([1.0, 2.0], dtype="float32")
     symbol = Symbol("array")
-    assert symbol.evaluate({"array": values}) is values
-    result = (2 * symbol + 1).evaluate({"array": values})
+    assert symbol.evaluate(bindings={"array": values}) is values
+    result = (2 * symbol + 1).evaluate(bindings={"array": values})
     np.testing.assert_allclose(result, [3.0, 5.0])
     assert result.dtype == values.dtype
 
 
-@pytest.mark.parametrize("symbol", [Symbol("required"), Symbol("required", default=None)])
-def test_missing_symbol_binding_identifies_key(symbol):
+def test_missing_symbol_binding_identifies_key():
     with pytest.raises(KeyError, match="required"):
-        symbol.evaluate()
+        Symbol("required").evaluate()
 
 
 def test_input_handle_swap_is_seen_on_next_evaluation():
@@ -84,7 +81,7 @@ def test_input_handle_swap_is_seen_on_next_evaluation():
         root.evaluate()
 
 
-@pytest.mark.parametrize("kind", ["handle", "alias", "default"])
+@pytest.mark.parametrize("kind", ["handle", "alias", "self"])
 def test_cycle_detection_is_by_active_identity_and_recovery_is_possible(kind):
     if kind == "handle":
         root = InputNode(None)
@@ -95,15 +92,14 @@ def test_cycle_detection_is_by_active_identity_and_recovery_is_possible(kind):
         bindings = {"a": Symbol("b"), "b": root + 1}
     else:
         root = Symbol("a")
-        root.set_default(root + 1)
-        bindings = {}
+        bindings = {"a": root + 1}
     with pytest.raises(ASTCycleError, match="Cycle"):
-        root.evaluate(bindings)
+        root.evaluate(bindings=bindings)
     if kind == "handle":
         root.node = Literal(3)
         assert root.evaluate() == 3
     else:
-        assert root.evaluate({"a": 3}) == 3
+        assert root.evaluate(bindings={"a": 3}) == 3
 
 
 def test_shared_dag_is_not_a_cycle_and_values_are_not_cached_between_calls():
@@ -127,7 +123,7 @@ def test_interpreter_preserves_gradients_hessians_nested_derivatives_and_jit():
     expression = parameter**3 + Symbol("coefficient") * parameter**2
     def value(point):
         return expression.evaluate(
-            {"coefficient": point[1]}, parameter_values={id(parameter): point[0]},
+            bindings={"coefficient": point[1]}, parameter_values={id(parameter): point[0]},
         )
     point = xp.array([2.0, 3.0])
     for function in (value, jit(value)):

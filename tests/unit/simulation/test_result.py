@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from diffractix.backend import xp
-from diffractix.input import Ray, RayBundle
+from diffractix.states import Ray, RayBundle
 from diffractix.simulation.info import SimulationStep
 from diffractix.simulation.result import (
     SimulationResult, SimulationResultView, SimulationResultTracer,
@@ -144,7 +144,7 @@ def test_result_tracer_attribute_checks_and_unsupported_operations():
     element = object()
     result = make_result((element,))
     trace = SimulationResultTracer(result.element_data, result.initial)
-    assert isinstance(trace.final, SimulationResultTracer.OpticalState)
+    assert isinstance(trace.final, SimulationResultTracer.SymbolicState)
     assert isinstance(trace[element], SimulationResultTracer.OpticalStage)
     assert hasattr(trace.final, "x") == hasattr(result.view().final, "x")
     assert getattr(trace.final, "missing", 7) == getattr(result.view().final, "missing", 7)
@@ -279,3 +279,23 @@ def test_symbolic_and_numerical_results_expose_the_same_stages():
 def test_symbolic_stages_of_an_empty_system_are_empty():
     trace = SimulationResultTracer((), make_result(()).initial)
     assert trace.stages == ()
+
+
+def test_runtime_symbol_resolution_rejects_keys_it_did_not_create():
+    from diffractix.simulation.result import resolve_symbol
+    result = make_result((object(),))
+    assert resolve_symbol(ResultSymbolKey(ResultSymbolKind.Z_END, 0), result) == 1
+    with pytest.raises(KeyError, match="Unsupported runtime Symbol: 'x'"):
+        resolve_symbol("x", result)
+    with pytest.raises(KeyError, match="Unknown result Symbol"):
+        resolve_symbol(ResultSymbolKey("not a kind", 0, "x"), result)
+
+
+def test_symbolic_states_hide_private_attributes_and_stages_cannot_be_compared():
+    trace = SimulationResultTracer(make_result((object(),)).element_data, make_result(()).initial)
+    with pytest.raises(AttributeError, match="Private state attribute .*_hidden cannot be traced"):
+        trace.final._hidden
+    stage = trace.stages[0]
+    for compare in (lambda: stage == stage, lambda: stage != 1):
+        with pytest.raises(SymbolicControlFlowError, match="stages cannot be compared"):
+            compare()

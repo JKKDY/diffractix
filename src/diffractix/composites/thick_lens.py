@@ -12,8 +12,37 @@ from ..system import AMBIENT_N
 
 
 class ThickLens(CompositeElement):
-    """
-    A physical lens with thickness d, index n, and surface radii R1, R2.
+    """A lens with thickness and two curved surfaces.
+
+    Parameters
+    ----------
+    d : float or Node
+        Centre thickness [m].
+    n : float or Node
+        Refractive index of the lens material.
+    R1 : float or Node, optional
+        Radius of curvature of the front surface [m]. Defaults to ``inf``, flat.
+    R2 : float or Node, optional
+        Radius of curvature of the back surface [m]. Defaults to ``inf``, flat.
+    ambient_n : float or Node, optional
+        Refractive index outside the lens. Defaults to the system's ambient index.
+    label : str, optional
+        Name used in results and messages. Defaults to an automatic name such as
+        ``"ThickLens1"``.
+
+    Attributes
+    ----------
+    front : Interface
+        Front surface, radius `R1`.
+    body : Space
+        The lens material, of length `d`.
+    back : Interface
+        Back surface, radius `R2`.
+
+    Notes
+    -----
+    A radius is positive when its centre of curvature lies after the surface, so a
+    biconvex lens has ``R1 > 0`` and ``R2 < 0``.
     """
 
     d: Node

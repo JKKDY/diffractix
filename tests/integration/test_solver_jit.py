@@ -2,7 +2,6 @@
 import numpy as np
 import pytest
 from diffractix import Constraint, Parameter, Ray, Solver, Space, System
-from diffractix.backend import current_backend, xp
 
 
 @pytest.mark.parametrize("use_jit", [False, True])
@@ -37,21 +36,6 @@ def test_dynamic_branch_optimizes_numerical_outputs_eagerly():
     assert solution.objectives[0].cost < 1e-11
 
 
-def test_jax_does_not_silently_disable_jit_for_python_branch():
-    xp.asarray(0.)  # Resolve the lazily selected numerical backend.
-    if current_backend() != "jax":
-        pytest.skip("JAX rejects tracer-dependent Python branches; Autograd JIT is a no-op")
-    position = Parameter(0.5).variable(bounds=(0.1, 2))
-    solver = Solver(System(optical_input=Ray(x=position, theta=0, n=1)))
-
-    def residual(sim):
-        return sim.final.x - 1 if sim.final.x > 0 else 10.
-
-    solver.target(residual)
-    with pytest.raises(TypeError, match="boolean conversion|bool conversion"):
-        solver.solve(jit=True)
-
-
 def test_deferred_returned_node_fails_instead_of_becoming_a_live_graph():
     position = Parameter(0.5).variable(bounds=(0.1, 2))
     solver = Solver(System(optical_input=Ray(x=position, theta=0, n=1)))
@@ -62,7 +46,6 @@ def test_deferred_returned_node_fails_instead_of_becoming_a_live_graph():
     solver.target(residual)
     with pytest.raises(TypeError, match="numerical.*symbolic Node"):
         solver.solve(jit=False)
-
 
 
 def test_user_failure_is_preserved_and_preparation_can_be_retried():

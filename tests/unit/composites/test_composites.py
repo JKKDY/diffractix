@@ -12,7 +12,7 @@ def aggregate_matrix(composite, bindings=None):
     matrix = np.eye(2)
     for leaf in composite.leaf_elements:
         current = np.array([
-            [entry.evaluate(bindings or {}) if isinstance(entry, Node) else entry for entry in row]
+            [entry.evaluate(bindings=bindings or {}) if isinstance(entry, Node) else entry for entry in row]
             for row in leaf.matrix
         ])
         matrix = current @ matrix
@@ -23,7 +23,7 @@ def aggregate_matrix(composite, bindings=None):
     (lambda: Slab(d=0.01, n=1.5), ("front", "body", "back")),
     (lambda: ThickLens(d=0.01, n=1.5, R1=0.1, R2=-0.1), ("front", "body", "back")),
     (lambda: Telescope(f1=0.1, f2=0.2), ("lens1", "space", "lens2")),
-    (lambda: FourF(f1=0.1, f2=0.2), ("input_space", "lens1", "fourier_space", "lens2", "output_space")),
+    (lambda: FourF(f1=0.1, f2=0.2), ("input_space", "telescope", "output_space")),
 ], ids=["slab", "thick-lens", "telescope", "four-f"])
 def test_builtin_composite_children_are_named_attributes_in_propagation_order(factory, names):
     composite = factory()
@@ -111,8 +111,8 @@ def test_four_f_parameter_wiring():
     four_f = FourF(f1=0.1, f2=0.2)
 
     assert four_f.input_space.d.node is four_f.f1
-    assert four_f.lens1.f.node is four_f.f1
-    assert four_f.lens2.f.node is four_f.f2
+    assert four_f.telescope.f1.node is four_f.f1
+    assert four_f.telescope.f2.node is four_f.f2
     assert four_f.output_space.d.node is four_f.f2
 
 
@@ -123,9 +123,9 @@ def test_four_f_reassignment_updates_all_linked_elements():
     four_f.f2 = 0.25
 
     assert four_f.input_space.d.value == pytest.approx(0.15)
-    assert four_f.lens1.f.value == pytest.approx(0.15)
-    assert four_f.fourier_space.d.value == pytest.approx(0.4)
-    assert four_f.lens2.f.value == pytest.approx(0.25)
+    assert four_f.telescope.lens1.f.value == pytest.approx(0.15)
+    assert four_f.telescope.space.d.value == pytest.approx(0.4)
+    assert four_f.telescope.lens2.f.value == pytest.approx(0.25)
     assert four_f.output_space.d.value == pytest.approx(0.25)
 
 
@@ -167,7 +167,7 @@ def test_slab_aggregate_matrix_uses_physical_angle_and_returns_to_ambient(ambien
         atol=1e-15,
     )
     assert slab.element_length.evaluate() == pytest.approx(0.012)
-    assert slab.back.refractive_index.evaluate({AMBIENT_N.key: ambient}) == ambient
+    assert slab.back.refractive_index.evaluate(bindings={AMBIENT_N.key: ambient}) == ambient
 
 
 @pytest.mark.parametrize("radii", [(0.08, -0.12), (-0.08, 0.12), (np.inf, np.inf)])
@@ -211,7 +211,7 @@ def test_shared_focal_parameter_has_one_degree_of_freedom_after_reassignment():
 
     focal_length = Parameter(0.1).variable()
     relay = FourF(f1=focal_length, f2=2 * focal_length)
-    roots = (relay.input_space.d, relay.fourier_space.d, relay.output_space.d)
+    roots = (relay.input_space.d, relay.telescope.space.d, relay.output_space.d)
     program = compile_graph(roots)
 
     assert program.parameter_indices == {id(focal_length): 0}
@@ -235,12 +235,3 @@ def test_default_composite_labels_are_unique_and_explicit_labels_are_kept(compos
     named = composite_type(**kwargs, label="mine")
     assert named.label == "mine"
     assert all(part.label.startswith("mine") for part in named.leaf_elements)
-
-
-def test_inputs_get_unique_default_labels_but_numerical_copies_do_not():
-    from diffractix import Ray
-    first, second = Ray(x=0, theta=0, n=1), Ray(x=0, theta=0, n=1)
-    assert first.label != second.label and first.label.startswith("Ray")
-    assert Ray(x=0, theta=0, n=1, label="probe").label == "probe"
-    assert first.numeric().label == first.label
-    assert Ray.numerical_type()(x=0.0, theta=0.0, n=1.0).label is None

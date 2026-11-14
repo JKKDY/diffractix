@@ -1,4 +1,4 @@
-from collections.abc import Hashable, Mapping, Sequence
+from collections.abc import Hashable, Mapping
 
 
 from .program import (
@@ -11,7 +11,6 @@ from .program import (
     Program
 )
 
-from .errors import UnresolvedInputError, UnsupportedNodeError
 from dataclasses import replace
 
 

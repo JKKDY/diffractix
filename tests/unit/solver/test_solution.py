@@ -336,21 +336,20 @@ def test_value_needs_no_propagation(monkeypatch):
 @pytest.mark.parametrize("make_quantity, error, message", [
     (lambda first, second: Parameter(1.0).variable() + first, KeyError, "outside this solution's model"),
     (lambda first, second: Symbol("unbound") + first, KeyError, "no binding"),
-    (lambda first, second: Symbol("unbound", default=1.0) + first, KeyError, "no binding"),
     (lambda first, second: Symbol(ResultSymbolKey(ResultSymbolKind.FINAL, name="x")), KeyError, r"run\(\)"),
     (lambda first, second: InputNode(None) + first, UnresolvedInputError, "empty InputNode"),
-], ids=["outside-variable", "unbound", "unbound-with-default", "result-symbol", "empty-handle"])
+], ids=["outside-variable", "unbound", "result-symbol", "empty-handle"])
 def test_value_rejects_what_the_solution_does_not_contain(make_quantity, error, message):
     solution, first, second = two_parameter_solution()
     with pytest.raises(error, match=message):
         solution.value(make_quantity(first, second))
 
 
-def test_value_ignores_symbol_defaults_even_when_other_symbols_are_bound():
+def test_value_rejects_an_unbound_symbol_even_when_other_symbols_are_bound():
     solution, _, _ = two_parameter_solution(offset=lambda a, b: 2 * a)
     assert solution.value(Symbol("offset")) == pytest.approx(4.)
     with pytest.raises(KeyError, match="no binding"):
-        solution.value(Symbol("other", default=0.0) + Symbol("offset"))
+        solution.value(Symbol("other") + Symbol("offset"))
 
 
 @pytest.mark.parametrize("quantity", ["x", None, [1.0], Parameter(1.0) >= 0], ids=["str", "none", "list", "comparison"])
@@ -361,7 +360,7 @@ def test_value_rejects_non_graph_quantities(quantity):
 
 
 def test_str_summarizes_status_variables_objectives_and_constraints():
-    from diffractix import Ray, Solver, Space, System, ThinLens
+    from diffractix import Ray, Solver, System, ThinLens
     gap = Space(d=0.5)
     gap.d.variable(bounds=(0, 1))
     lens = ThinLens(f=0.1)
@@ -376,3 +375,34 @@ def test_str_summarizes_status_variables_objectives_and_constraints():
     for expected in ("Variables", "d", "0.5", "0.3", "Objectives", "focus", "Constraints", "length", "ok"):
         assert expected in text
     assert "VIOLATED" not in text
+
+
+def test_str_omits_sections_with_no_entries():
+    solver = Solver(System(optical_input=Ray(x=0.5, theta=0, n=1)))
+    solution, _ = make_solution(solver=solver, x=())
+    text = str(solution)
+    assert text.startswith("Solution: converged, feasible")
+    assert all(section not in text for section in ("Variables", "Objectives", "Constraints"))
+
+
+def test_reporting_rejects_a_deferred_callable_that_returns_a_graph_node():
+    p = Parameter(0.5).variable()
+    solver = Solver(System(optical_input=Ray(x=p, theta=0, n=1)))
+
+    def residual(result):
+        return p if result.final.x > 1 else result.final.x   # a Node only at the solved point
+
+    solver.target(residual)
+    solution, _ = make_solution(solver=solver)
+    with pytest.raises(TypeError, match="must return numerical scalars or arrays"):
+        solution.objectives
+
+
+@pytest.mark.filterwarnings("ignore:overflow encountered:RuntimeWarning")
+def test_reporting_rejects_a_finite_residual_whose_cost_overflows():
+    p = Parameter(0.5).variable()
+    solver = Solver(System(optical_input=Ray(x=p, theta=0, n=1)))
+    solver.target(lambda result: 1e200 if result.final.x > 1 else result.final.x, label="huge")
+    solution, _ = make_solution(solver=solver)
+    with pytest.raises(ValueError, match="'huge' cost is non-finite"):
+        solution.objectives

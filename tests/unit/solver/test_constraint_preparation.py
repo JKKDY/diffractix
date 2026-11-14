@@ -36,7 +36,7 @@ def test_preparation_keeps_callable_constraints_deferred_in_order():
     function = lambda result: 1.0 if result.final.x > 0 else 0.0
     solver.require(Constraint(function, lower_bound=0), first >= 0)
     program, descriptors, callables = solver._finalize_constraints()
-    assert callables[0][1].evaluate is function
+    assert callables[0][1].quantity is function
     assert callables[0][0] < descriptors[-1].position
     assert len(program._outputs) == len(descriptors)
 

@@ -12,14 +12,40 @@ from .utils import callable_arity
 
 @dataclass(frozen=True)
 class Objective:
-    """Soft optimization objective producing one or more residuals."""
-    evaluate: Node | Callable
+    """A soft optimization objective: one or more residuals, weighted in the total cost.
+
+    Pass it to :meth:`Solver.target`. The total cost is the sum, over every
+    objective, of ``weight * sum(residual**2)``.
+
+    Parameters
+    ----------
+    quantity : Node or callable
+        The residual: a graph expression, or a callable accepting the result
+        (traceable, or deferred if it branches on result values).
+    weight : float, optional
+        Multiplies the squared residual in the total cost. Defaults to 1.
+    label : str, optional
+        Name used in reports.
+
+    Raises
+    ------
+    TypeError
+        If `quantity` is not a Node or callable.
+    ValueError
+        If `weight` is not finite, or is negative.
+
+    Notes
+    -----
+    A deferred callable must be differentiable by the numerical backend;
+    diffractix does not check this.
+    """
+    quantity: Node | Callable
     weight: float = 1.0
     label: str | None = None
 
     def __post_init__(self):
-        if not isinstance(self.evaluate, Node) and not callable(self.evaluate):
-            raise TypeError("evaluate must be a Node or callable.")
+        if not isinstance(self.quantity, Node) and not callable(self.quantity):
+            raise TypeError("quantity must be a Node or callable.")
         if not math.isfinite(self.weight) or self.weight < 0:
             raise ValueError("weight must be finite and >= 0.")
 
@@ -42,7 +68,7 @@ def prepare_objectives(objectives, tracer, bindings):
     callables = []
     for position, entry in enumerate(objectives):
         objective = normalize_to_objective(entry)
-        expression = objective.evaluate
+        expression = objective.quantity
         if not isinstance(expression, Node):
             try:
                 expression = expression(tracer)
@@ -71,10 +97,10 @@ def normalize_to_objective(value) -> Objective:
         return Objective(value)
 
     objective = value if isinstance(value, Objective) else Objective(value)
-    if isinstance(objective.evaluate, Node) or callable_arity(objective.evaluate) == 1:
+    if isinstance(objective.quantity, Node) or callable_arity(objective.quantity) == 1:
         return objective
 
-    result = objective.evaluate()
+    result = objective.quantity()
     if not isinstance(result, Node):
         raise TypeError("A zero-argument objective callable must return a Node.")
     return Objective(result, objective.weight, objective.label)

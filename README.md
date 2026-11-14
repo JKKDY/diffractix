@@ -1,5 +1,7 @@
 # Diffractix
 
+[![codecov](https://codecov.io/gh/JKKDY/diffractix/graph/badge.svg?token=5Q03OMG1NX)](https://codecov.io/gh/JKKDY/diffractix)
+
 **Differentiable paraxial optics in Python.**
 
 Diffractix is a Python library for modeling, simulating, and optimizing paraxial optical systems using ABCD matrices.
@@ -86,9 +88,9 @@ The system automatically inserts propagation spaces between positioned elements.
 
 Diffractix is in active development. The API and internal architecture may change before the first stable release.
 
-Current API references are in [docs](docs/system-simulation-result.md). Plotting
-is available through result.plot(). Examples and release scripts need a separate
-migration/validation pass; see [QA status](docs/qa-status.md).
+User documentation is being written. Until it is published, the working notes in
+[docs/agents](docs/agents/system-simulation-result.md) describe the current API, and the
+[examples](examples/) show complete designs.
 
 ## License
 

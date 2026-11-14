@@ -9,13 +9,38 @@ from ..graph import Node
 
 
 class Telescope(CompositeElement):
-    """
-    A two-lens afocal telescope.
+    """Two thin lenses spaced ``f1 + f2`` apart: an afocal telescope.
 
-    Layout:
-        Lens1(f1) -> Space(f1 + f2) -> Lens2(f2)
+    A collimated input leaves collimated, with its radius scaled by ``f2 / f1``.
+    With two positive lenses it is a Keplerian telescope (the image is inverted);
+    with a negative first lens, a Galilean one.
 
-    For two positive focal lengths this represents a Keplerian telescope.
+    Parameters
+    ----------
+    f1 : float or Node
+        Focal length of the first lens [m].
+    f2 : float or Node
+        Focal length of the second lens [m].
+    label : str, optional
+        Name used in results and messages. Defaults to an automatic name such as
+        ``"Telescope1"``.
+
+    Attributes
+    ----------
+    lens1 : ThinLens
+        First lens, focal length `f1`.
+    space : Space
+        Gap of length ``f1 + f2``.
+    lens2 : ThinLens
+        Second lens, focal length `f2`.
+
+    Examples
+    --------
+    >>> from diffractix import Ray, System, Telescope
+    >>> from diffractix.units import mm
+    >>> system = System(Telescope(f1=50 * mm, f2=100 * mm), optical_input=Ray(x=1 * mm, theta=0))
+    >>> round(float(system.build().run().final.x) / mm, 9)
+    -2.0
     """
 
     f1: Node

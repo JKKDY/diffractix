@@ -12,15 +12,34 @@ from ..graph import Node
 
 @dataclass(eq=False, kw_only=True)
 class ABCD(OpticalElement):
-    """
-    A black-box optical element defined by an arbitrary ABCD matrix.
+    """An element with a given ray-transfer matrix.
 
-    Parameters:
-        A, B, C, D: Matrix coefficients.
-        thickness: Physical length occupied by the element.
-        n: Output refractive index. None means inherit the current medium.
+    Give the entries `A`, `B`, `C`, `D`, or the whole matrix as `matrix_val`.
 
-    A complete matrix may alternatively be supplied through matrix_val.
+    Parameters
+    ----------
+    A, B, C, D : float or Node, optional
+        Matrix entries, acting on ``[x, theta]``: `B` in [m], `C` in [1/m].
+        Default to the identity.
+    thickness : float or Node, optional
+        Element length [m]. Defaults to 0.
+    n : float or Node, optional
+        Refractive index after the element. Defaults to ``None``: the medium is
+        unchanged.
+    matrix_val : array_like, optional
+        The whole matrix, shape ``(2, 2)``, instead of `A` to `D`.
+    label : str, optional
+        Name used in results and messages. Defaults to an automatic name such as
+        ``"ABCD1"``.
+
+    Raises
+    ------
+    ValueError
+        If `matrix_val` is not 2 x 2, or `thickness` is a negative number.
+
+    Notes
+    -----
+    When `n` is given, requires ``n > 0``, which matters when it is variable.
     """
 
     A: Node = 1.0
@@ -42,14 +61,11 @@ class ABCD(OpticalElement):
         if self.n.node is not None:
             self.require(self.n > 0)
 
-        length = self.element_length
-        if isinstance(length, Node):
-            self.require(length >= 0)
-        elif length < 0:
-            raise ValueError("Element length cannot be negative.")
+        self.require(self.element_length >= 0)
 
     @property
     def matrix(self):
+        """Ray-transfer matrix: ``((A, B), (C, D))``. Can also be set from a ``(2, 2)`` array."""
         return (
             (self.A, self.B),
             (self.C, self.D),
@@ -72,8 +88,10 @@ class ABCD(OpticalElement):
 
     @property
     def element_length(self):
+        """Element length [m]: `thickness`."""
         return self.thickness
 
     @property
     def refractive_index(self):
+        """Refractive index: `n`, or ``None`` to keep the medium before the element."""
         return self.n

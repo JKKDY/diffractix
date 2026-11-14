@@ -12,7 +12,7 @@ def test_import_is_lazy_and_configuration_can_be_overridden(name):
 import sys
 import diffractix
 from diffractix import backend
-from diffractix.backend import xp, grad, jacobian, jacrev, hessian, jit, require
+from diffractix.backend import xp, grad, jacobian, hessian, jit, require
 assert backend.current_backend() is None
 assert 'uninitialized' in repr(xp)
 assert 'jax' not in sys.modules

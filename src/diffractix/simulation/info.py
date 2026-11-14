@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from diffractix.input.paraxial_input import ParaxialState
+from diffractix.states.paraxial_state import ParaxialState
 
 
 @dataclass(frozen=True)

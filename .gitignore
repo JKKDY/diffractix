@@ -138,20 +138,8 @@ target/
 .ipynb_checkpoints
 celerybeat-schedule
 
-# ==========================================
-# Custom AI Secrets & Specific Logic
-# ==========================================
-# Ignore the actual "high-quality" prompt files
-server/ai/prompts/system.ts
-server/ai/prompts/system.py
 
-# Keep these public templates
-!server/.env.example
-!server/ai/prompts/system_example.py
-
-# Translations
-*.mo
-*.pot
+# ----------- Template end -----------
 
 archive/*
 

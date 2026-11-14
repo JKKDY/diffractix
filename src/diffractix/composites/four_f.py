@@ -3,20 +3,37 @@ Defines the 4f System composite element.
 """
 
 from .composite import CompositeElement
+from .telescope import Telescope
 from ..elements.space import Space
-from ..elements.thin_lens import ThinLens
 from ..graph import Node
 
 
 class FourF(CompositeElement):
-    """
-    A standard 4f optical relay/correlator system consisting of two lenses and appropriate spacing.
+    """A 4f relay: a telescope with one focal length of space before and after it.
 
-    Layout:
-        Space(f1) -> Lens1(f1) -> Space(f1 + f2) -> Lens2(f2) -> Space(f2)
+    The input plane is imaged onto the output plane with magnification
+    ``-f2 / f1``, and its Fourier transform lies inside the telescope, ``f1`` after
+    the first lens.
 
-    This setup ensures that the input plane is Fourier transformed at the mid-plane
-    and imaged (inverted) at the output plane.
+    Parameters
+    ----------
+    f1 : float or Node
+        Focal length of the first lens [m].
+    f2 : float or Node
+        Focal length of the second lens [m].
+    label : str, optional
+        Name used in results and messages. Defaults to an automatic name such as
+        ``"FourF1"``.
+
+    Attributes
+    ----------
+    input_space : Space
+        Gap of length `f1` before the telescope.
+    telescope : Telescope
+        The two lenses, ``f1 + f2`` apart: ``telescope.lens1``, ``telescope.space``
+        and ``telescope.lens2``.
+    output_space : Space
+        Gap of length `f2` after the telescope.
     """
 
     f1: Node
@@ -28,7 +45,5 @@ class FourF(CompositeElement):
         self.f2 = f2
 
         self.input_space = Space(d=self.f1, label=f"{self.label}_In_Drift")
-        self.lens1 = ThinLens(f=self.f1, label=f"{self.label}_L1")
-        self.fourier_space = Space(d=self.f1 + self.f2, label=f"{self.label}_Fourier_Drift")
-        self.lens2 = ThinLens(f=self.f2, label=f"{self.label}_L2")
+        self.telescope = Telescope(f1=self.f1, f2=self.f2, label=f"{self.label}_Telescope")
         self.output_space = Space(d=self.f2, label=f"{self.label}_Out_Drift")
