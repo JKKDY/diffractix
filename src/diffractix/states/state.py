@@ -81,9 +81,11 @@ class OpticalState(OpticalBase):
         return self.numerical_type()(**values)
 
     def _for_display(self):
-        """Return this state as numbers, or None if a Symbol (such as an unset n) has no value yet."""
+        """Return this state as numbers, or None if a field (such as n) has no value yet."""
         if getattr(type(self), "_is_numerical", False):
             return self
+        if any(handle.node is None for handle in self.parameters):
+            return None
         try:
             return self.numeric()
         except KeyError:
@@ -92,6 +94,8 @@ class OpticalState(OpticalBase):
     def _describe_fields(self) -> str:
         """Describe the fields as written, for states that cannot be evaluated yet."""
         def number(value):
+            if value is None:
+                return "-"
             return f"{value:.4g}" if np.ndim(value) == 0 else f"array(shape={np.shape(value)})"
 
         def describe(node):

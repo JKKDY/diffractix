@@ -42,6 +42,18 @@ if TYPE_CHECKING:
 from .optimizers import solve_ipopt, solve_nlopt, solve_scipy
 
 
+def _clip_rounding(x, problem):
+    """Move values that unscaling left a few rounding steps outside a bound back onto it.
+
+    Larger excursions are kept, so `Solution.violations` still reports them.
+    """
+    x = np.asarray(x, dtype=float)
+    scaling = problem.scaling
+    tolerance = 8 * np.finfo(float).eps * (np.abs(scaling.x_center) + np.abs(scaling.x_scale) + np.abs(x))
+    clipped = np.clip(x, problem.x_lower, problem.x_upper)
+    return np.where(np.abs(clipped - x) <= tolerance, clipped, x)
+
+
 @contextmanager
 def _explain_tracing_errors(jit: bool):
     """Add the jit=False hint to errors from callables that cannot be traced."""
@@ -88,10 +100,13 @@ class Solver:
     -----
     A traceable objective or constraint (a graph expression, or a callable that
     returns one from `simulation.symbolic`) is compiled with the rest of the
-    model. A deferred callable, one whose Python control flow depends on result
-    values and so cannot be traced, receives a numerical `SimulationResultView`
-    instead and must return numerical scalars or arrays; it still needs a
-    gradient, so it must be differentiable by the numerical backend.
+    model. A callable that cannot be traced, because its Python control flow
+    depends on result values or because it raises a `TypeError` on graph
+    expressions (as JAX functions do), is deferred: it receives a numerical
+    `SimulationResultView` instead and must return numerical scalars or arrays.
+    It still needs a gradient, so it must be differentiable by the numerical
+    backend. NumPy functions such as ``np.sqrt`` work on graph expressions and
+    keep a callable traceable.
 
     Examples
     --------
@@ -439,8 +454,7 @@ class Solver:
         with _explain_tracing_errors(jit):
             result = solve(scaled_problem, method=method, options={} if options is None else options)
         result = problem.scaling.unscale(result)
-        # Unscaling can land one rounding step outside a bound; keep the solution inside.
-        result = replace(result, x=np.clip(result.x, problem.x_lower, problem.x_upper))
+        result = replace(result, x=_clip_rounding(result.x, problem))
 
         return Solution(
             result, problem, self.simulation,

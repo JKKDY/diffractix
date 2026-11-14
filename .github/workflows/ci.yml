@@ -49,7 +49,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python: ["3.11", "3.12", "3.13"]
+        python: ["3.11", "3.12", "3.13", "3.14"]
         backend: [autograd, jax]
     env:
       DIFFRACTIX_BACKEND: ${{ matrix.backend }}
@@ -86,6 +86,29 @@ jobs:
           fail_ci_if_error: false
       - name: Run every standalone example headlessly
         run: python scripts/run_examples.py --backend "${{ matrix.backend }}"
+
+  oldest-dependencies:
+    name: Oldest supported dependencies (Python 3.11 / autograd)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DIFFRACTIX_BACKEND: autograd
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Install the minimum versions from pyproject.toml, then the package without dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "autograd==1.7.0" "numpy==1.23.2" "scipy==1.9.2" "matplotlib==3.6.0" pytest
+          python -m pip install --no-deps .
+          python -m pip list
+      - name: Run the complete test suite
+        run: python -m pytest tests
 
   build:
     name: Build source distribution and wheel

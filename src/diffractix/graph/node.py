@@ -32,8 +32,15 @@ class Node:
     another Node or number.
     """
 
-    # NumPy defers mixed operations (``array - node``) to the Node's own operators.
-    __array_ufunc__ = None
+    def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+        # NumPy hands ufunc calls involving a Node here: build graph operations, so
+        # ``np.sqrt(node)`` and ``array - node`` give a Node instead of an object array.
+        op = _UFUNC_OPS.get(ufunc)
+        if method != "__call__" or kwargs or op is None:
+            return NotImplemented
+        if op.arity == 1:
+            return Node._make_unary_op(op, inputs[0])
+        return Node._make_binary_op(op, inputs[0], inputs[1])
 
     def __bool__(self):
         raise SymbolicControlFlowError("Symbolic values cannot be used as Python booleans.")
@@ -242,6 +249,16 @@ class Node:
     def minimum(self, other: Node | Scalar) -> BinaryOp:
         return Node._make_binary_op(Op.MIN, self, other)
 
+
+
+_UFUNC_OPS = {
+    np.add: Op.ADD, np.subtract: Op.SUB, np.multiply: Op.MUL, np.true_divide: Op.DIV,
+    np.power: Op.POW, np.negative: Op.NEG, np.positive: Op.POS, np.absolute: Op.ABS,
+    np.exp: Op.EXP, np.log: Op.LOG, np.sqrt: Op.SQRT,
+    np.sin: Op.SIN, np.cos: Op.COS, np.tan: Op.TAN,
+    np.sinh: Op.SINH, np.cosh: Op.COSH, np.tanh: Op.TANH,
+    np.maximum: Op.MAX, np.minimum: Op.MIN,
+}
 
 
 class BinaryOp(Node):

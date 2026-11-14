@@ -132,10 +132,20 @@ def test_chained_comparisons_explain_how_to_write_the_two_bounds():
 @pytest.mark.parametrize("make_residual", [
     lambda xp: (lambda sim: xp.abs(sim.final.x)),
     lambda xp: (lambda sim: xp.where(sim.final.x > 0, sim.final.x, -sim.final.x)),
-], ids=["abs", "where"])
+    lambda xp: (lambda sim: np.abs(sim.final.x)),
+    lambda xp: (lambda sim: np.maximum(sim.final.x, -sim.final.x)),
+], ids=["xp-abs", "xp-where", "np-abs", "np-maximum"])
 def test_callables_using_backend_functions_solve_on_every_backend(make_residual):
     from diffractix.backend import xp
     distance = Parameter(0.05).variable(bounds=(0, 1))
     simulation = System(ThinLens(f=0.1), Space(d=distance), source=Ray(x=1e-3, theta=0, n=1)).build()
     solver = Solver(simulation).target(value=make_residual(xp), target=0.0, scale=1e-3)
     assert solver.solve().value(distance) == pytest.approx(0.1, abs=1e-6)
+
+
+def test_callables_using_numpy_functions_stay_traceable():
+    distance = Parameter(0.05).variable(bounds=(0, 1))
+    simulation = System(ThinLens(f=0.1), Space(d=distance), source=Ray(x=1e-3, theta=0, n=1)).build()
+    solver = Solver(simulation).target(lambda sim: np.sqrt(sim.final.x ** 2) / 1e-3)
+    cache = solver._build_cache(False, simulation.initial_values.values)
+    assert cache.callable_objectives == () and len(cache.objective_descriptors) == 1

@@ -636,3 +636,21 @@ def test_numpy_operands_on_either_side_build_a_node(array_first):
     assert isinstance(expression, Node)
     np.testing.assert_allclose(expression.evaluate(), [0.0, 1.0] if array_first else [0.0, -1.0])
     assert isinstance(np.float64(2.0) * x, Node)
+
+
+@pytest.mark.parametrize("apply, expected", [
+    (lambda x: np.sqrt(x), np.sqrt(0.25)), (lambda x: np.abs(-x), 0.25),
+    (lambda x: np.exp(x), np.exp(0.25)), (lambda x: np.maximum(x, 1.0), 1.0),
+    (lambda x: np.minimum(x, 1.0), 0.25), (lambda x: np.power(x, 2), 0.0625),
+    (lambda x: np.tanh(x), np.tanh(0.25)),
+], ids=["sqrt", "abs", "exp", "maximum", "minimum", "power", "tanh"])
+def test_numpy_functions_on_a_node_build_graph_operations(apply, expected):
+    x = Parameter(0.25)
+    expression = apply(x)
+    assert isinstance(expression, Node)
+    assert expression.evaluate() == pytest.approx(expected)
+
+
+def test_numpy_functions_without_a_graph_operation_raise_type_error():
+    with pytest.raises(TypeError):
+        np.cbrt(Parameter(8.0))

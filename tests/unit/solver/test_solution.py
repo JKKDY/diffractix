@@ -452,3 +452,17 @@ def test_objectives_and_constraints_compare_by_identity():
     assert first == first and first != second and first in [first] and len({first, second}) == 2
     objective = Objective(p)
     assert objective == objective and objective != Objective(p) and len({objective}) == 1
+
+
+def test_a_real_bound_violation_is_not_clipped_and_is_reported(monkeypatch):
+    from diffractix.solver import solver as solver_module
+
+    def overshooting(problem, method=None, options=None):
+        return SolverResult(problem.x_upper + 0.5, False, 0.0, "stub")
+
+    monkeypatch.setattr(solver_module, "solve_scipy", overshooting)
+    _, solver, _, distance = focus_model()
+    solution = solver.solve()
+    assert solution.x[0] > distance.upper_bound
+    assert not solution.feasible
+    assert isinstance(solution.violations[-1], ParameterBoundResult)

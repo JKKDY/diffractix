@@ -449,11 +449,15 @@ def test_inputs_get_unique_default_labels_but_numerical_copies_do_not():
     (lambda: RayBundle(x=np.zeros(2), theta=np.zeros(2)), "RayBundle(x=array(shape=(2,)), theta=array(shape=(2,)), n=ambient_n)"),
     (lambda: RayBundle.parallel(radius=1e-3, count=5), "RayBundle(size=5, n=1)"),
     (lambda: GaussianBeam(q=1j, wavelength=1e-6), "GaussianBeam(q=0+1j, wavelength=1e-06, n=ambient_n)"),
-], ids=["ray-unset-n", "ray", "bundle-unset-n", "bundle", "beam-unset-n"])
+    (lambda: Ray(x=1e-3, theta=0, n=None), "Ray(x=0.001, theta=0, n=-)"),
+    (lambda: GaussianBeam(q=1j, wavelength=1e-6, n=None), "GaussianBeam(q=0+1j, wavelength=1e-06, n=-)"),
+], ids=["ray-unset-n", "ray", "bundle-unset-n", "bundle", "beam-unset-n", "ray-n-none", "beam-n-none"])
 def test_string_form_of_user_built_states(state, expected):
     assert str(state()) == expected
 
 
-def test_plotting_a_beam_without_a_medium_explains_what_is_missing():
+@pytest.mark.parametrize("n", ["unset", None])
+def test_plotting_a_beam_without_a_medium_explains_what_is_missing(n):
+    beam = GaussianBeam(q=1j, wavelength=1e-6) if n == "unset" else GaussianBeam(q=1j, wavelength=1e-6, n=n)
     with pytest.raises(ValueError, match="no value yet.*n=1.0"):
-        GaussianBeam(q=1j, wavelength=1e-6).plot()
+        beam.plot()

@@ -204,12 +204,15 @@ Variable Parameters used only by ordinary constraints cannot extend theta: they
 must already occur in the optical model. Avoid attaching the same constraint twice.
 
 A callable receives a result view: `lambda result: result[lens].after.w - target`.
-Traceable callables become graph programs. Python branches depending on result
-values may fall back to numerical evaluation; a deferred callable must return a
-number or array, not a Node. Dynamic Python branches generally cannot be JIT
+Traceable callables become graph programs; NumPy functions (`np.sqrt`, `np.abs`,
+`np.maximum`, ...) and the operator methods work on graph expressions. A callable
+is deferred to numerical evaluation when its Python branches depend on result
+values or when tracing it raises a `TypeError` (as JAX's `jnp`/`xp` functions do on
+graph expressions); a deferred callable must return a number or array, not a Node. Dynamic Python branches generally cannot be JIT
 compiled. Use `solver.solve(jit=False)` for those; do not expect JIT to silently
 fall back. Under JAX such a callable fails with a `TypeError` that names `jit=False`.
-Exceptions from user callables are not ignored.
+Exceptions from user callables are not ignored: a genuine error in a deferred
+callable is raised again when `solve()` evaluates it.
 
 Symbolic comparisons have no truth value, so a chained comparison `a < x < b`
 raises `SymbolicControlFlowError`; pass the two comparisons separately:

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import copy
+import weakref
+
 from dataclasses import field, fields, is_dataclass
 from numbers import Real
 from typing import ClassVar, get_args, get_origin, get_type_hints
@@ -231,6 +234,18 @@ class OpticalBase:
                 return
             value = InputNode(convert_value_to_node(name,))
         object.__setattr__(self, name, value)
+
+    def __deepcopy__(self, memo):
+        clone = object.__new__(type(self))
+        memo[id(self)] = clone
+        for name, value in self.__dict__.items():
+            object.__setattr__(clone, name, copy.deepcopy(value, memo))
+        # Copied Parameters still point at this object as their owner; point them at the copy.
+        for name in clone.parameter_names:
+            node = getattr(clone.__dict__.get(name), "node", None)
+            if isinstance(node, Parameter) and node.owner is self:
+                node._owner = weakref.ref(clone)
+        return clone
 
     def _get_parameter_label(self, name: str) -> str:
         label = getattr(self, "label", None)

@@ -1,7 +1,6 @@
 # AGENTS.md
 
-Context for coding agents working on this repository. Humans: see `README.md` and
-`DEVELOPMENT.md`.
+Context for coding agents working on this repository. Humans: see `README.md`.
 
 ## What this is
 
@@ -42,7 +41,8 @@ affected by a change, and the full suite only before finishing larger work.
 - Lint only (ruff `F`, `E9`); no formatter. Keep the existing style, including
   aligned blocks. Do not run `ruff check --fix` blindly: it deletes imports that are
   only re-exported.
-- Files use CRLF line endings; preserve them when editing.
+- Keep each file's existing line endings (most are CRLF, some tests are LF); check
+  with Python byte counts, not `grep`, and never leave a file mixed.
 - Change tests, examples and docs in the same step as the code they cover.
 - Library (`src/`) changes stay small and are agreed with the maintainer first.
 
@@ -52,6 +52,8 @@ affected by a change, and the full suite only before finishing larger work.
   (API usage), `system-simulation-result.md` and `graph-reference.md` (how the
   pieces fit), `testing-specifications/` (what each test area must cover),
   `future-ideas.md` (post-0.0.1 ideas, not to be built unasked).
-- `DEVELOPMENT.md`: local checks, CI and the release process.
-- `ARCHITECTURE.md`, `USAGE.md`, `THEORY.md` predate recent API changes; check them
-  against the code before relying on them.
+- `.github/workflows/`: `ci.yml` (lint, tests on Linux and Windows for Python
+  3.11-3.14 on both backends with coverage to Codecov, an oldest-dependencies job,
+  wheel checks) and `release.yml` (tag-triggered PyPI release that reruns CI).
+- `pyproject.toml`: dependencies and their minimums, extras, tool settings
+  (pytest, ruff, coverage).

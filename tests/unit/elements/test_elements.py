@@ -614,9 +614,13 @@ def test_abcd_rejected_matrix_shape_leaves_coefficients_and_existing_expressions
 
 def test_elements_can_be_deep_copied_into_independent_parameters():
     import copy
-    lens = ThinLens(f=Parameter(0.1).variable(bounds=(0.05, 0.2)))
+    lens = ThinLens(f=0.1)   # a number becomes a Parameter owned by the lens
+    lens.f.variable(bounds=(0.05, 0.2))
     clone = copy.deepcopy(lens)
     assert clone.f.node is not lens.f.node
     assert (clone.f.value, clone.f.is_variable, clone.f.bounds) == (0.1, True, (0.05, 0.2))
     clone.f.value = 0.15
     assert lens.f.value == 0.1
+    assert clone.f.node.owner is clone and lens.f.node.owner is lens
+    clone.label = "Copy"
+    assert clone.f.full_name == "Copy.f" and lens.f.full_name != "Copy.f"
