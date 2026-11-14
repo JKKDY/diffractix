@@ -15,13 +15,12 @@ def test_walk_is_preorder_left_to_right_and_visits_shared_nodes_once():
     ]
 
 
-def test_walk_follows_node_bindings_but_not_numeric_bindings_or_symbol_defaults():
+def test_walk_follows_node_bindings_but_not_numeric_bindings():
     parameter = Parameter(2.0).variable()
     bound, numeric = Symbol("bound"), Symbol("numeric")
-    defaulted = Symbol("default", default=parameter + 1)
     handle = InputNode(parameter)
-    nodes = tuple(walk_ast((bound, numeric, defaulted), {"bound": handle, "numeric": 3.0}))
-    assert [id(node) for node in nodes] == [id(bound), id(handle), id(parameter), id(numeric), id(defaulted)]
+    nodes = tuple(walk_ast((bound, numeric), {"bound": handle, "numeric": 3.0}))
+    assert [id(node) for node in nodes] == [id(bound), id(handle), id(parameter), id(numeric)]
 
 
 def test_empty_roots_and_distinct_equal_valued_parameters():
@@ -72,7 +71,7 @@ def test_variable_analysis_resolves_aliases_and_tracks_parameter_state():
 @pytest.mark.parametrize("variable_first", [False, True])
 def test_variable_analysis_does_not_hide_unbound_symbols_after_a_variable(variable_first):
     variable = Parameter(1.0).variable()
-    unknown = Symbol("unknown", default=2.0)
+    unknown = Symbol("unknown")
     root = variable + unknown if variable_first else unknown + variable
     with pytest.raises(KeyError, match="unknown"):
         root.has_variable_parameters()
@@ -106,7 +105,7 @@ def test_clone_ast_copies_structure_and_shares_parameters_literals_and_symbols()
     handle.node = Parameter(9.0)
     expression.right = Literal(1.0)
     fixed.value = 0.4
-    assert clone.evaluate({"k": 2.0}) == pytest.approx(-(0.2 * 0.4 + 3.0) / 2.0)
+    assert clone.evaluate(bindings={"k": 2.0}) == pytest.approx(-(0.2 * 0.4 + 3.0) / 2.0)
 
 
 def test_clone_ast_preserves_sharing_and_shares_across_calls_with_one_memo():

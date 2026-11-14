@@ -16,27 +16,86 @@ if TYPE_CHECKING:
 
 
 class Node:
-    """
-    Base class for declarative nodes in the parameter AST.
+    """Base class for a node in diffractix's expression graph.
 
-    Comparisons between Nodes produce symbolic Comparison objects.
+    Arithmetic between Nodes and numbers builds a graph rather than computing a
+    result immediately: ``2 * x + 1`` returns a new Node. `Literal`, `Parameter`,
+    `Symbol`, `InputNode`, `UnaryOp` and `BinaryOp` are its concrete subclasses.
+    Comparisons such as ``x <= 1`` return a `Comparison`, for use in constraints,
+    not a Python bool.
+
+    Notes
+    -----
+    Beyond the usual operators, a Node supports ``sigmoid``, ``exp``, ``log``,
+    ``sqrt``, ``sin``, ``cos``, ``tan``, ``sinh``, ``cosh``, ``tanh``, ``sinc``
+    (unnormalized: ``sinc(x) = sin(x) / x``), and ``maximum``/``minimum`` with
+    another Node or number.
     """
 
     def __bool__(self):
         raise SymbolicControlFlowError("Symbolic values cannot be used as Python booleans.")
 
-    def evaluate(self, bindings: Mapping[Hashable, object] = {},
-        *, parameter_values: Mapping[int, object] | None = None,
+    def evaluate(self, *,
+        bindings: Mapping[Hashable, object] = {},
+        parameter_values: Mapping[int, object] | None = None,
     ):
-        """Evaluate this graph with optional symbol and parameter values."""
+        """Evaluate this graph.
+
+        Parameters
+        ----------
+        bindings : Mapping, optional
+            The value of each Symbol in the graph, keyed by `Symbol.key`, such as
+            ``{"wavelength": 1.064e-6}``. A value can also be an expression,
+            such as ``{"k": 2 * p}``, which is evaluated as part of the graph.
+            Defaults to ``{}``.
+        parameter_values : Mapping, optional
+            Values to use instead of the Parameters' current values, keyed by
+            ``id(parameter)``. If given, it must cover every Parameter in the
+            graph. Defaults to ``None``: each Parameter's current `value` is used.
+
+        Returns
+        -------
+        float or array_like
+            The result.
+
+        Raises
+        ------
+        KeyError
+            If a Symbol in the graph has no binding, or
+            `parameter_values` is given and misses a Parameter in the graph.
+
+        Examples
+        --------
+        >>> from diffractix import Parameter, Symbol
+        >>> p = Parameter(2.0)
+        >>> expression = p * Symbol("k")
+        >>> float(expression.evaluate(bindings={"k": 3.0}))
+        6.0
+        >>> float(expression.evaluate(bindings={"k": 3.0}, parameter_values={id(p): 5.0}))
+        15.0
+        """
         from .graph_utils import evaluate_ast
         return evaluate_ast(self, bindings=bindings, parameter_values=parameter_values)
 
     def has_variable_parameters(self, bindings: Mapping[Hashable, object] = {}) -> bool:
-        """Check for variable Parameters after resolving Symbol bindings.
+        """Check whether this graph contains a variable Parameter.
 
-        Every Symbol must have an explicit binding, as required to establish
-        whether its compile-time binding contains variable Parameters.
+        Symbols are resolved recursively through `bindings` along the way.
+
+        Parameters
+        ----------
+        bindings : Mapping, optional
+            Values for Symbols, by key, resolved recursively. Defaults to ``{}``.
+
+        Returns
+        -------
+        bool
+            Whether a variable Parameter was reached.
+
+        Raises
+        ------
+        KeyError
+            If a reached Symbol has no entry in `bindings`.
         """
         from .graph_utils import walk_ast
 
@@ -183,7 +242,8 @@ class Node:
 
 
 class BinaryOp(Node):
-    """Expression containing a binary operation such as a + b."""
+    """A binary operation, such as ``a + b``, built automatically by arithmetic
+    between Nodes."""
 
     def __init__(self, op: Op, left: Node, right: Node):
         self.op = op
@@ -195,15 +255,18 @@ class BinaryOp(Node):
 
     @property
     def value(self):
+        """Value: the operation applied to the operands' current values."""
         return self.op.func(self.left.value, self.right.value)
 
     @property
     def is_variable(self) -> bool:
+        """Whether either operand reaches a variable Parameter."""
         return self.left.is_variable or self.right.is_variable
 
 
 class UnaryOp(Node):
-    """Expression containing a unary operation such as -a."""
+    """A unary operation, such as ``-a`` or ``a.sqrt()``, built automatically by
+    arithmetic on a Node."""
 
     def __init__(self, op: Op, operand: Node):
         self.op = op
@@ -214,20 +277,31 @@ class UnaryOp(Node):
 
     @property
     def value(self):
+        """Value: the operation applied to the operand's current value."""
         return self.op.func(self.operand.value)
 
     @property
     def is_variable(self):
+        """Whether the operand reaches a variable Parameter."""
         return self.operand.is_variable
 
 
 class InputNode(Node):
-    """
-    Stable handle to another AST node.
+    """Stable handle to another node, whose underlying node can be replaced
+    without rebuilding expressions that reference the handle.
 
-    Allows the underlying node to be replaced without rebuilding expressions
-    that reference the handle. Attribute access and assignment are forwarded
-    to the underlying node.
+    A `Node`-annotated field on an element, composite or state is exposed as one
+    of these: assigning a number creates a `Parameter` inside it; assigning an
+    expression stores that expression. Attribute access and assignment on the
+    handle are forwarded to the underlying node, so ``lens.f.value`` and
+    ``lens.f.variable()`` work directly, and ``lens.f = 0.2`` later replaces what
+    the handle points to.
+
+    Parameters
+    ----------
+    node : Node or None
+        The underlying node. ``None`` for an empty handle, which has no
+        attributes and cannot be evaluated or compiled.
     """
 
     def __init__(self, node: Node | None):
@@ -255,20 +329,28 @@ class InputNode(Node):
 
     @property
     def is_variable(self):
+        """Whether the underlying node reaches a variable Parameter; ``False`` if
+        the handle is empty."""
         return self.node.is_variable if self.node is not None else False
 
 
 class Literal(Node):
-    """
-    Immutable numeric scalar or array embedded in an expression.
+    """An immutable numeric constant embedded in an expression.
 
-    Arrays are stored as owned, read-only NumPy copies. Zero-dimensional
-    arrays retain the scalar normalization used by expression construction.
+    An ordinary number used as an operand in an expression, such as the ``2`` in
+    ``2 * x``, is wrapped in one of these automatically.
 
-    Example:
-        y = 2 * x
+    Parameters
+    ----------
+    value : complex or array_like.
+        An array is stored as an owned, read-only copy; a
+        zero-dimensional array is reduced to a plain scalar.
 
-    The value 2 is represented by a Literal rather than a Parameter.
+    Raises
+    ------
+    TypeError
+        If `value` is not a numeric scalar or array, or an array does not have a
+        numeric dtype.
     """
 
     def __init__(self, value: Scalar | np.ndarray):
@@ -293,10 +375,12 @@ class Literal(Node):
 
     @property
     def value(self):
+        """Value: the constant."""
         return self._value
 
     @property
     def is_variable(self) -> bool:
+        """Always ``False``."""
         return False
 
     def __repr__(self) -> str:
@@ -304,12 +388,41 @@ class Literal(Node):
 
 
 class Parameter(Node):
-    """
-    Mutable scalar design value.
+    """A mutable, real-valued scalar design quantity.
 
-    Parameters may exist independently or originate from an OpticalElement.
-    A variable Parameter becomes a degree of freedom during compilation.
-    A fixed Parameter remains mutable but is excluded from the optimizer.
+    Parameters are fixed by default i.e. excluded from optimization.
+    Mark one variable with :meth:`variable` to make it an optimizable degree of freedom.
+    A Parameter may stand alone or come from an `OpticalBase` field that was
+    assigned a number.
+
+    Parameters
+    ----------
+    value : float
+        Initial value. Must not be NaN.
+    name : str, optional
+        Name used in `full_name` and in messages. Defaults to ``None``: no name.
+    variable : bool, optional
+        Whether this Parameter is variable. Defaults to ``False``.
+    bounds : tuple of (float or None, float or None), optional
+        ``(lower, upper)``; see `bounds`. Defaults to unbounded.
+    owner : OpticalElement, optional
+        The element this Parameter belongs to. Only used to name it, in
+        `full_name` and so in its repr and error messages. Held weakly.
+        Defaults to ``None``: it stands alone.
+
+    Raises
+    ------
+    TypeError
+        If `value` is not a real scalar.
+    ValueError
+        If `value` is NaN.
+
+    Examples
+    --------
+    >>> from diffractix import Parameter
+    >>> p = Parameter(0.5).variable(bounds=(0.0, 1.0))
+    >>> p.is_variable, p.bounds
+    (True, (0.0, 1.0))
     """
 
     def __init__(
@@ -330,21 +443,41 @@ class Parameter(Node):
         self.name = name
         self._is_variable = variable
         self.lower_bound, self.upper_bound = -np.inf, np.inf
-        self.bounds = bounds
+        if bounds is not None:
+            self.bounds = bounds
         self._owner = weakref.ref(owner) if owner is not None else None
 
     @property
     def is_variable(self) -> bool:
+        """Whether this Parameter is currently a degree of freedom."""
         return self._is_variable
 
     def variable(self, *, bounds=None):
-        """Mark variable, optionally setting `bounds=(lower, upper)` (see `bounds`)."""
+        """Mark this Parameter variable.
+
+        Parameters
+        ----------
+        bounds : tuple of (float or None, float or None), optional
+            New bounds; see :attr:`bounds`. Defaults to leaving the current bounds.
+
+        Returns
+        -------
+        Parameter
+            ``self``, so calls can be chained.
+        """
         if bounds is not None:
             self.bounds = bounds
         self._is_variable = True
         return self
 
     def fixed(self) -> Parameter:
+        """Mark this Parameter fixed and return it.
+
+        Returns
+        -------
+        Parameter
+            ``self``, so calls can be chained.
+        """
         self._is_variable = False
         return self
 
@@ -365,17 +498,25 @@ class Parameter(Node):
 
     @property
     def bounds(self) -> tuple[float, float]:
-        """The interval `(lower, upper)`; infinities mean unbounded.
+        """Bounds: the interval ``(lower, upper)`` this Parameter's value must lie
+        in; infinities mean unbounded.
 
-        Assign `(lower, upper)` to change it. A `None` endpoint, or `None` for the
-        whole pair, keeps the current value; use `-np.inf`/`np.inf` to remove a bound.
+        Assign a ``(lower, upper)`` pair to change it. A ``None`` endpoint keeps
+        the current bound; use ``-inf``/``inf`` to remove one.
+
+        Raises
+        ------
+        ValueError
+            If the assigned value is not a ``(lower, upper)`` pair, a bound is
+            NaN, the bounds are not ordered, or the current value lies outside
+            them.
+        TypeError
+            If a bound is not a real scalar.
         """
         return self.lower_bound, self.upper_bound
 
     @bounds.setter
     def bounds(self, bounds):
-        if bounds is None:
-            return
         try:
             lower_bound, upper_bound = bounds
         except (TypeError, ValueError):
@@ -395,12 +536,17 @@ class Parameter(Node):
 
     @property
     def owner(self):
+        """Owner: the element this Parameter belongs to, or ``None`` if it stands
+        alone or the element has been garbage-collected."""
         if self._owner is None:
             return None
         return self._owner()
 
     @property
     def full_name(self) -> str:
+        """Full name: the owner's label (or type name), joined to this
+        Parameter's name by a dot if it has one, else just the label; just the
+        name, or ``"<parameter>"``, if it has no owner."""
         owner = self.owner
 
         if owner is not None:
@@ -418,42 +564,52 @@ class Parameter(Node):
 
 
 class Symbol(Node):
-    """Reference to an external value identified by a hashable key."""
+    """Reference to an external value, resolved from compile-time bindings or
+    runtime bindings.
 
-    def __init__(self, key, *, default=None):
+    Elements can depend on values that are only known elsewhere, such as the system's
+    ambient index or wavelength, by using a Symbol with an agreed-on key; the
+    System or Solver supplies the value through bindings at compile time, or the
+    value is supplied at runtime (e.g. traced Constraints).
+
+    Parameters
+    ----------
+    key : hashable
+        Identifies this Symbol; Symbols with the same key are interchangeable.
+
+    Raises
+    ------
+    TypeError
+        If `key` is not hashable.
+    """
+
+    def __init__(self, key):
         try:
             hash(key)
         except TypeError:
             raise TypeError("Symbol key must be hashable.") from None
 
         self._key = key
-        self._default_value = default
-
-    def set_default(self, value):
-        """Set the optional fallback value and return this Symbol."""
-        self._default_value = value
-        return self
 
     @property
     def key(self):
+        """Key: identifies this Symbol."""
         return self._key
 
     @property
-    def default(self):
-        """The optional default value, or None when no default was provided."""
-        return self._default_value
-
-    @property
-    def has_default(self):
-        """Whether a non-None default is available."""
-        return self._default_value is not None
-
-    @property
     def is_variable(self) -> bool:
+        """Always ``False``."""
         return False
 
     @property
     def value(self):
+        """A Symbol has no standalone value; resolve it through bindings instead.
+
+        Raises
+        ------
+        RuntimeError
+            Always.
+        """
         raise RuntimeError(
             f"{self!r} has no standalone value. "
             "Symbols are resolved from compile-time context or runtime bindings."

@@ -44,21 +44,15 @@ class BoundPlane(Plane):
         return self.supplied_bindings
 
 
-@pytest.mark.parametrize("default", [1.5, 0.0, None])
-def test_make_symbol_copies_metadata_into_independent_instances(default):
-    prototype = Symbol(("medium", 1), default=default)
-
+@pytest.mark.parametrize("key", [Symbol(("medium", 1)), ("medium", 1)])
+def test_make_symbol_creates_independent_instances_with_the_key(key):
     @dataclass
     class Holder:
-        symbol: Symbol = make_symbol(prototype)
+        symbol: Symbol = make_symbol(key)
 
     first, second = Holder().symbol, Holder().symbol
-    assert first is not prototype and second is not first
-    assert first.key == second.key == prototype.key
-    assert first.default == second.default == default
-    assert first.has_default is (default is not None)
-    first.set_default(9.0)
-    assert prototype.default == second.default == default
+    assert first is not key and second is not first
+    assert first.key == second.key == ("medium", 1)
 
 
 def test_variadic_constructor_matches_incremental_registration():

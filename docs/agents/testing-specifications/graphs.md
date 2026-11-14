@@ -17,7 +17,7 @@ root = x**2 + Symbol(("result", "width"))
 program = compile_graph((root, x))
 values = program.evaluate([3.0], {("result", "width"): 0.5})
 # (9.5, 3.0), in root order
-root.evaluate({("result", "width"): 0.5})  # uses current x.value
+root.evaluate(bindings={("result", "width"): 0.5})  # uses current x.value
 ```
 
 Documented node contracts:
@@ -30,7 +30,7 @@ Documented node contracts:
   competing endpoint arguments conflict. Wrong scalar types and bool are invalid;
   NaN bounds, inverted bounds and exclusion of the current value are invalid.
 - Symbol keys are hashable. Distinct Symbols with equal keys share a runtime
-  slot. None means no default. `set_default` is fluent. `.value` cannot resolve it.
+  slot. `.value` cannot resolve it.
 - InputNode is a stable mutable handle. Attribute reads, writes and parameter
   methods forward to its target. Replacing `.node` affects existing ASTs.
 - Arithmetic and unary methods build Nodes. Comparisons build Comparison objects,
@@ -41,20 +41,20 @@ Documented node contracts:
 ## Interpreter, traversal and variability
 
 `evaluate_ast(root, bindings={}, parameter_values=None)` and `root.evaluate`
-calculate one root. Explicit Symbol bindings precede defaults and may themselves
+calculate one root. Symbol bindings may themselves
 be Nodes, recursively resolved. Missing Symbols raise KeyError containing the key.
 Without `parameter_values`, fixed and variable Parameters both use current values.
 With it, every encountered Parameter requires an `id(parameter)` entry; missing
 entries fail instead of falling back. Preserve backend values and differentiation.
 
 `walk_ast` yields roots before descendants, left before right, once per identity;
-it follows explicit Node-valued bindings, not Symbol defaults. Shared DAGs are
+it follows explicit Node-valued bindings. Shared DAGs are
 not cycles. Active-path cycles raise ASTCycleError. Empty handles raise
 UnresolvedInputError. Unsupported node subclasses raise UnsupportedNodeError.
 Non-Node roots are TypeErrors. Empty roots yield no nodes.
 
 `has_variable_parameters(bindings)` uses all reachable dependencies and requires
-every Symbol to be explicitly bound, even when it has a default or a different
+every Symbol to be explicitly bound, even when a different
 branch already contains a variable. `.is_variable` instead follows the raw graph
 and reports False for Symbols. Do not conflate these methods.
 
@@ -68,7 +68,7 @@ the program. Changing variable flags afterward must not change compiled inputs.
 The new Program does not own initial values or accept `parameter_snapshot`.
 
 Bound Symbols resolve recursively and leave no runtime entry. Unbound Symbols
-remain runtime inputs, including Symbols with defaults. Runtime values can be
+remain runtime inputs. Runtime values can be
 real, complex or arrays. `Program.evaluate` returns a tuple of native roots,
 without common dtype promotion or stacking. Empty programs return (). Direct
 constant/input and duplicate outputs preserve order. Wrong theta length raises
@@ -110,7 +110,6 @@ graph constants.
   constants: infinite optical radii remain legitimate.
 - Runtime array ownership is not promised: native tuple roots can alias bindings.
   Do not carry over old packed-array copy assertions.
-- Runtime Symbols ignore defaults by design. Direct evaluation uses defaults.
 - Optimization currently includes allocation in optimize; there is no public
   finalize. Feeding already allocated programs back into SSA-only passes is not
   documented; report this uncertainty instead of assuming idempotence.

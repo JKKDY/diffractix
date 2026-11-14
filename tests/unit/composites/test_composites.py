@@ -12,7 +12,7 @@ def aggregate_matrix(composite, bindings=None):
     matrix = np.eye(2)
     for leaf in composite.leaf_elements:
         current = np.array([
-            [entry.evaluate(bindings or {}) if isinstance(entry, Node) else entry for entry in row]
+            [entry.evaluate(bindings=bindings or {}) if isinstance(entry, Node) else entry for entry in row]
             for row in leaf.matrix
         ])
         matrix = current @ matrix
@@ -167,7 +167,7 @@ def test_slab_aggregate_matrix_uses_physical_angle_and_returns_to_ambient(ambien
         atol=1e-15,
     )
     assert slab.element_length.evaluate() == pytest.approx(0.012)
-    assert slab.back.refractive_index.evaluate({AMBIENT_N.key: ambient}) == ambient
+    assert slab.back.refractive_index.evaluate(bindings={AMBIENT_N.key: ambient}) == ambient
 
 
 @pytest.mark.parametrize("radii", [(0.08, -0.12), (-0.08, 0.12), (np.inf, np.inf)])

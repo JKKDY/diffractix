@@ -19,7 +19,24 @@ if TYPE_CHECKING:
 
 
 class InitialValues:
-    """Editable theta values indexed by model Parameters or their handles."""
+    """Editable copy of theta, the variable Parameters' values, indexed by Parameter.
+
+    Returned by `Simulation.initial_values`; see `Simulation` for theta. It lets
+    you read or set a value by its Parameter, as in ``guess[lens.f] = 0.2``,
+    instead of by its position in theta. Its `values` attribute holds the plain
+    array, to pass to :meth:`Simulation.run`. Editing it does not change the
+    Simulation or the Parameters it was built from.
+
+    Examples
+    --------
+    >>> from diffractix import Parameter, Ray, Space, System
+    >>> space = Space(d=Parameter(0.05).variable())
+    >>> simulation = System(space, optical_input=Ray(x=0, theta=0)).build()
+    >>> guess = simulation.initial_values
+    >>> guess[space.d] = 0.08
+    >>> float(simulation.run(theta=guess.values)[space].z_end)
+    0.08
+    """
 
     def __init__(self, values: Sequence[float], parameter_indices: Mapping[int, int]):
         self.values = np.array(values, dtype=float, copy=True)
@@ -35,9 +52,48 @@ class InitialValues:
         return self._parameter_indices[id(parameter)]
 
     def __getitem__(self, parameter: Parameter | InputNode):
+        """Return the current value of a variable Parameter.
+
+        Parameters
+        ----------
+        parameter : Parameter or InputNode
+            A variable Parameter in this theta, or its direct handle (for example
+            ``lens.f``, not an expression built from it).
+
+        Returns
+        -------
+        float
+            The current value.
+
+        Raises
+        ------
+        TypeError
+            If `parameter` is not a Parameter or one of its direct handles.
+        KeyError
+            If `parameter` is not part of this Simulation's theta.
+        """
         return self.values[self._index(parameter)]
 
     def __setitem__(self, parameter: Parameter | InputNode, value):
+        """Set the value of a variable Parameter.
+
+        Parameters
+        ----------
+        parameter : Parameter or InputNode
+            A variable Parameter in this theta, or its direct handle.
+        value : float
+            The new value.
+
+        Raises
+        ------
+        TypeError
+            If `parameter` is not a Parameter or one of its direct handles, or `value`
+            is not a real numeric scalar.
+        ValueError
+            If `value` is not finite.
+        KeyError
+            If `parameter` is not part of this Simulation's theta.
+        """
         index = self._index(parameter)
         value = np.asarray(value)
         if value.ndim != 0 or value.dtype.kind not in "iuf":
@@ -49,15 +105,30 @@ class InitialValues:
 
 
 class Simulation:
-    """
-    Compiled differentiable optical simulation.
+    """A compiled optical system, ready to run and optimize.
 
-    A Simulation contains the numerical program and metadata required to
-    evaluate an optical system. Running a simulation does not mutate the source
-    System, its elements, or parameter graph.
+    :meth:`System.build` produces a Simulation. It is a snapshot: later changes
+    to the System, its elements or their parameters do not reach it.
 
-    Programs capture graph expressions. Deferred callable constraints retain
-    normal Python closure semantics.
+    Attributes
+    ----------
+    element_data : tuple of ElementData
+        Resolved elements, generated gaps included, in propagation order.
+    parameter_data : tuple of ParameterData
+        Variable Parameters in theta order, with their names, initial values and
+        bounds.
+    bindings : Mapping
+        Values bound for Symbols, by key, captured at :meth:`System.build`.
+
+    Notes
+    -----
+    The values of the variable Parameters, in `parameter_data` order, form one
+    1-D array called *theta*. :meth:`run` takes a theta, the Solver searches for
+    the best one, and `initial_values` holds the build-time theta.
+
+    See Also
+    --------
+    System.build : Produces a Simulation.
     """
 
     def __init__(
@@ -85,12 +156,24 @@ class Simulation:
 
     @cached_property
     def symbolic(self):
-        """Stand-in for a result whose quantities are graph expressions.
+        """Symbolic result: this Simulation's result as graph expressions, for
+        writing Solver objectives and constraints.
 
-        `sim = simulation.symbolic`, then `sim[lens].after.w <= 1e-3` or
-        `sim[b].z_start - sim[a].z_end` are expressions of the result at any theta, to
-        use as Solver objectives and constraints. It belongs to this simulation: use
-        the one of the simulation you pass to the Solver.
+        Its values depend on the variable Parameters instead of being fixed
+        numbers. For example, ``simulation.symbolic[lens].after.w <= 1 * mm``
+        is a constraint on the beam radius after `lens`, which the Solver checks
+        each time it runs the simulation. Use it only with a Solver for this
+        same Simulation.
+
+        Returns
+        -------
+        SimulationResultTracer
+            The symbolic result.
+
+        Raises
+        ------
+        ValueError
+            If the Simulation does not have exactly one optical input.
         """
         if len(self._optical_inputs) != 1:
             raise ValueError("Simulation.symbolic requires exactly one optical input.")
@@ -105,11 +188,47 @@ class Simulation:
 
     @property
     def initial_values(self) -> InitialValues:
-        """Return an independent editable copy of the build-time initial theta."""
+        """Initial values: the variable Parameters' build-time values (theta; see
+        `Simulation`), as an editable copy.
+
+        Edits do not change the Simulation or its Parameters; pass the edited
+        `InitialValues.values` to :meth:`run`.
+
+        Returns
+        -------
+        InitialValues
+            The editable copy.
+        """
         return InitialValues(self._initial_values, self._optics_program.parameter_indices)
 
     def run(self, theta=None) -> SimulationResult:
-        """Evaluate the optics program once and propagate the numerical input."""
+        """Run the simulation: propagate the optical source through every element.
+
+        Parameters
+        ----------
+        theta : array_like, optional
+            Values for the variable Parameters, in the order of `parameter_data`.
+            Defaults to the build-time initial values.
+
+        Returns
+        -------
+        SimulationResult
+            The states and positions along the system, for this theta.
+
+        Raises
+        ------
+        ValueError
+            If the Simulation does not have exactly one optical input.
+
+        Examples
+        --------
+        >>> from diffractix import Ray, Space, System, ThinLens
+        >>> from diffractix.units import mm
+        >>> system = System(ThinLens(f=100 * mm), Space(d=100 * mm), optical_input=Ray(x=1 * mm, theta=0))
+        >>> result = system.build().run()
+        >>> round(float(result.final.x), 9)
+        0.0
+        """
         if len(self._optical_inputs) != 1:
             raise ValueError("Simulation.run() requires exactly one optical input.")
         if theta is None:
@@ -148,6 +267,7 @@ class Simulation:
         )
 
     def __str__(self) -> str:
+        """Return a readable summary of the simulation (compiled system) and its variables and constraints."""
         def render_table(headers, rows):
             widths = [
                 max([len(header), *(len(row[i]) for row in rows)])

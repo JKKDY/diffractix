@@ -752,7 +752,7 @@ class System:
             if isinstance(node, Parameter) and node.is_variable
         }
 
-        continuity_roots = (requirement.evaluate for requirement in continuity_constraints)
+        continuity_roots = (requirement.quantity for requirement in continuity_constraints)
         for node in walk_ast(continuity_roots, bindings):
             if isinstance(node, Parameter) and node.is_variable and id(node) not in parameters:
                 parameters[id(node)] = node

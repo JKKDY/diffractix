@@ -90,7 +90,7 @@ def test_strict_comparisons_normalize_to_open_floating_point_bounds(
 
     constraint = normalize_to_constraint(make_comparison(parameter))
 
-    assert constraint.evaluate is parameter
+    assert constraint.quantity is parameter
     assert constraint.lower_bound == lower_bound
     assert constraint.upper_bound == upper_bound
 
@@ -120,8 +120,8 @@ def test_strict_parameter_relations_normalize_to_open_residual_bounds(
 
     constraint = normalize_to_constraint(make_comparison(left, right))
 
-    assert constraint.evaluate is not left
-    assert constraint.evaluate is not right
+    assert constraint.quantity is not left
+    assert constraint.quantity is not right
     assert constraint.lower_bound == lower_bound
     assert constraint.upper_bound == upper_bound
 
@@ -140,8 +140,8 @@ def test_objective_supported_forms(factory):
     assert isinstance(objective, Objective)
     if isinstance(entry, Objective):
         assert objective is entry
-    if not callable(objective.evaluate):
-        assert objective.evaluate is p
+    if not callable(objective.quantity):
+        assert objective.quantity is p
 
 
 @pytest.mark.parametrize("entry", [1, None, object(), lambda: 1])
@@ -161,7 +161,7 @@ def test_zero_argument_constraint_forms_and_reversed_bounds():
     p = Parameter(1)
     comparison = normalize_to_constraint(lambda: p >= 0)
     explicit = normalize_to_constraint(Constraint(lambda: p, lower_bound=0, label="named"))
-    assert comparison.evaluate is explicit.evaluate is p
+    assert comparison.quantity is explicit.quantity is p
     assert explicit.label == "named"
     assert comparison.lower_bound == explicit.lower_bound == 0
     with pytest.raises(ValueError, match="lower_bound"):
@@ -199,7 +199,7 @@ def test_callable_objects_and_bound_methods_normalize_like_functions():
     entry = Residual()
     assert callable_arity(entry) == 1
     assert callable_arity(entry.constant) == 0
-    assert normalize_to_objective(entry).evaluate is entry
+    assert normalize_to_objective(entry).quantity is entry
     assert normalize_to_objective(entry.constant).evaluate.value == 2
 
 
@@ -355,14 +355,14 @@ def test_a_comparison_with_the_constant_on_the_left_bounds_the_right_hand_side(r
     x = Parameter(1.0)
     constraint = normalize_to_constraint(Comparison(Relation[relation], Literal(2.0), x))
 
-    assert constraint.evaluate is x
+    assert constraint.quantity is x
     assert (constraint.lower_bound, constraint.upper_bound) == (lower, upper)
 
 
 def test_equality_with_a_constant_is_a_closed_interval_on_the_expression():
     x = Parameter(1.0)
     constraint = normalize_to_constraint(x == 2.0)
-    assert constraint.evaluate is x and (constraint.lower_bound, constraint.upper_bound) == (2.0, 2.0)
+    assert constraint.quantity is x and (constraint.lower_bound, constraint.upper_bound) == (2.0, 2.0)
 
 
 def test_unlabelled_callable_constraints_are_described_by_their_source_or_name():

@@ -23,8 +23,8 @@ An expression is a directed graph of `Node` objects. Arithmetic creates `UnaryOp
 
 - `Literal(value)` holds a numeric constant. Ordinary scalar operands in expressions are converted to literals.
 - `Parameter(value, name=None, ...)` holds a mutable real scalar. NaN is rejected at construction. Infinite values remain allowed within bounds
-  for optical radii. Parameters are fixed by default. `variable(...)` marks one variable; `fixed()` marks it fixed; `parameter.bounds = (lower, upper)` sets its bounds. `variable()` and `fixed()` return the parameter. `variable(bounds=(lower, upper))` and `Parameter(..., bounds=(lower, upper))` set bounds too; bounds are always one pair, and a `None` endpoint (or `bounds=None`) retains the current bound. `lower_bound` and `upper_bound` remain readable.
-- `Symbol(key, default=None)` refers to an external value by a hashable key. `set_default(value)` changes its optional default. `has_default` is true when the default is not `None`. Direct interpretation uses the default when no binding is supplied; graph compilation does not automatically use it.
+  for optical radii. Parameters are fixed by default. `variable(...)` marks one variable; `fixed()` marks it fixed; `parameter.bounds = (lower, upper)` sets its bounds. `variable()` and `fixed()` return the parameter. `variable(bounds=(lower, upper))` and `Parameter(..., bounds=(lower, upper))` set bounds too; bounds are always one pair, and a `None` endpoint retains the current bound. Assigning `parameter.bounds = None` raises; `bounds=None` in `Parameter(...)` and `variable(...)` means unbounded and unchanged respectively. `lower_bound` and `upper_bound` remain readable.
+- `Symbol(key)` refers to an external value by a hashable key; it has no value of its own and must be bound.
 - `InputNode(node)` is a stable handle whose underlying node can be replaced. It forwards attribute access and assignment to that node. An empty handle contains `None` and cannot be compiled or interpreted.
 - `UnaryOp(op, operand)` and `BinaryOp(op, left, right)` represent operations. Normal construction uses operators such as `+`, `-`, `*`, `/`, `**` and methods such as `.sin()`, `.sqrt()`, `.maximum()` and `.minimum()`.
 
@@ -32,7 +32,7 @@ Optical objects declare graph-backed fields with a `Node` annotation or, for dat
 
 Comparisons such as `parameter >= 0` create a `Comparison`, containing a `Relation` and two nodes. Converting a symbolic comparison or a node to a Python boolean raises `SymbolicControlFlowError`; Python `if` cannot directly choose a branch from a symbolic value.
 
-`node.is_variable` checks the graph as written; Symbols report `False`. To include node-valued Symbol bindings, use `node.has_variable_parameters(bindings)`. It follows explicit compile-time bindings and raises `KeyError` for an unbound Symbol, even if that Symbol has a default. It reports the current state of reachable Parameters, not frozen Simulation metadata or whether runtime numerical values depend on theta.
+`node.is_variable` checks the graph as written; Symbols report `False`. To include node-valued Symbol bindings, use `node.has_variable_parameters(bindings)`. It follows explicit compile-time bindings and raises `KeyError` for an unbound Symbol. It reports the current state of reachable Parameters, not frozen Simulation metadata or whether runtime numerical values depend on theta.
 
 ## Compilation and evaluation
 
@@ -58,9 +58,9 @@ A program contains `Input`, `Constant` and `Register` operands, and unary and bi
 
 ## Direct interpretation
 
-`evaluate_ast(root, bindings={}, parameter_values=None)` evaluates a single root without compiling it. Symbol bindings can be numerical values or nodes and are resolved recursively. An explicit binding takes precedence over a symbol's default. With no parameter mapping, it uses current `Parameter.value` values. If `parameter_values` is supplied, it must contain every encountered parameter, keyed by `id(parameter)`; missing values raise `KeyError`.
+`evaluate_ast(root, bindings={}, parameter_values=None)` evaluates a single root without compiling it. Symbol bindings can be numerical values or nodes and are resolved recursively. With no parameter mapping, it uses current `Parameter.value` values. If `parameter_values` is supplied, it must contain every encountered parameter, keyed by `id(parameter)`; missing values raise `KeyError`.
 
-`walk_ast(roots, bindings={})` traverses nodes in depth-first order, visiting each node identity once and following node-valued symbol bindings. Both utilities detect cycles. Symbols without a binding or default raise `KeyError` during interpretation; empty input handles raise `UnresolvedInputError`; unsupported nodes raise `UnsupportedNodeError`.
+`walk_ast(roots, bindings={})` traverses nodes in depth-first order, visiting each node identity once and following node-valued symbol bindings. Both utilities detect cycles. Symbols without a binding raise `KeyError` during interpretation; empty input handles raise `UnresolvedInputError`; unsupported nodes raise `UnsupportedNodeError`.
 
 ## Canonical alignment
 

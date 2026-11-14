@@ -134,7 +134,7 @@ Relates to idea 1 (segments), where "preceding" depends on the path.
 
 The solver builds dense derivatives: the full constraint Jacobian (`m x n`), the
 objective Hessian and the multiplier-weighted constraint Hessian (`n x n` each),
-with forward-mode Jacobians and full Hessians from the backend. That cost grows
+with reverse-mode Jacobians and full Hessians from the backend. That cost grows
 quickly with the number of variables `n` and constraints `m`, while the matrices
 are often mostly zeros: a constraint on one lens's thickness depends on one
 variable, an aperture limit only on the parameters upstream of that element.
@@ -164,4 +164,14 @@ constraint scaling and the constraint reduction, which assume dense arrays today
 and how the pattern survives JIT, since JAX needs static shapes for the nonzeros.
 Relates to idea 1 (segments): several independent paths make the matrices block
 structured, which is where sparsity pays most.
+
+## 11. Objective norms
+
+Every objective adds `weight * sum(residual**2)` to the cost, a squared L2 norm.
+Let the user choose the norm per objective, for example L1 (robust to outliers,
+favours exact zeros) or L-infinity (worst case, such as the largest beam radius
+along a system). Both are non-smooth, so they need care with gradient-based
+optimizers: a smooth approximation, or the usual reformulation with auxiliary
+variables and constraints (`|r| <= t`, minimize `t`). Open question: whether the
+norm belongs on `Objective` or on `Solver.target`.
 

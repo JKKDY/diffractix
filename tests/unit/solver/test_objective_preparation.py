@@ -47,7 +47,7 @@ def test_dynamic_objectives_preserve_original_callable_and_declaration_position(
     assert program.evaluate([2]) == (2, 7)
     assert [item.position for item in descriptors] == [0, 2]
     assert callables == ((1, objective),)
-    assert callables[0][1].evaluate is dynamic
+    assert callables[0][1].quantity is dynamic
 
 
 def test_array_residual_callable_is_preserved():
@@ -56,7 +56,7 @@ def test_array_residual_callable_is_preserved():
     assert program.evaluate([]) == ()
     assert descriptors == ()
     assert callables == ((0, objective),)
-    np.testing.assert_array_equal(objective.evaluate(None), [1, -2])
+    np.testing.assert_array_equal(objective.quantity(None), [1, -2])
 
 
 def test_objective_tracing_propagates_user_errors_and_rejects_unbound_symbols():

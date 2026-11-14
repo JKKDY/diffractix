@@ -212,7 +212,7 @@ value of a variable Parameter (or its direct handle) and evaluates any other gra
 expression, such as a derived gap, with the interpreter. Solved values replace the
 model's variable Parameters, fixed Parameters keep their current value, and the
 Simulation's bindings resolve Symbols. A variable Parameter outside the model, an
-unbound Symbol (defaults are ignored) or a runtime result Symbol raises KeyError;
+unbound Symbol or a runtime result Symbol raises KeyError;
 read result quantities from run(). There is no Solution indexing or value_of().
 solution.simulation carries solved defaults, current parameter bounds and the full
 constraints, including ones removed only for numerical optimization. It can be

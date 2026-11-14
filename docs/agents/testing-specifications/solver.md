@@ -28,7 +28,7 @@ used only when needed (e.g. JAX tracing tests); avoid gratuitous subprocesses.
 
 ## Objective and callable normalization (objective.py, utils.py)
 
-Objective(evaluate, weight=1, label=None) represents residuals, not a separately
+Objective(quantity, weight=1, label=None) represents residuals, not a separately
 defined objective cost. Evaluate is Node or callable; weight must be finite and
 nonnegative (zero is valid). Cost is weight * sum(square(residual)), summed across
 objectives. Test scalar/vector and empty residuals with analytical expectations.
@@ -46,7 +46,7 @@ callables: record this observation rather than demand automatic array tracing.
 
 ## Constraint normalization/preparation (constraint.py)
 
-Constraint(evaluate, lower_bound=-inf, upper_bound=inf, label=None) applies bounds
+Constraint(quantity, lower_bound=-inf, upper_bound=inf, label=None) applies bounds
 componentwise; equal bounds mean equality. Reject wrong evaluator type, NaN
 bounds, reversed bounds. Comparisons normalize directly; strict LT/GT use
 nextafter at scalar bounds or residual zero. Test operand reversal, two Node
@@ -183,7 +183,7 @@ value(quantity) returns the solved value of a canonical Parameter or direct
 InputNode, and evaluates any other graph expression with the interpreter: solved
 values for the model's variable Parameters, current values for fixed Parameters,
 Simulation bindings for Symbols. A variable Parameter outside the model, an
-unbound Symbol (defaults ignored) or a runtime result Symbol raises KeyError;
+unbound Symbol or a runtime result Symbol raises KeyError;
 non-graph arguments raise TypeError. run returns one reused optical result; result-dependent
 reports share it; pure parameter reporting must not propagate. Repeated solves
 cannot retroactively change earlier Solution reports or bounds.

@@ -10,7 +10,7 @@ from diffractix.solver.constraint import Constraint, ConstraintDescriptor, prepa
 
 
 def make_problem(*constraints):
-    program = precompile(tuple(item.evaluate for item in constraints))
+    program = precompile(tuple(item.quantity for item in constraints))
     descriptors = tuple(
         ConstraintDescriptor(3 * index + 2, item.lower_bound, item.upper_bound, item.label, str(item))
         for index, item in enumerate(constraints)

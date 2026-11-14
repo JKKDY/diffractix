@@ -68,9 +68,8 @@ def test_compilation_snapshots_handle_expression_bindings_and_variable_membershi
     assert program.evaluate([4.0])[0] == 12.0
 
 
-@pytest.mark.parametrize("symbol", [Symbol("missing"), Symbol("missing", default=2.0)])
-def test_runtime_symbols_do_not_use_interpreter_defaults(symbol):
-    program = compile_graph((symbol,))
+def test_unbound_symbols_become_runtime_inputs_that_must_be_supplied():
+    program = compile_graph((Symbol("missing"),))
     assert program.runtime_symbols == {"missing": 0}
     with pytest.raises(KeyError, match="missing"):
         program.evaluate([])

@@ -54,7 +54,7 @@ class OpticalState(OpticalBase):
         Parameters
         ----------
         bindings : Mapping, optional
-            Values for Symbols, by key. They take precedence over Symbol defaults.
+            Values for Symbols, by key. Defaults to ``{}``.
 
         Returns
         -------
@@ -71,7 +71,7 @@ class OpticalState(OpticalBase):
         for item in constructor_fields:
             if item.name in parameters:
                 handle = parameters[item.name]
-                values[item.name] = None if handle.node is None else handle.evaluate(bindings)
+                values[item.name] = None if handle.node is None else handle.evaluate(bindings=bindings)
             else:
                 values[item.name] = getattr(self, item.name)
 

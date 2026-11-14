@@ -24,7 +24,7 @@ out = numerical.propagate(1.0, 0.1, 0.0, 1.0, n=1.0)
 ```
 
 `numeric(bindings={})` evaluates constructor graph fields at current Parameter
-values, even when variable. Explicit bindings override Symbol defaults, may
+values, even when variable. Bindings may
 contain Node expressions, and are not modified. Missing required Symbols raise
 KeyError; cycles and empty required dependencies use graph errors. Optional
 direct empty fields become None. `bindings=None` is not currently normalized;
@@ -53,8 +53,8 @@ Builtin propagation uses type(self), so numerical types remain numerical.
 | RayBundle | n | x,theta arrays,label | vectors shape (2,N); per-ray propagation |
 | GaussianBeam | wavelength,n | complex q,label | q'=(A*q+B)/(C*q+D) |
 
-Default n is a fresh Symbol with ambient_n key; AMBIENT_N currently has no
-default. Standalone numerical conversion must supply n or an ambient binding.
+Default n is a fresh Symbol with ambient_n key.
+Standalone numerical conversion must supply n or an ambient binding.
 Do not assume `.numeric()` silently chooses air. RayBundle factories and
 Gaussian factories explicitly default n=1.0, unlike direct constructors.
 

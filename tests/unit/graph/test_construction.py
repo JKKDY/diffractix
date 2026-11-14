@@ -40,7 +40,6 @@ def test_bounds_have_one_spelling_in_constructor_variable_and_property():
     ((None, 2.0), (0.5, 2.0)),
     ((0.0, None), (0.0, 1.5)),
     ((None, None), (0.5, 1.5)),
-    (None, (0.5, 1.5)),
     ((-np.inf, np.inf), (-np.inf, np.inf)),
 ])
 def test_none_keeps_the_current_endpoint_and_infinities_remove_it(bounds, expected):
@@ -55,6 +54,13 @@ def test_none_keeps_the_current_endpoint_and_infinities_remove_it(bounds, expect
 def test_variable_without_bounds_keeps_existing_bounds():
     parameter = Parameter(1.0, bounds=(0.0, 2.0)).variable()
     assert parameter.is_variable and parameter.bounds == (0.0, 2.0)
+
+
+def test_assigning_none_bounds_is_rejected():
+    parameter = Parameter(1.0, bounds=(0.0, 2.0))
+    with pytest.raises(ValueError, match="pair"):
+        parameter.bounds = None
+    assert parameter.bounds == (0.0, 2.0)
 
 
 def test_variable_accepts_bounds_only_by_keyword_and_has_no_endpoint_arguments():
@@ -409,28 +415,6 @@ def test_symbol_has_no_standalone_value():
 
     with pytest.raises(RuntimeError):
         _ = symbol.value
-
-
-def test_symbol_none_default_is_unset():
-    absent = Symbol("ambient_n")
-    explicit_none = Symbol("ambient_n", default=None)
-
-    assert absent.default is None
-    assert absent.has_default is False
-    assert explicit_none.default is None
-    assert explicit_none.has_default is False
-
-
-def test_symbol_set_default_updates_value_and_returns_symbol():
-    symbol = Symbol("ambient_n")
-
-    assert symbol.set_default(1.5) is symbol
-    assert symbol.default == 1.5
-    assert symbol.has_default is True
-
-    assert symbol.set_default(None) is symbol
-    assert symbol.default is None
-    assert symbol.has_default is False
 
 
 def test_symbols_are_not_interned():

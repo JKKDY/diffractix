@@ -81,7 +81,7 @@ def test_jax_transformations_precision_and_validation_boundary():
 import jax
 import numpy as np
 import pytest
-from diffractix.backend import current_backend, grad, hessian, jacobian, jacrev, jit, require, xp
+from diffractix.backend import current_backend, grad, hessian, jacobian, jit, require, xp
 assert str(xp.array(1.).dtype) == 'float64'
 assert current_backend() == 'jax'
 @jit(static_argnums=1)
@@ -90,8 +90,7 @@ def function(theta, power):
 value = lambda theta: function(theta, 3)
 point = xp.array([2., 3.])
 np.testing.assert_allclose(value(point), [8., 6.])
-for transform in (jacobian, jacrev):
-    np.testing.assert_allclose(transform(value)(point), [[12., 0.], [3., 2.]])
+np.testing.assert_allclose(jacobian(value)(point), [[12., 0.], [3., 2.]])
 points = xp.array([[2., 3.], [1., 4.]])
 np.testing.assert_allclose(jit(jax.vmap(value))(points), [[8., 6.], [1., 4.]])
 def guarded(x):

@@ -4,11 +4,39 @@ __all__ = ["plot"]
 
 
 def plot(result, ax=None, *, show_elements=True, show_axis=True):
-    """Plot an evaluated result, returning (figure, axes) without calling show().
+    """Plot a concrete 2D trace of a result.
 
-    Lengths are interpreted as metres: z is displayed in m, transverse values
-    in mm. Only known Space intervals have continuous trajectories; other
-    elements show boundary values. Bundles display up to 41 evenly spaced rays.
+    Equivalent to :meth:`SimulationResult.plot`; only known homogeneous Spaces
+    are sampled between boundaries; see Notes.
+
+    Parameters
+    ----------
+    result : SimulationResult
+        The result to plot.
+    ax : matplotlib.axes.Axes, optional
+        Axes to draw on. Defaults to ``None``: a new figure and axes are created.
+    show_elements : bool, optional
+        Whether to draw and label the elements. Defaults to ``True``.
+    show_axis : bool, optional
+        Whether to draw the optical axis. Defaults to ``True``.
+
+    Returns
+    -------
+    tuple of (matplotlib.figure.Figure, matplotlib.axes.Axes)
+        Neither is shown or saved; call ``fig.savefig(...)`` or ``plt.show()``
+        yourself.
+
+    Raises
+    ------
+    ImportError
+        If Matplotlib cannot be imported.
+
+    Notes
+    -----
+    ``z`` is shown in metres, transverse quantities in millimetres. Supports
+    `Ray`, `RayBundle` and `GaussianBeam` results; a bundle shows up to 41 rays. A
+    thick element such as `GRIN` retains only its boundary states; the interior
+    is not sampled. General probing at an arbitrary z is not supported.
     """
     try:
         from .matplotlib import plot as render

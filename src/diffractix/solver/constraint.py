@@ -74,15 +74,45 @@ def describe_callable(func: Callable) -> str:
 
 @dataclass(frozen=True)
 class Constraint:
-    evaluate: Node | Callable
+    """A hard optimization constraint: a quantity kept between a lower and an upper bound.
+
+    Pass it to :meth:`Solver.require`, :meth:`System.require` or :meth:`OpticalBase.require`,
+    or build one from a comparison such as ``space.d <= 100 * mm``.
+
+    Parameters
+    ----------
+    quantity : Node or callable
+        The constrained quantity: a graph expression, or a callable accepting
+        the result (traceable, or deferred if it branches on result values).
+    lower_bound : float, optional
+        Lower bound. Defaults to ``-inf``: no lower bound.
+    upper_bound : float, optional
+        Upper bound. Defaults to ``inf``: no upper bound.
+    label : str, optional
+        Name used in reports.
+
+    Raises
+    ------
+    TypeError
+        If `quantity` is not a Node or callable.
+    ValueError
+        If `lower_bound` or `upper_bound` is NaN, or `lower_bound` exceeds
+        `upper_bound`.
+
+    Notes
+    -----
+    A deferred callable must be differentiable by the numerical backend;
+    diffractix does not check this.
+    """
+    quantity: Node | Callable
     lower_bound: float = -np.inf
     upper_bound: float = np.inf
     label: str | None = None
     _repr: str = field(init=False, repr=False, compare=False)
 
     def __post_init__(self):
-        if not isinstance(self.evaluate, Node) and not callable(self.evaluate):
-            raise TypeError("evaluate must be a Node or callable.")
+        if not isinstance(self.quantity, Node) and not callable(self.quantity):
+            raise TypeError("quantity must be a Node or callable.")
 
         for name, bound in (("lower_bound", self.lower_bound), ("upper_bound", self.upper_bound)):
             if math.isnan(bound):
@@ -97,10 +127,10 @@ class Constraint:
         if self.label is not None:
             return self.label
 
-        if isinstance(self.evaluate, Node):
-            expr = repr(self.evaluate)
+        if isinstance(self.quantity, Node):
+            expr = repr(self.quantity)
         else:
-            desc = describe_callable(self.evaluate)
+            desc = describe_callable(self.quantity)
             expr = f"({desc})" if desc.startswith("lambda ") else desc
 
         has_low = not (math.isinf(self.lower_bound) and self.lower_bound < 0)
@@ -192,10 +222,10 @@ def normalize_to_constraint(value) -> Constraint:
             raise TypeError("A zero-argument constraint callable must return a Comparison.")
         return _from_comparison(result)
 
-    if isinstance(value.evaluate, Node) or callable_arity(value.evaluate) == 1:
+    if isinstance(value.quantity, Node) or callable_arity(value.quantity) == 1:
         return value
 
-    result = value.evaluate()
+    result = value.quantity()
     if not isinstance(result, Node):
         raise TypeError("A zero-argument Constraint callable must return a Node.")
     return Constraint(result, value.lower_bound, value.upper_bound, value.label)
@@ -219,7 +249,7 @@ def prepare_constraints(constraints, *, tracer, bindings):
     callables = []
     for position, requirement in enumerate(constraints):
         constraint = normalize_to_constraint(requirement)
-        expression = constraint.evaluate
+        expression = constraint.quantity
         if not isinstance(expression, Node):
             if tracer is None:
                 callables.append((position, constraint))
@@ -242,7 +272,7 @@ def prepare_constraints(constraints, *, tracer, bindings):
                 has_inputs = True
 
         if not has_inputs:
-            value = np.asarray(expression.evaluate(bindings))
+            value = np.asarray(expression.evaluate(bindings=bindings))
             description = constraint.label or f"Constraint {position}"
             if not np.all(np.isfinite(value)):
                 raise ValueError(f"{description} has a non-finite constant value.")

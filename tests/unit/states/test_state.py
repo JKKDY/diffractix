@@ -143,18 +143,14 @@ def test_numeric_uses_current_parameters_without_mutating_the_declaration():
     assert external.value == 5.0 and external.is_variable
 
 
-def test_numeric_bindings_override_defaults_without_mutating_bindings_or_symbols():
+def test_numeric_bindings_resolve_symbols_without_being_mutated():
     key = ("input", 42, "offset")
-    symbol = Symbol(key, default=2.0)
-    source = ExampleInput(direct=3 * symbol + 1)
+    source = ExampleInput(direct=3 * Symbol(key) + 1)
     bindings = {key: 0.0}
 
-    assert source.numeric().direct == 7.0
     assert source.numeric(bindings).direct == 1.0
+    assert source.numeric({key: 2.0}).direct == 7.0
     assert bindings == {key: 0.0}
-    assert symbol.default == 2.0
-    symbol.set_default(4.0)
-    assert source.numeric().direct == 13.0
 
 
 def test_shared_parameters_and_symbol_keys_do_not_cache_values_between_conversions():
@@ -193,8 +189,8 @@ def test_failed_cyclic_conversion_can_be_repaired_without_changing_prior_results
     assert type(repaired) is type(previous)
 
 
-def test_numeric_requires_a_binding_for_a_symbol_without_a_default():
-    source = ExampleInput(direct=Symbol("required_input", default=None))
+def test_numeric_requires_a_binding_for_every_symbol():
+    source = ExampleInput(direct=Symbol("required_input"))
 
     with pytest.raises(KeyError, match="required_input"):
         source.numeric()
@@ -397,11 +393,10 @@ def test_builtin_default_symbols_and_constraints_are_independent_per_input():
     second = Ray(x=0.0, theta=0.0)
     constraint = first.x >= 0
 
-    first.n.node.set_default(1.5)
     first.require(constraint)
 
     assert first.n.node is not second.n.node
-    assert first.numeric().n == 1.5
+    assert first.numeric({"ambient_n": 1.5}).n == 1.5
     with pytest.raises(KeyError, match="ambient_n"):
         second.numeric()
     assert len(first.constraints) == 1 and first.constraints[0] is constraint

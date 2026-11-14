@@ -24,8 +24,7 @@ def evaluate_ast(root: Node, bindings: Mapping = {}, parameter_values: Mapping |
 
     When parameter_values is supplied, it must contain every Parameter in the
     graph, keyed by its identity. Otherwise current Parameter values are used.
-    Symbol bindings may contain numerical values or other Nodes. A Symbol's
-    default is used when its key is absent from bindings.
+    Symbol bindings may contain numerical values or other Nodes.
     """
     active = set()
     values = {}
@@ -53,8 +52,6 @@ def evaluate_ast(root: Node, bindings: Mapping = {}, parameter_values: Mapping |
             elif isinstance(node, Symbol):
                 if node.key in bindings:
                     value = bindings[node.key]
-                elif node.has_default:
-                    value = node.default
                 else:
                     raise KeyError(f"Missing binding for Symbol key {node.key!r}.") from None
                 if isinstance(value, Node):

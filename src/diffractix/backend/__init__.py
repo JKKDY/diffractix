@@ -37,7 +37,6 @@ __all__ = [
     "xp",
     "grad",
     "jacobian",
-    "jacrev",
     "hessian",
     "jit",
     "require",
@@ -58,7 +57,6 @@ class _Backend:
     xp: ModuleType
     grad: Callable[..., Any]
     jacobian: Callable[..., Any]
-    jacrev: Callable[..., Any]
     hessian: Callable[..., Any]
     jit: Callable[..., Any]
     require:Callable[[Any, str], None]
@@ -66,10 +64,22 @@ class _Backend:
     tracing_errors: tuple[type[BaseException], ...] = ()
 
 def configure(name: str) -> None:
-    """Choose a backend before its first use; switching afterward is forbidden.
+    """Choose the numerical backend. Must be run before first use. 
 
-    The explicit choice overrides ``DIFFRACTIX_BACKEND`` in this process.
-    Calling this function does *not* import either numerical backend.
+    Parameters
+    ----------
+    name : str
+        ``"auto"``, ``"jax"`` or ``"autograd"``. Overrides ``DIFFRACTIX_BACKEND``
+        for this process. Does not import either backend.
+
+    Raises
+    ------
+    TypeError
+        If `name` is not a string.
+    ValueError
+        If `name` is not one of the supported choices.
+    RuntimeError
+        If a backend is already initialized; restart Python to change it.
     """
     global _requested
 
@@ -89,7 +99,13 @@ def configure(name: str) -> None:
 
 
 def current_backend() -> str | None:
-    """Return the active backend name, or None before first numerical use."""
+    """Return the active backend's name, or ``None`` before the first numerical use.
+
+    Returns
+    -------
+    str or None
+        The backend's name, or ``None`` if it has not yet been initialized.
+    """
     with _lock:
         return None if _active is None else _active.name
 
@@ -119,7 +135,6 @@ def _load_autograd() -> _Backend:
         xp=anp,
         grad=autograd.grad,
         jacobian=autograd.jacobian,
-        jacrev=autograd.jacobian,
         hessian=autograd.hessian,
         jit=_identity_jit,
         require=_eager_require,
@@ -160,8 +175,7 @@ def _load_jax() -> _Backend:
         name="jax",
         xp=jnp,
         grad=jax.grad,
-        jacobian=jax.jacfwd,
-        jacrev=jax.jacrev,
+        jacobian=jax.jacrev,
         hessian=jax.hessian,
         jit=jax.jit,
         require=_jax_require,
@@ -211,30 +225,74 @@ xp = _LazyXP()
 
 
 def grad(fun: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
-    """Construct a gradient using the selected backend."""
+    """Construct the gradient of `fun`, using the selected backend.
+
+    Parameters
+    ----------
+    fun : callable
+        Function to differentiate.
+    *args, **kwargs
+        Passed on to the backend's own gradient constructor.
+
+    Returns
+    -------
+    callable
+        The gradient function.
+    """
     return _get_backend().grad(fun, *args, **kwargs)
 
 
 def jacobian(fun: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
-    """Construct a Jacobian (Autograd jacobian / JAX jacfwd)."""
+    """Construct the Jacobian of `fun`, using reverse mode on either backend.
+
+    Parameters
+    ----------
+    fun : callable
+        Function to differentiate.
+    *args, **kwargs
+        Passed on to the backend's own Jacobian constructor.
+
+    Returns
+    -------
+    callable
+        The Jacobian function.
+    """
     return _get_backend().jacobian(fun, *args, **kwargs)
 
 
-def jacrev(fun: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
-    """Construct a reverse-mode Jacobian where supported."""
-    return _get_backend().jacrev(fun, *args, **kwargs)
-
-
 def hessian(fun: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
-    """Construct a Hessian using the selected backend."""
+    """Construct the Hessian of `fun`, using the selected backend.
+
+    Parameters
+    ----------
+    fun : callable
+        Function to differentiate.
+    *args, **kwargs
+        Passed on to the backend's own Hessian constructor.
+
+    Returns
+    -------
+    callable
+        The Hessian function.
+    """
     return _get_backend().hessian(fun, *args, **kwargs)
 
 
 def jit(fun: Callable[..., Any] | None = None, **kwargs: Any) -> Any:
-    """JAX JIT, or an identity function/decorator under Autograd.
+    """Just-in-time compile `fun` under JAX, or return it unchanged under Autograd.
 
-    Supports both ``jit(fun)`` and ``@jit(static_argnums=...)``. The latter
-    accepts and ignores JAX-only compilation options under Autograd.
+    Parameters
+    ----------
+    fun : callable, optional
+        Function to compile. Omit it to use `jit` as a decorator factory, as in
+        ``@jit(static_argnums=...)``.
+    **kwargs
+        JAX compilation options; accepted and ignored under Autograd.
+
+    Returns
+    -------
+    callable
+        The compiled function, or a decorator if `fun` was omitted.
     """
     if fun is None:
         # Works with older JAX versions that do not support @jax.jit(options).
@@ -243,9 +301,13 @@ def jit(fun: Callable[..., Any] | None = None, **kwargs: Any) -> Any:
 
 
 def tracing_errors() -> tuple[type[BaseException], ...]:
-    """Exception types a function raises when JIT tracing cannot give it concrete values.
+    """Exception types raised when JIT tracing cannot give a concrete value
+    where one is needed.
 
-    Empty under Autograd, which never traces abstractly.
+    Returns
+    -------
+    tuple of type
+        Empty under Autograd, which never traces abstractly.
     """
     return _get_backend().tracing_errors
 
@@ -253,10 +315,24 @@ def tracing_errors() -> tuple[type[BaseException], ...]:
 def require(condition: Any, message: str) -> None:
     """Require a scalar numerical condition to be true.
 
-    Under eager execution, an invalid condition raises ValueError immediately.
+    Parameters
+    ----------
+    condition : Any
+        The condition.
+    message : str
+        Error message if `condition` is false.
 
-    Under JAX JIT, predicates depending on traced values are not checked at
-    runtime. Validate concrete inputs outside JIT when errors are required.
-    False static conditions can still raise during tracing.
+    Raises
+    ------
+    ValueError
+        If `condition` is false and can be checked; see Notes.
+
+    Notes
+    -----
+    Under JAX's `jit`, a function's inputs are placeholders whose values are not
+    known yet, so a condition that depends on them cannot be checked and is
+    skipped. A condition that does not depend on them is still checked, once,
+    when the function is compiled. Without `jit`, and always under Autograd,
+    every condition is checked.
     """
     _get_backend().require(condition, message)

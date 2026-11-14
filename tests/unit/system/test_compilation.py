@@ -130,7 +130,7 @@ def test_source_medium_wins_and_inherited_element_field_is_not_assigned(source_n
     placement = system.placements[0]
     resolved, continuity = system._resolve_refractive_indices((placement,), system.bindings)
     assert isinstance(resolved[0], ResolvedPlacement) and resolved[0].placement is placement
-    assert resolved[0].refractive_index.evaluate(system.bindings) == source_n
+    assert resolved[0].refractive_index.evaluate(bindings=system.bindings) == source_n
     assert continuity == () and space.n.node is None
 
 
@@ -138,7 +138,7 @@ def test_source_medium_wins_and_inherited_element_field_is_not_assigned(source_n
 def test_absent_or_ambient_symbol_source_index_resolves_to_ambient(source):
     system = System(Plane(), optical_input=source, ambient_n=1.33)
     resolved, continuity = system._resolve_refractive_indices(system.placements, system.bindings)
-    assert resolved[0].refractive_index.evaluate(system.bindings) == 1.33 and continuity == ()
+    assert resolved[0].refractive_index.evaluate(bindings=system.bindings) == 1.33 and continuity == ()
 
 
 def test_interface_changes_medium_and_downstream_elements_inherit_it():
@@ -146,7 +146,7 @@ def test_interface_changes_medium_and_downstream_elements_inherit_it():
     front, body, back = Interface(n1=1.0, n2=1.5), Space(d=0.01, n=1.5), Interface(n1=1.5, n2=1.0)
     system = System(front, body, back, Plane(), optical_input=source)
     resolved, continuity = system._resolve_refractive_indices(system.placements, system.bindings)
-    assert [p.refractive_index.evaluate(system.bindings) for p in resolved] == [1.5, 1.5, 1.0, 1.0]
+    assert [p.refractive_index.evaluate(bindings=system.bindings) for p in resolved] == [1.5, 1.5, 1.0, 1.0]
     assert continuity == ()
     assert all(p.element is declared for p, declared in zip(resolved, system.elements))
 
@@ -167,9 +167,9 @@ def test_variable_continuity_is_an_equality_even_when_initially_unsatisfied():
     constraint = continuity[0]
     assert constraint.lower_bound == constraint.upper_bound == 0.0
     assert "Refractive index continuity at" in constraint.label and "Glass" in constraint.label
-    assert constraint.evaluate.evaluate() == -0.5
+    assert constraint.quantity.evaluate() == -0.5
     source_n.value = 1.5
-    assert constraint.evaluate.evaluate() == 0.0
+    assert constraint.quantity.evaluate() == 0.0
     assert resolved[0].refractive_index is required_n
 
 
@@ -178,7 +178,7 @@ def test_continuity_binding_reaches_variable_parameter_through_symbol():
     element = Space(d=0.1, n=Symbol("glass"))
     system = System(element, optical_input=Ray(x=0, theta=0, n=1.5)).bind("glass", index)
     resolved, continuity = system._resolve_refractive_indices(system.placements, system.bindings)
-    assert len(continuity) == 1 and continuity[0].evaluate.evaluate(system.bindings) == 0.0
+    assert len(continuity) == 1 and continuity[0].quantity.evaluate(bindings=system.bindings) == 0.0
     assert resolved[0].refractive_index is element.n.node
 
 
@@ -279,8 +279,8 @@ def test_complex_aperture_roots_preserve_real_source_wavelength():
     assert not np.iscomplexobj(numerical.wavelength) and numerical.wavelength == 1.064e-6
 
 
-def test_unresolved_optical_symbol_is_rejected_even_with_interpreter_default():
-    system = System(ThinLens(f=Symbol("missing_focal", default=0.1)),
+def test_unresolved_optical_symbol_is_rejected():
+    system = System(ThinLens(f=Symbol("missing_focal")),
                     optical_input=Ray(x=0, theta=0, n=1.0))
     with pytest.raises(ValueError, match="Unresolved optical Symbol.*missing_focal"):
         compile_optics(system)
@@ -302,7 +302,7 @@ def test_satisfied_fixed_constraints_are_removed_including_exact_boundaries(cons
     constraint = Constraint(expression, lower, upper, label="constant")
     program, descriptors, callables = System()._compile_constraints((constraint,), {}, {})
     assert program.evaluate([]) == () and descriptors == () and callables == ()
-    assert constraint.evaluate is expression and expression.left.left.value == constant
+    assert constraint.quantity is expression and expression.left.left.value == constant
 
 
 @pytest.mark.parametrize("value", [-1.0, 3.0])
@@ -336,10 +336,9 @@ def test_constraints_cannot_introduce_variables_outside_model_theta(through_symb
         System()._compile_constraints((expression >= 0,), bindings, {})
 
 
-@pytest.mark.parametrize("default", [None, 1.0])
-def test_constraint_symbols_need_explicit_compile_bindings(default):
+def test_constraint_symbols_need_explicit_compile_bindings():
     with pytest.raises(ValueError, match="unresolved Symbol binding.*missing"):
-        System()._compile_constraints((Symbol("missing", default=default) >= 0,), {}, {})
+        System()._compile_constraints((Symbol("missing") >= 0,), {}, {})
 
 
 def test_bound_symbol_resolves_and_fixed_external_parameter_is_allowed():

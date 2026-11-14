@@ -58,7 +58,7 @@ def _explain_tracing_errors(jit: bool):
 
 
 class Optimizer(str, Enum):
-    """Optimization libraries supported by :class:`Solver`; strings such as "scipy" are accepted too."""
+    """Optimization libraries supported by `Solver`; strings such as ``"scipy"`` are accepted too."""
 
     IPOPT = "ipopt"
     SCIPY = "scipy"
@@ -67,10 +67,41 @@ class Optimizer(str, Enum):
 
 
 class Solver:
-    """Solve one fixed optimization model; create a new Solver to change it.
+    """An optimization model built from a Simulation, with objectives and constraints solved together for one theta.
 
-    Traceable callables may return Nodes. Deferred callables receive a
-    numerical result view and must return numerical scalars or arrays.
+    Add objectives with :meth:`target` and hard constraints with :meth:`require`,
+    then call :meth:`solve`. The model is fixed at the first :meth:`solve`; add
+    more objectives or constraints to a new Solver instead.
+
+    Parameters
+    ----------
+    simulation : Simulation or System
+        The optical model to optimize. A System is built first.
+
+    Raises
+    ------
+    TypeError
+        If `simulation` is not a Simulation or System.
+
+    Notes
+    -----
+    A traceable objective or constraint (a graph expression, or a callable that
+    returns one from `simulation.symbolic`) is compiled with the rest of the
+    model. A deferred callable, one whose Python control flow depends on result
+    values and so cannot be traced, receives a numerical `SimulationResultView`
+    instead and must return numerical scalars or arrays; it still needs a
+    gradient, so it must be differentiable by the numerical backend.
+
+    Examples
+    --------
+    >>> from diffractix import Parameter, Ray, Solver, Space, System
+    >>> from diffractix.units import mm
+    >>> distance = Parameter(0.05).variable()
+    >>> solver = Solver(System(Space(d=distance), optical_input=Ray(x=0, theta=0.01, n=1)))
+    >>> solver = solver.target(value=lambda sim: sim.final.x, target=2 * mm)
+    >>> solution = solver.solve()
+    >>> round(float(solution.value(distance)), 6)
+    0.2
     """
 
     @dataclass(frozen=True)
@@ -130,18 +161,61 @@ class Solver:
 
     @property
     def simulation(self) -> Simulation:
+        """Simulation: the optical model this Solver optimizes."""
         return self._simulation
 
     def target(self, *objectives, value=None, target=None, scale=None, weight=None, label=None):
         """Add residual objectives, or match a value to a target.
 
-        `value` (a graph expression or a callable of the result) gives the residual
-        `(value - target) / scale`. `scale` defaults to `abs(target)` where the target
-        is not zero and to 1 where it is, so choose it yourself when the target is 0.
+        Pass `value` and `target` to match a single quantity, or pass `Objective`
+        instances, graph expressions or zero-argument callables as `*objectives`.
 
-        `weight` (default 1) multiplies the squared residual in the total cost. Like
-        `label`, it applies to `value=` or to a single residual Node or callable;
-        give an `Objective` its own weight instead.
+        Parameters
+        ----------
+        *objectives : Node, Objective or callable
+            Residuals to minimize, each contributing ``weight * sum(residual**2)`` to
+            the total cost. A graph expression, a zero-argument callable returning
+            one, or a callable accepting the result (traceable, or deferred if it
+            branches on result values); a plain callable is wrapped in an
+            `Objective` with the given `weight` and `label`. Combining these with
+            `value` is not allowed.
+        value : Node or callable, optional
+            Quantity to match to `target`: a graph expression, or a callable
+            accepting the result. Requires `target`.
+        target : float or array_like, optional
+            Target value for `value`. Required together with `value`.
+        scale : float or array_like, optional
+            Scale for the residual ``(value - target) / scale``. Defaults to
+            ``abs(target)`` where nonzero and to 1 where `target` is zero; give it
+            explicitly for a zero target. Must be nonzero.
+        weight : float, optional
+            Multiplies the squared residual in the total cost; applies to `value` or
+            to a single objective in `*objectives`. Defaults to 1.
+        label : str, optional
+            Name for a single objective, used in reports; applies to `value` or to a
+            single objective in `*objectives`.
+
+        Returns
+        -------
+        Solver
+            ``self``, so calls can be chained.
+
+        Raises
+        ------
+        RuntimeError
+            If the model is already fixed by a previous :meth:`solve`.
+        TypeError
+            If `value` is given but is not a graph expression or callable.
+        ValueError
+            If `value` is combined with `*objectives`, `target` or `scale` is given
+            without `value`, `scale` is zero, or `label` or `weight` is given
+            together with more than one objective in `*objectives`, or with a
+            single objective that is already an `Objective` instance.
+
+        Notes
+        -----
+        A deferred callable must be differentiable by the numerical backend;
+        diffractix does not check this.
         """
         if self._cache is not None:
             raise RuntimeError("The optimization model is fixed; create a new Solver.")
@@ -177,7 +251,33 @@ class Solver:
         return self
 
     def require(self, *constraints, label=None):
-        """Add hard optimization constraints; `label` names a single comparison."""
+        """Add hard optimization constraints, on top of the Simulation's own contstraints.
+
+        Parameters
+        ----------
+        *constraints : Comparison, Constraint or callable
+            Comparisons such as ``sim[lens].after.w <= 1 * mm``, `Constraint` objects,
+            or callables without arguments that return a comparison.
+        label : str, optional
+            Name for a single comparison, used in reports.
+
+        Returns
+        -------
+        Solver
+            ``self``, so calls can be chained.
+
+        Raises
+        ------
+        RuntimeError
+            If the model is already fixed by a previous :meth:`solve`.
+        ValueError
+            If `label` is given with several comparisons or with a `Constraint`.
+
+        Notes
+        -----
+        A deferred callable must be differentiable by the numerical backend;
+        diffractix does not check this.
+        """
         if self._cache is not None:
             raise RuntimeError("The optimization model is fixed; create a new Solver.")
         constraints = label_constraints(constraints, label)
@@ -196,7 +296,52 @@ class Solver:
         x_lower=None,
         x_upper=None,
     ) -> Solution:
-        """Solve the inverse-design problem."""
+        """Solve the optimization problem.
+
+        Parameters
+        ----------
+        optimizer : Optimizer or str, optional
+            Backend to use. Defaults to ``Optimizer.SCIPY``.
+        method : str, optional
+            Backend-specific algorithm name. Defaults to the backend's own default.
+        options : dict, optional
+            Backend-specific options. Defaults to ``None``.
+        feasibility_tolerance : float, optional
+            Maximum constraint or bound violation still counted as feasible. Defaults
+            to `DEFAULT_FEASIBILITY_TOLERANCE`.
+        jit : bool, optional
+            Whether to just-in-time compile the objective and constraints. Defaults
+            to ``True``; pass ``False`` if a deferred callable's control flow cannot
+            be traced.
+        x0 : array_like, optional
+            Starting point, in `simulation.parameter_data` order. Defaults to the
+            Simulation's initial values.
+        x_lower, x_upper : array_like, optional
+            Parameter bounds, in `simulation.parameter_data` order. Default to the
+            Simulation's own bounds.
+
+        Returns
+        -------
+        Solution
+            The solved values and model evaluations.
+
+        Raises
+        ------
+        ValueError
+            If `optimizer` is not a supported name, `feasibility_tolerance` is not
+            finite or is negative, the model has no variable Parameter, the
+            model has no objective or constraint, `x0`, `x_lower` or `x_upper` has
+            the wrong shape, `x0` is non-finite, `x_lower` or `x_upper` is NaN,
+            `x_lower` exceeds `x_upper`, or `x0` lies outside the bounds.
+        TypeError
+            If `feasibility_tolerance` or `jit` has the wrong type, or the model
+            contains something other than `Objective` or `Constraint` instances.
+
+        Notes
+        -----
+        The first `solve` fixes the model; later calls reuse its compiled program and
+        may use different `x0`, bounds or `optimizer`.
+        """
         n = len(self.simulation._optics_program.parameter_indices)
         try:
             optimizer = Optimizer(optimizer.lower() if isinstance(optimizer, str) else optimizer)
@@ -399,7 +544,7 @@ class Solver:
         initial_values, jit,
     ):
         def evaluate_callable(entry, view):
-            value = entry.evaluate(view)
+            value = entry.quantity(view)
             if isinstance(value, Node):
                 raise TypeError(
                     "Deferred solver callables must return numerical scalars or arrays. "

@@ -8,18 +8,8 @@ def make_symbol(key):
     Accepts a symbol key or an existing Symbol.
     """
     if isinstance(key, Symbol):
-        symbol_key = key.key
-        has_default = key.has_default
-        default = key.default
-        return field(
-            default_factory=lambda: (
-                Symbol(symbol_key, default=default)
-                if has_default
-                else Symbol(symbol_key)
-            )
-        )
-    else:
-        return field(default_factory=lambda: Symbol(key))
+        key = key.key
+    return field(default_factory=lambda: Symbol(key))
 
 
 
