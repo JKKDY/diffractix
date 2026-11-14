@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from diffractix import parameter
 from diffractix.elements.element import OpticalElement
-from diffractix.graph import Node, Parameter, InputNode
+from diffractix.graph import Node, Parameter, InputNode, Symbol
 from diffractix.graph import (
     ASTCycleError,
     UnresolvedInputError,
@@ -328,4 +328,9 @@ def test_string_representation_describes_element_and_parameter(kind, value, mark
     assert f"L={value:g}" in text
     assert f"x={value:g}" in text
     assert marker in text
+
+
+def test_string_representation_marks_values_without_a_standalone_value():
+    text = str(DummyElement(x=Symbol("unbound"), label="Example"))
+    assert "L=?" in text and "x=? [EXPR]" in text
 

@@ -172,6 +172,16 @@ def test_variable_keywords_are_atomic(args, kwargs, error):
     assert element.y.node.bounds == (1.0, 10.0)
 
 
+def test_failed_variable_call_restores_parameters_that_were_already_variable():
+    element = TwoParameterElement(x=1.0, y=2.0)
+    element.x.node.variable(bounds=(0.0, 5.0))
+    element.y.node.bounds = (1.0, 10.0)
+    with pytest.raises(ValueError):
+        element.variable(x=(0.5, 1.5), y=(3.0, 4.0))   # y = 2 lies outside its new bounds
+    assert element.x.node.is_variable and element.x.node.bounds == (0.0, 5.0)
+    assert not element.y.node.is_variable and element.y.node.bounds == (1.0, 10.0)
+
+
 def test_named_fixed_selection():
     element = TwoParameterElement(x=1.0, y=2.0)
     element.variable()

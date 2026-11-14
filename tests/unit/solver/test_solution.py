@@ -377,6 +377,14 @@ def test_str_summarizes_status_variables_objectives_and_constraints():
     assert "VIOLATED" not in text
 
 
+def test_str_omits_sections_with_no_entries():
+    solver = Solver(System(optical_input=Ray(x=0.5, theta=0, n=1)))
+    solution, _ = make_solution(solver=solver, x=())
+    text = str(solution)
+    assert text.startswith("Solution: converged, feasible")
+    assert all(section not in text for section in ("Variables", "Objectives", "Constraints"))
+
+
 def test_reporting_rejects_a_deferred_callable_that_returns_a_graph_node():
     p = Parameter(0.5).variable()
     solver = Solver(System(optical_input=Ray(x=p, theta=0, n=1)))

@@ -306,9 +306,6 @@ description of unlabelled callable constraints.
 
 Left uncovered on purpose:
 
-- `plotting/primitives.py` and `plotting/spec.py` are not used by anything.
-- `elif length < 0: raise ValueError(...)` in Space, GRIN and ABCD cannot be reached:
-  `element_length` is always a graph node there, so the constraint branch runs.
 - "Unknown instruction / operand" guards in `graph/program*.py` and `compile.py`.
 - `backend/__init__.py` and `plotting/__init__.py` are exercised in subprocesses,
   which the in-process coverage run does not see.
@@ -316,4 +313,33 @@ Left uncovered on purpose:
 Noticed, not changed: `str(GaussianBeam)` prints a waist at the current plane as
 `z=-0.0 nm`; `describe_callable` returns the whole enclosing expression for a lambda
 nested inside another lambda on the same line.
+
+## 9. Coverage pass (14 November 2026)
+
+Measured with `coverage run --branch` on both backends, combined: 96% before, 98%
+after (statements and branches). Removed as dead code: `plotting/primitives.py`,
+`plotting/spec.py`, and the unreachable `elif length < 0` branch in Space, GRIN and
+ABCD (now a single `require(element_length >= 0)`).
+
+Added tests: element and System summaries (unknown values print `?`, absolute
+positions), rollback of `OpticalBase.variable` for already-variable parameters, a
+Solution summary with no variables, objectives or constraints, a tracing error
+re-raised unchanged with `jit=False` (JAX), plot data that cannot become an array,
+invalid constraint descriptor bounds, an implied affine equality and implied lower
+side, affine and interval forms of `x * 2`, operations on constants only, `+x`,
+`x ** 0` and `x ** 1` inside products, and the LP fallbacks in constraint reduction:
+a failing `linprog` keeps every constraint, and unverified LP answers never report
+a feasible problem as infeasible.
+
+Also left uncovered on purpose, in addition to the list above:
+
+- Defensive branches that `add()` or the input classes already rule out: a placement
+  that is neither an element nor a composite, an input refractive index that is not
+  a handle, a binding value that is neither real nor complex (`system/system.py`).
+- Literal-wrapping of the left operand in `Node._make_unary_op` and
+  `_make_comparison`, which are always called with a Node there.
+- `raise NotImplementedError` in the abstract `OpticalElement` and `ParaxialState`
+  members, and `OpticalElement.__str__`'s non-Node value fallback.
+- Constraint-reduction guards for unrepresentable values: non-rational bounds,
+  non-finite constants in structural keys, a second `linprog` call that raises.
 

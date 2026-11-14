@@ -61,11 +61,7 @@ class ABCD(OpticalElement):
         if self.n.node is not None:
             self.require(self.n > 0)
 
-        length = self.element_length
-        if isinstance(length, Node):
-            self.require(length >= 0)
-        elif length < 0:
-            raise ValueError("Element length cannot be negative.")
+        self.require(self.element_length >= 0)
 
     @property
     def matrix(self):

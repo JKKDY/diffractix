@@ -104,6 +104,25 @@ def test_a_branching_callable_fails_under_jit_with_a_hint_to_pass_jit_false_and_
     assert _branching_solver().solve(jit=False).success
 
 
+def test_without_jit_a_callable_that_needs_concrete_values_fails_unchanged():
+    from diffractix.backend import current_backend, tracing_errors
+    if current_backend() != "jax":
+        pytest.skip("Only JAX traces callables abstractly.")
+    distance = Parameter(0.5).variable(bounds=(0, 1))
+    simulation = System(Space(d=distance), optical_input=Ray(x=1e-3, theta=1e-3, n=1)).build()
+
+    def residual(sim):
+        value = sim.final.x
+        if value > 0:                     # deferred: branches on a result value
+            return np.asarray(value)      # NumPy cannot convert a value JAX is differentiating
+        return -value
+
+    solver = Solver(simulation).target(residual)
+    with pytest.raises(tracing_errors()) as error:
+        solver.solve(jit=False)
+    assert "jit=False" not in str(error.value)
+
+
 def test_chained_comparisons_explain_how_to_write_the_two_bounds():
     distance = Parameter(0.5)
     with pytest.raises(TypeError, match="chained comparison.*solver.require"):

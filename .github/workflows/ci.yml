@@ -70,8 +70,20 @@ jobs:
       - name: Verify the selected numerical backend
         run: |
           python -c "import os; from diffractix.backend import xp, current_backend; xp.asarray(0.0); assert current_backend() == os.environ['DIFFRACTIX_BACKEND']; print('Backend:', current_backend())"
-      - name: Run the complete test suite
-        run: python -m pytest tests
+      - name: Run the complete test suite with coverage
+        run: |
+          python -m coverage run -m pytest tests
+          python -m coverage combine
+          python -m coverage xml
+      - name: Upload coverage to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage.xml
+          flags: ${{ matrix.backend }}
+          name: ${{ matrix.os }}-py${{ matrix.python }}-${{ matrix.backend }}
+          fail_ci_if_error: false
       - name: Run every standalone example headlessly
         run: python scripts/run_examples.py --backend "${{ matrix.backend }}"
 

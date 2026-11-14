@@ -168,6 +168,7 @@ def test_names_of_nearly_coincident_elements_merge_into_one_label():
     (np.array([1 + 2j]), "concrete real numerical results"),
     (np.array(["a"]), "concrete real numerical results"),
     (object(), "concrete real numerical results"),
+    ([[1.0], [1.0, 2.0]], "outside differentiation or JIT"),   # cannot become an array
 ])
 def test_plot_data_must_be_finite_real_numbers(value, message):
     from diffractix.plotting.sampling import _concrete

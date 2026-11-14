@@ -496,6 +496,18 @@ def test_summary_marks_variable_fixed_derived_and_empty_parameters():
     assert "f=0.25 [FIX]" in rows["Fixed"]
 
 
+def test_summary_shows_absolute_positions_as_numbers_or_expressions():
+    system = System(optical_input=Ray(x=0, theta=0, n=1.0))
+    system.add(ThinLens(f=0.1, label="Number"), z=0.2)
+    system.add(ThinLens(f=0.1, label="Fixed"), z=Parameter(0.4))
+    system.add(ThinLens(f=0.1, label="Derived"), z=2 * Parameter(0.3))
+    lines = str(system).splitlines()
+    row = {label: next(line for line in lines if f" {label} " in line)
+           for label in ("Number", "Fixed", "Derived")}
+    assert "@0.2 " in row["Number"] and "@0.4 " in row["Fixed"]
+    assert "@(" in row["Derived"] and "0.3" in row["Derived"]
+
+
 def test_summary_names_constraints_by_label_then_function_name_then_expression():
     distance = Parameter(0.1, name="distance").variable()
     system = System(Space(d=distance), optical_input=Ray(x=0, theta=0, n=1.0))

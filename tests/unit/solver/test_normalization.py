@@ -200,7 +200,7 @@ def test_callable_objects_and_bound_methods_normalize_like_functions():
     assert callable_arity(entry) == 1
     assert callable_arity(entry.constant) == 0
     assert normalize_to_objective(entry).quantity is entry
-    assert normalize_to_objective(entry.constant).evaluate.value == 2
+    assert normalize_to_objective(entry.constant).quantity.value == 2
 
 
 def test_value_matching_and_residual_shorthand_match_explicit_objective_derivatives():
