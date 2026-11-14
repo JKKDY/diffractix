@@ -88,11 +88,20 @@ jobs:
         run: python scripts/run_examples.py --backend "${{ matrix.backend }}"
 
   oldest-dependencies:
-    name: Oldest supported dependencies (Python 3.11 / autograd)
+    name: Oldest supported dependencies (Python 3.12 / ${{ matrix.backend }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - backend: autograd
+            extra_pins: ""
+          - backend: jax
+            extra_pins: "jax==0.4.30 jaxlib==0.4.30"
     env:
-      DIFFRACTIX_BACKEND: autograd
+      DIFFRACTIX_BACKEND: ${{ matrix.backend }}
+      EXTRA_PINS: ${{ matrix.extra_pins }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -100,13 +109,16 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - name: Install the minimum versions from pyproject.toml, then the package without dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "autograd==1.7.0" "numpy==1.23.2" "scipy==1.9.2" "matplotlib==3.6.0" pytest
+          python -m pip install "autograd==1.7.0" "numpy==1.26.0" "scipy==1.11.2" "matplotlib==3.8.0" pytest $EXTRA_PINS
           python -m pip install --no-deps .
           python -m pip list
+      - name: Verify the selected numerical backend
+        run: |
+          python -c "import os; from diffractix.backend import xp, current_backend; xp.asarray(0.0); assert current_backend() == os.environ['DIFFRACTIX_BACKEND']; print('Backend:', current_backend())"
       - name: Run the complete test suite
         run: python -m pytest tests
 

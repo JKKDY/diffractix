@@ -22,20 +22,21 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Physics",
 ]
-# Minimums: first releases with Python 3.11 wheels (numpy, scipy), constrained
-# layout (matplotlib 3.6), NumPy 2 support (autograd 1.7). CI tests the latest only.
+# Minimums: the oldest releases with Python 3.12 wheels. The oldest-dependencies CI
+# job tests exactly these on Python 3.12; the rest of CI uses the latest releases.
 dependencies = [
     "autograd>=1.7",
-    "numpy>=1.23.2",
-    "matplotlib>=3.6",
-    "scipy>=1.9.2",
+    "numpy>=1.26",
+    "matplotlib>=3.8",
+    "scipy>=1.11.2",
 ]
 
 [project.optional-dependencies]
 # JAX is opt-in: the base install works on platforms without JAX wheels,
 # including Pyodide. At runtime, "auto" prefers JAX if already installed.
+# jax>=0.4.30 (mid-2024) is tested by the oldest-dependencies CI job.
 jax = [
-    "jax",
+    "jax>=0.4.30",
 ]
 # cyipopt needs the Ipopt library; pip builds it from source. The simplest install
 # is `conda install -c conda-forge cyipopt`, which pip then sees as satisfied.

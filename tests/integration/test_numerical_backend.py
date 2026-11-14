@@ -106,7 +106,7 @@ def test_jit_propagation_preserves_python_and_custom_states(kind):
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Casting complex values to real discards the imaginary part:numpy.exceptions.ComplexWarning"
+    "ignore:Casting complex values to real discards the imaginary part"
 )
 def test_complex_optical_derivatives_against_central_differences():
     from diffractix import GaussianAperture, ThinLens
