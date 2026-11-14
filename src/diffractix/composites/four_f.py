@@ -39,7 +39,7 @@ class FourF(CompositeElement):
     f1: Node
     f2: Node
 
-    def __init__(self, f1: float, f2: float, label: str | None = None):
+    def __init__(self, *, f1: float, f2: float, label: str | None = None):
         super().__init__(label)
         self.f1 = f1
         self.f2 = f2

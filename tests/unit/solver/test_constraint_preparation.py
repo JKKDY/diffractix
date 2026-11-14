@@ -78,11 +78,15 @@ def test_traces_simulation_and_solver_callables_and_keeps_dynamic_order():
     assert callables[0][1].label == "dynamic"
 
 
-def test_trace_does_not_swallow_unrelated_user_errors():
+def test_a_user_error_in_a_callable_is_deferred_and_surfaces_when_solving():
+    # A TypeError while tracing defers the callable (that is how JAX rejects a Node).
     solver, _, _ = make_solver()
-    solver.require(Constraint(lambda result: 1 + "invalid"))
-    with pytest.raises(TypeError):
-        solver._finalize_constraints()
+    bad = Constraint(lambda result: 1 + "invalid")
+    solver.require(bad)
+    _, _, callables = solver._finalize_constraints()
+    assert [entry for _, entry in callables] == [bad]
+    with pytest.raises(TypeError, match="unsupported operand"):
+        solver.solve()
 
 
 def test_satisfied_constant_callable_is_removed():

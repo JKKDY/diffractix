@@ -206,9 +206,9 @@ class Simulation:
 
         Parameters
         ----------
-        theta : array_like, optional
-            Values for the variable Parameters, in the order of `parameter_data`.
-            Defaults to the build-time initial values.
+        theta : array_like or InitialValues, optional
+            Values for the variable Parameters, in the order of `parameter_data`,
+            such as an edited `initial_values`. Defaults to the build-time values.
 
         Returns
         -------
@@ -233,6 +233,8 @@ class Simulation:
             raise ValueError("Simulation.run() requires exactly one source.")
         if theta is None:
             theta = self._initial_values
+        elif isinstance(theta, InitialValues):
+            theta = theta.values
 
         values = self._optics_program.evaluate(theta)
         source = self._optical_inputs[0].construct(values)
@@ -309,7 +311,11 @@ class Simulation:
             for position, constraint in self._callable_constraints
         )
         constraints.sort(key=lambda item: item[0])
-        sources = ", ".join(type(item.initial_state).__name__ for item in self._optical_inputs) or "-"
+        def source_name(state):
+            kind = type(state)
+            return kind.__bases__[0].__name__ if getattr(kind, "_is_numerical", False) else kind.__name__
+
+        sources = ", ".join(source_name(item.initial_state) for item in self._optical_inputs) or "-"
 
         lines = [
             "Compiled Simulation",

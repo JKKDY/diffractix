@@ -541,3 +541,26 @@ def test_element_paths_start_with_the_top_level_composite_and_are_none_for_direc
     assert paths[f"AutoSpace_to_{module.inner.lens1.label}"] is None    # generated gap
     assert paths[telescope.lens1.label] == ("Relay", "lens1")
     assert paths[module.inner.lens1.label] == ("Module", "inner", "lens1")
+
+
+def test_an_empty_composite_cannot_be_placed_at_a_position():
+    class Empty(CompositeElement):
+        pass
+
+    system = System(source=Ray(x=0, theta=0, n=1)).add(Empty(), z=0.1)
+    with pytest.raises(ValueError, match="empty composite has no front to place at z"):
+        system.build()
+
+
+def test_an_unbound_symbol_in_a_refractive_index_names_the_placement():
+    system = System(Interface(n1=Symbol("glass"), n2=1.5, label="Entry"), source=Ray(x=0, theta=0, n=1))
+    with pytest.raises(ValueError, match=r"Interface 'Entry'.*unbound Symbol.*'glass'.*system\.bind"):
+        system.build()
+    assert system.bind("glass", 1.0).build()
+
+
+def test_simulation_summary_names_the_source_type_without_internal_prefixes():
+    distance = Parameter(0.1).variable()
+    simulation = System(Space(d=distance), source=Ray(x=0, theta=0, n=1)).build()
+    text = str(simulation)
+    assert "Source: Ray" in text and "NumericalRay" not in text and "Input:" not in text

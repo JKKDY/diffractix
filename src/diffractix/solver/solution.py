@@ -303,16 +303,15 @@ class Solution:
             unbound Symbol, or a runtime result quantity;
             read that from :meth:`run`.
         """
-        if isinstance(quantity, Parameter) or (
-            isinstance(quantity, InputNode) and isinstance(quantity.node, Parameter)
-        ):
-            return self.simulation.initial_values[quantity]
+        parameter = quantity.node if isinstance(quantity, InputNode) else quantity
+        indices = self.simulation._optics_program.parameter_indices
+        if isinstance(parameter, Parameter) and id(parameter) in indices:
+            return self.simulation.initial_values[parameter]
         if not isinstance(quantity, Node):
             raise TypeError(
                 f"Expected a Parameter or graph expression, got {type(quantity).__name__}."
             )
 
-        indices = self.simulation._optics_program.parameter_indices
         bindings = self.simulation.bindings
         parameter_values = {pid: self.x[index] for pid, index in indices.items()}
         for node in walk_ast((quantity,), bindings):

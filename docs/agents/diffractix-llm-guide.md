@@ -49,7 +49,7 @@ objects have a documented shallow-snapshot limitation.
 ```python
 import numpy as np
 from diffractix import (
-    ABCD, Backend, Constraint, GaussianAperture, GaussianBeam, GRIN,
+    ABCD, Constraint, GaussianAperture, GaussianBeam, GRIN,
     Interface, Mirror, Objective, Parameter, Plane, Ray, RayBundle,
     Slab, Solver, Space, System, ThickLens, ThinLens,
 )
@@ -93,9 +93,9 @@ print(result[lens].before.x, result[lens].after.theta)
 
 Common elements: `Space(d, n=None)`, `ThinLens(f)`, `Plane()`,
 `Mirror(R=np.inf)`, `Interface(n1, n2, R=np.inf)`, `GRIN(d, g, n)`,
-`GaussianAperture(a)`, and `ABCD(A=1, B=0, C=0, D=1, thickness=0, n=None)`.
+`GaussianAperture(a)`, and `ABCD(A=1, B=0, C=0, D=1, d=0, n=None)` (or `ABCD.from_matrix(matrix, d=0, n=None)`).
 Use keyword arguments for clarity. Elements accept `label=`. Composites include
-`Slab(d, n)`, `ThickLens(d, n, R1, R2)`, `Telescope(f1, f2)` and `FourF(f1, f2)`.
+`Slab(d=, n=)`, `ThickLens(d=, n=, R1=, R2=)`, `Telescope(f1=, f2=)` and `FourF(f1=, f2=)`; like elements, they take keyword arguments only.
 A composite is flattened into optical stages during build; its child elements
 remain available for result lookup.
 

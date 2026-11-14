@@ -51,7 +51,7 @@ class ThickLens(CompositeElement):
     R2: Node
     ambient_n: Node
 
-    def __init__(self, d: float, n: float, R1: float = np.inf, R2: float = np.inf,
+    def __init__(self, *, d: float, n: float, R1: float = np.inf, R2: float = np.inf,
                  ambient_n: float | Node = AMBIENT_N, label: str | None = None):
         super().__init__(label)
         self.d = d

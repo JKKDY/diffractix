@@ -333,7 +333,7 @@ class GaussianBeam(ParaxialState):
     #----------------
 
     @classmethod
-    def from_waist(cls, w0: float, wavelength: float, z_waist_loc: float = 0.0, n: float = 1.0) -> 'GaussianBeam':
+    def from_waist(cls, w0: float, wavelength: float, z0: float = 0.0, n: float = 1.0) -> 'GaussianBeam':
         """Create a beam from its waist radius and the waist position.
 
         Parameters
@@ -342,10 +342,10 @@ class GaussianBeam(ParaxialState):
             Waist radius [m].
         wavelength : float
             Vacuum wavelength [m].
-        z_waist_loc : float, optional
+        z0 : float, optional
             Waist position [m] relative to where the beam starts: 0 (the default)
             starts the beam at its waist, a positive value puts the waist ahead, a
-            negative one behind.
+            negative one behind. The new beam reports it as `z0`.
         n : float, optional
             Refractive index of the medium. Defaults to 1, not to the system's
             ambient index.
@@ -360,16 +360,16 @@ class GaussianBeam(ParaxialState):
         TypeError
             If an argument is not a real number.
         ValueError
-            If `w0`, `wavelength` or `n` is not positive and finite, or `z_waist_loc`
+            If `w0`, `wavelength` or `n` is not positive and finite, or `z0`
             is not finite.
         """
         _require_positive(w0=w0, wavelength=wavelength, n=n)
-        _require_real(z_waist_loc, "z_waist_loc")
-        require(xp.all(xp.isfinite(z_waist_loc)), "z_waist_loc must be finite.")
+        _require_real(z0, "z0")
+        require(xp.all(xp.isfinite(z0)), "z0 must be finite.")
         z_r = (np.pi * w0**2 * n) / wavelength
 
-        # q = (z - z_waist_loc) + i*z_r. At z=0 (current plane):
-        q = -z_waist_loc + 1j * z_r
+        # q = (z - z0) + i*z_r. At z=0 (current plane):
+        q = -z0 + 1j * z_r
 
         return cls(q=q, wavelength=wavelength, n=n)
 
@@ -440,14 +440,13 @@ class GaussianBeam(ParaxialState):
         # theta = lambda / (pi * w0 * n)  ->  w0 = lambda / (pi * theta * n)
         w0 = wavelength / (np.pi * theta * n)
 
-        return cls.from_waist(w0, wavelength, z_waist_loc=0.0, n=n)
+        return cls.from_waist(w0, wavelength, z0=0.0, n=n)
 
     @classmethod
     def from_fiber_tip(cls, wavelength: float, NA: float = None, MFD: float = None, n: float = 1.0) -> 'GaussianBeam':
         """Create the beam leaving a single-mode fiber, at its waist on the fiber face.
 
-        Give either the numerical aperture or the mode field diameter. If both are
-        given, `NA` is used.
+        Give either the numerical aperture or the mode field diameter, not both.
 
         Parameters
         ----------
@@ -469,10 +468,13 @@ class GaussianBeam(ParaxialState):
         Raises
         ------
         ValueError
-            If neither `NA` nor `MFD` is given, or a value is not positive and finite.
+            If neither or both of `NA` and `MFD` are given, or a value is not
+            positive and finite.
         """
         if NA is None and MFD is None:
             raise ValueError("Must provide either 'NA' or 'MFD' to characterize the fiber tip.")
+        if NA is not None and MFD is not None:
+            raise ValueError("Give either 'NA' or 'MFD', not both; they describe the same mode.")
         _require_positive(wavelength=wavelength, n=n)
         if NA is not None:
             _require_positive(NA=NA)
@@ -484,7 +486,7 @@ class GaussianBeam(ParaxialState):
             _require_positive(MFD=MFD)
             w0 = MFD / 2.0
 
-        return cls.from_waist(w0, wavelength, z_waist_loc=0.0, n=n)
+        return cls.from_waist(w0, wavelength, z0=0.0, n=n)
 
 
     #----------
@@ -493,6 +495,11 @@ class GaussianBeam(ParaxialState):
 
     def __str__(self) -> str:
         """Return a readable summary: wavelength, radius and curvature here, and the waist."""
+        state = self._for_display()
+        if state is None:
+            return self._describe_fields()
+        if state is not self:
+            return str(state)
         # calculate parameters
         w_current = self.w_at_z(0)
         R_current = self.R_at_z(0)
@@ -530,8 +537,23 @@ class GaussianBeam(ParaxialState):
             four times the larger of the Rayleigh range and the distance to the waist.
         points : int, optional
             Number of samples. Defaults to 200.
+
+        Raises
+        ------
+        ValueError
+            If a field has no value yet, such as an `n` left to the system's
+            ambient index; give it a value, or plot the result of a run.
         """
         import matplotlib.pyplot as plt
+
+        beam = self._for_display()
+        if beam is None:
+            raise ValueError(
+                f"{self._describe_fields()} cannot be plotted: a field has no value yet. "
+                "Give it one (for example n=1.0), or plot a result with result.plot()."
+            )
+        if beam is not self:
+            return beam.plot(span=span, points=points)
 
         # We want to show enough context. If the waist is 1km away, showing 1mm is useless.
         # If the waist is 1mm away, showing 1km is useless.

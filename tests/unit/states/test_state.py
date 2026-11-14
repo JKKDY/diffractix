@@ -441,3 +441,19 @@ def test_inputs_get_unique_default_labels_but_numerical_copies_do_not():
     assert Ray(x=0, theta=0, n=1, label="probe").label == "probe"
     assert first.numeric().label == first.label
     assert Ray.numerical_type()(x=0.0, theta=0.0, n=1.0).label is None
+
+
+@pytest.mark.parametrize("state, expected", [
+    (lambda: Ray(x=1e-3, theta=0), "Ray(x=0.001, theta=0, n=ambient_n)"),
+    (lambda: Ray(x=1e-3, theta=0, n=1.5), "Ray(x=1.0 mm, theta=0 rad, n=1.5)"),
+    (lambda: RayBundle(x=np.zeros(2), theta=np.zeros(2)), "RayBundle(x=array(shape=(2,)), theta=array(shape=(2,)), n=ambient_n)"),
+    (lambda: RayBundle.parallel(radius=1e-3, count=5), "RayBundle(size=5, n=1)"),
+    (lambda: GaussianBeam(q=1j, wavelength=1e-6), "GaussianBeam(q=0+1j, wavelength=1e-06, n=ambient_n)"),
+], ids=["ray-unset-n", "ray", "bundle-unset-n", "bundle", "beam-unset-n"])
+def test_string_form_of_user_built_states(state, expected):
+    assert str(state()) == expected
+
+
+def test_plotting_a_beam_without_a_medium_explains_what_is_missing():
+    with pytest.raises(ValueError, match="no value yet.*n=1.0"):
+        GaussianBeam(q=1j, wavelength=1e-6).plot()

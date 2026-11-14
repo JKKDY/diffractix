@@ -95,7 +95,7 @@ class OpticalElement(OpticalBase, ABC):
             isinstance(length, bool) or not isinstance(length, Real)
         ):
             raise TypeError(
-                "element_length must be a Node or real numeric scalar, got {type(length).__name__}."
+                f"element_length must be a Node or real numeric scalar, got {type(length).__name__}."
             )
 
         # Validate refractive index.

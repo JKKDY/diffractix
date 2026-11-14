@@ -49,8 +49,8 @@ class Op(Enum):
         return self in COMMUTATIVE_OPS
 
     @property
-    def unicode(self) -> str:
-        return OP_UNICODE[self]
+    def symbol(self) -> str:
+        return OP_SYMBOLS[self]
 
     @property
     def func(self) -> Callable:
@@ -90,19 +90,20 @@ COMMUTATIVE_OPS = {
 }
 
 
-OP_UNICODE = {
-    Op.ADD: "＋",
-    Op.SUB: "−",
-    Op.MUL: "×",
-    Op.DIV: "÷",
-    Op.POW: "^",
-    Op.NEG: "−",
+# ASCII only, so printing works on any console encoding.
+OP_SYMBOLS = {
+    Op.ADD: "+",
+    Op.SUB: "-",
+    Op.MUL: "*",
+    Op.DIV: "/",
+    Op.POW: "**",
+    Op.NEG: "-",
     Op.POS: "+",
-    Op.ABS: "|·|",
-    Op.SIGMOID: "σ",
+    Op.ABS: "abs",
+    Op.SIGMOID: "sigmoid",
     Op.EXP: "exp",
     Op.LOG: "log",
-    Op.SQRT: "√",
+    Op.SQRT: "sqrt",
     Op.SIN: "sin",
     Op.COS: "cos",
     Op.TAN: "tan",

@@ -82,7 +82,7 @@ def test_invalid_models_fail_before_propagation(case, error, message):
 
 
 @pytest.mark.parametrize("factory", [
-    lambda: ABCD(n=1.5, thickness=0.01),
+    lambda: ABCD(n=1.5, d=0.01),
     lambda: GRIN(d=0.01, g=2.0, n=1.5),
     lambda: Space(d=0.01, n=1.5),
 ], ids=["abcd", "grin", "space"])
@@ -95,7 +95,7 @@ def test_explicit_element_index_must_match_incoming_medium(factory):
 
 
 @pytest.mark.parametrize("factory", [
-    lambda n: ABCD(n=n, thickness=0.01),
+    lambda n: ABCD(n=n, d=0.01),
     lambda n: GRIN(d=0.01, g=2.0, n=n),
 ], ids=["abcd", "grin"])
 def test_variable_explicit_index_becomes_a_continuity_equality(factory):

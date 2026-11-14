@@ -7,7 +7,7 @@ from diffractix.graph import Literal
 
 def test_complex_optical_roots_do_not_promote_real_source_fields():
     p=Parameter(0.02).variable()
-    element=ABCD(A=1,B=p,C=Literal(1j*0.1),D=1,thickness=p)
+    element=ABCD(A=1,B=p,C=Literal(1j*0.1),D=1,d=p)
     simulation=System(element,source=GaussianBeam(q=0.04j,wavelength=1e-6)).build()
     function=lambda theta:simulation.run(theta).final.w**2
     def expected(theta):

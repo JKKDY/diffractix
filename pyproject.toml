@@ -7,6 +7,7 @@ name = "diffractix"
 version = "0.0.1"
 description = "Differentiable paraxial optics and inverse design."
 readme = "README.md"
+license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
 classifiers = [
@@ -17,11 +18,13 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Physics",
 ]
+# Minimums: first releases with Python 3.11 wheels (numpy, scipy), constrained
+# layout (matplotlib 3.6), NumPy 2 support (autograd 1.7). CI tests the latest only.
 dependencies = [
-    "autograd",
-    "numpy",
-    "matplotlib",
-    "scipy",
+    "autograd>=1.7",
+    "numpy>=1.23.2",
+    "matplotlib>=3.6",
+    "scipy>=1.9.2",
 ]
 
 [project.optional-dependencies]

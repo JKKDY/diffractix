@@ -33,7 +33,7 @@ class System:
     A system specifies the optical design; :meth:`build` turns it into a `Simulation`
     that can be run and optimized. Elements without a position follow the
     previous element directly. Elements given a position with ``z`` start there.
-    The gap before them is filled with a `Space` with refractive index `ambient_n`.
+    The gap before them is filled with a `Space` in the medium the light is already in.
 
     Parameters
     ----------
@@ -531,6 +531,10 @@ class System:
                 resolved.append(placement)
 
             elif isinstance(placement.element, CompositeElement):
+                if placement.z is not None and not placement.element.leaf_elements:
+                    raise ValueError(
+                        f"{placement.describe()}: an empty composite has no front to place at z."
+                    )
                 for i, (path, leaf) in enumerate(placement.element.walk()):
                     resolved.append(Placement(
                         element=leaf,
@@ -655,7 +659,15 @@ class System:
             if required_n is not None:
                 residual = current_n - required_n
 
-                if residual.has_variable_parameters(bindings):
+                try:
+                    is_variable = residual.has_variable_parameters(bindings)
+                except KeyError as error:
+                    raise ValueError(
+                        f"{placement.describe()}: refractive index has an unbound Symbol. "
+                        f"{error.args[0]} Bind it with system.bind(key, value)."
+                    ) from None
+
+                if is_variable:
                     constraints.append(
                         Constraint(
                             residual,

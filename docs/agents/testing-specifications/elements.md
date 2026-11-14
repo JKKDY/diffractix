@@ -75,7 +75,7 @@ locally when needed. Independent analytical matrices:
 | Mirror(R=inf) | [[1,0],[-2/R,1]], zero length; unfolded propagation |
 | Interface(n1,n2,R=inf) | [[1,0],[(n1-n2)/(n2*R),n1/n2]], zero length; output n2 |
 | GRIN(d,g,n) | [[cos(gd),d*sinc(gd)],[-g*sin(gd),cos(gd)]], length d |
-| ABCD | supplied A,B,C,D; length thickness, optional n |
+| ABCD | supplied A,B,C,D; length d, optional n |
 | GaussianAperture(a,wavelength) | [[1,0],[-i*wavelength/(pi*n*a**2),1]], zero length |
 | Plane | identity, zero length, unchanged medium |
 
@@ -86,13 +86,13 @@ positive, negative or infinite. ThinLens f, Mirror R and Interface R reject
 exact zero through validate(), not an invented epsilon or !=0 solver constraint.
 
 Built-in constraints: Space d>=0 (+n>0 if explicitly supplied); ABCD
-thickness>=0 (+n>0 if supplied); GRIN d>=0,n>0; Interface n1>0,n2>0;
+d>=0 (+n>0 if supplied); GRIN d>=0,n>0; Interface n1>0,n2>0;
 GaussianAperture a>0. ThinLens/Mirror/Plane have no sign constraint on power.
 Strict inequalities are Comparison metadata here; normalization belongs elsewhere.
 Check they still reference handles after reassignment. Build/optimization applies
 these constraints, not every standalone matrix read.
 
-ABCD matrix_val and matrix setter accept 2x2 arrays; reassignment keeps handles
+ABCD.from_matrix and the matrix setter accept 2x2 arrays; reassignment keeps handles
 and updates old expressions. Malformed shapes fail. Aperture wavelength defaults
 to an independent per-instance Symbol keyed `wavelength`; source supplies its
 binding during build. Its public matrix is the unit-index case; System supplies

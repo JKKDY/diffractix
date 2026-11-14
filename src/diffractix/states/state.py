@@ -3,7 +3,10 @@
 from dataclasses import dataclass, fields
 from functools import cache
 
+import numpy as np
+
 from diffractix.core import OpticalBase
+from diffractix.graph import Literal, Parameter, Symbol
 
 
 @cache
@@ -76,3 +79,36 @@ class OpticalState(OpticalBase):
                 values[item.name] = getattr(self, item.name)
 
         return self.numerical_type()(**values)
+
+    def _for_display(self):
+        """Return this state as numbers, or None if a Symbol (such as an unset n) has no value yet."""
+        if getattr(type(self), "_is_numerical", False):
+            return self
+        try:
+            return self.numeric()
+        except KeyError:
+            return None
+
+    def _describe_fields(self) -> str:
+        """Describe the fields as written, for states that cannot be evaluated yet."""
+        def number(value):
+            return f"{value:.4g}" if np.ndim(value) == 0 else f"array(shape={np.shape(value)})"
+
+        def describe(node):
+            if node is None:
+                return "-"
+            if isinstance(node, Symbol):
+                return str(node.key)
+            if isinstance(node, (Parameter, Literal)):
+                return number(node.value)
+            return repr(node)
+
+        handles = dict(zip(self.parameter_names, self.parameters))
+        parts = []
+        for item in fields(self):
+            if not item.init or item.name == "label":
+                continue
+            value = getattr(self, item.name)
+            text = describe(handles[item.name].node) if item.name in handles else number(value)
+            parts.append(f"{item.name}={text}")
+        return f"{type(self).__name__}({', '.join(parts)})"

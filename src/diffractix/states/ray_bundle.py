@@ -240,4 +240,9 @@ class RayBundle(ParaxialState):
 
     def __str__(self) -> str:
         """Return a readable summary of the bundle."""
+        state = self._for_display()
+        if state is None:
+            return self._describe_fields()
+        if state is not self:
+            return str(state)
         return f"RayBundle(size={self.size}, n={self.n:.4g})"

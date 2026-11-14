@@ -270,3 +270,12 @@ def test_compilation_rejects_empty_handles_and_unknown_node_types(compiler):
         compiler((InputNode(None) + 1,))
     with pytest.raises(UnsupportedNodeError, match="Unknown"):
         compiler((Unknown(),))
+
+
+def test_constant_subexpressions_are_folded_at_compile_time():
+    fixed = compile_graph((Parameter(3.0) * 2 + 1,))
+    assert fixed._instructions == () and fixed.evaluate([]) == (7.0,)
+    variable = Parameter(1.0).variable()
+    mixed = compile_graph((variable * (Parameter(3.0) * 2),))
+    assert len(mixed._instructions) == 1
+    assert float(mixed.evaluate([2.0])[0]) == 12.0

@@ -102,6 +102,11 @@ class Ray(ParaxialState):
 
     def __str__(self) -> str:
         """Return a readable summary of the ray."""
+        state = self._for_display()
+        if state is None:
+            return self._describe_fields()
+        if state is not self:
+            return str(state)
 
         def fmt_length(val):
             if abs(val) < 1e-6: return f"{val * 1e9:.1f} nm"

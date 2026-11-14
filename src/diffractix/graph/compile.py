@@ -170,6 +170,9 @@ def _fold_constants_and_cse(program: Program) -> Program:
         if comparable and all(isinstance(operand, Constant) for operand in operands):
             try:
                 value = instruction.op.func(*(operand.value for operand in operands))
+                if np.ndim(value) == 0:
+                    # Backend functions return NumPy or JAX scalars; keys need Python numbers.
+                    value = np.asarray(value).item()
                 constant = Constant(value)
 
                 if _operand_key(constant) is not None:

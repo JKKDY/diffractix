@@ -1,5 +1,4 @@
 from collections.abc import Iterator, Sequence
-from functools import cached_property
 from types import MappingProxyType
 
 from diffractix.core.base import OpticalBase
@@ -31,7 +30,7 @@ class CompositeElement(OpticalBase, Sequence):
     >>> class Relay(CompositeElement):
     ...     f: Node
     ...
-    ...     def __init__(self, f, label=None):
+    ...     def __init__(self, *, f, label=None):
     ...         super().__init__(label)
     ...         self.f = f
     ...         self.lens = ThinLens(f=self.f)
@@ -56,7 +55,7 @@ class CompositeElement(OpticalBase, Sequence):
     # --------------
     # ELEMENT ACCESS
     # --------------
-    @cached_property
+    @property
     def named_elements(self) -> "tuple[tuple[str, OpticalElement | CompositeElement], ...]":
         """Named parts: ``(attribute name, part)`` pairs of the direct parts, in propagation order."""
         return tuple(
@@ -74,7 +73,7 @@ class CompositeElement(OpticalBase, Sequence):
         """Direct part names: the attribute names of the direct parts, in propagation order."""
         return tuple(name for name, _ in self.named_elements)
 
-    @cached_property
+    @property
     def bindings(self):
         """Bindings: values the elements inside provide for Symbols, by key.
 
@@ -100,7 +99,7 @@ class CompositeElement(OpticalBase, Sequence):
         Parameters
         ----------
         prefix : str, optional
-            Path to put in front of every path. Defaults to none.
+            Path to put in front of every path. Defaults to ``""``.
 
         Yields
         ------

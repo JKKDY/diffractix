@@ -59,9 +59,10 @@ def test_array_residual_callable_is_preserved():
     np.testing.assert_array_equal(objective.quantity(None), [1, -2])
 
 
-def test_objective_tracing_propagates_user_errors_and_rejects_unbound_symbols():
-    with pytest.raises(TypeError):
-        prepare_objectives((lambda result: 1 + "invalid",), tracer=make_tracer(), bindings={})
+def test_objective_tracing_defers_user_errors_and_rejects_unbound_symbols():
+    _, _, callables = prepare_objectives((lambda result: 1 + "invalid",), tracer=make_tracer(), bindings={})
+    with pytest.raises(TypeError, match="unsupported operand"):
+        callables[0][1].quantity(None)   # the error surfaces when the callable runs
     with pytest.raises(ValueError, match="Objective 0.*missing"):
         prepare_objectives((Symbol("missing"),), tracer=make_tracer(), bindings={})
 

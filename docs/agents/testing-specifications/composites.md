@@ -48,23 +48,24 @@ resulting composition is a tuple snapshot; parameter handles remain live.
 
 ## Built-in structures and independent physics
 
-Slab(d,n,ambient_n=AMBIENT_N,label=None) contains front Interface, body Space,
+Slab(*,d,n,ambient_n=AMBIENT_N,label=None) (keyword-only, like every built-in
+composite) contains front Interface, body Space,
 back Interface, with child names `front`, `body`, `back`. Its ambient symbol is
 resolved at build, not a hidden numeric 1.0. Both boundaries and body share the
 composite's stable handles. For ambient na and index n, the aggregate matrix is
 [[1,d*na/n],[0,1]], and it returns to na.
 
-ThickLens(d,n,R1=inf,R2=inf,ambient_n=AMBIENT_N,label=None) has the same
+ThickLens(*,d,n,R1=inf,R2=inf,ambient_n=AMBIENT_N,label=None) has the same
 front/body/back structure, with curvatures R1/R2 and index transitions. Compare
 its aggregate matrix to independently constructed refraction/drift matrices in
 the correct multiplication order. Infinite surfaces give the slab limit.
 
-Telescope(f1,f2) contains lens1, space, lens2; spacing f1+f2. For valid nonzero
+Telescope(*,f1,f2) contains lens1, space, lens2; spacing f1+f2. For valid nonzero
 focal lengths its aggregate C is zero; matrix is
 `[[-f2/f1, f1+f2], [0, -f1/f2]]`. Negative focal lengths are not categorically
 invalid, but negative total drift violates the attached Space constraint.
 
-FourF(f1,f2) contains input_space, telescope (a Telescope), output_space;
+FourF(*,f1,f2) contains input_space, telescope (a Telescope), output_space;
 distances f1, f1+f2, f2. Independent matrix is diagonal with
 `A=-f2/f1`, `D=-f1/f2` and B=C=0. Parameter changes must update every linked
 child and derived spacing. Preserve physical assertions rather than merely

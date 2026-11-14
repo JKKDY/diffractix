@@ -209,7 +209,7 @@ def test_build_validation_rejects_invalid_matrix_structure(matrix, error, messag
 def test_build_validation_rejects_invalid_element_length(length):
     element = ValidationElement(length_value=length)
 
-    with pytest.raises(TypeError, match="element_length"):
+    with pytest.raises(TypeError, match=f"element_length.*got {type(length).__name__}"):
         element.validate()
 
 

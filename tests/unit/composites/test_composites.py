@@ -6,6 +6,7 @@ import pytest
 from diffractix.composites import FourF, Slab, ThickLens, Telescope
 from diffractix.system import AMBIENT_N
 from diffractix.graph import Node, Parameter
+from diffractix import Ray, System, ThinLens
 
 
 def aggregate_matrix(composite, bindings=None):
@@ -235,3 +236,21 @@ def test_default_composite_labels_are_unique_and_explicit_labels_are_kept(compos
     named = composite_type(**kwargs, label="mine")
     assert named.label == "mine"
     assert all(part.label.startswith("mine") for part in named.leaf_elements)
+
+
+def test_a_part_swapped_after_use_is_seen_by_the_composite_and_the_build():
+    telescope = Telescope(f1=0.1, f2=0.2)
+    assert len(telescope) == 3
+    telescope.lens2 = ThinLens(f=0.5)
+    assert telescope.elements[2] is telescope.lens2
+    simulation = System(telescope, source=Ray(x=0, theta=0, n=1)).build()
+    assert any(data.element is telescope.lens2 for data in simulation.element_data)
+
+
+@pytest.mark.parametrize("make", [
+    lambda: ThickLens(0.006, 1.5, 0.1, -0.1), lambda: Slab(0.01, 1.5),
+    lambda: Telescope(0.1, 0.2), lambda: FourF(0.1, 0.2),
+], ids=["thick-lens", "slab", "telescope", "four-f"])
+def test_built_in_composites_take_keyword_arguments_only(make):
+    with pytest.raises(TypeError):
+        make()

@@ -22,6 +22,7 @@ from diffractix.graph import (
 )
 
 from diffractix.simulation import Simulation
+from diffractix.simulation.simulation import InitialValues
 from diffractix.simulation.result import SimulationResultTracer, resolve_symbol
 from diffractix.system import System
 from .solution import DEFAULT_FEASIBILITY_TOLERANCE, Solution
@@ -313,9 +314,9 @@ class Solver:
             Whether to just-in-time compile the objective and constraints. Defaults
             to ``True``; pass ``False`` if a deferred callable's control flow cannot
             be traced.
-        x0 : array_like, optional
-            Starting point, in `simulation.parameter_data` order. Defaults to the
-            Simulation's initial values.
+        x0 : array_like or InitialValues, optional
+            Starting point, in `simulation.parameter_data` order, such as an edited
+            `simulation.initial_values`. Defaults to the Simulation's initial values.
         x_lower, x_upper : array_like, optional
             Parameter bounds, in `simulation.parameter_data` order. Default to the
             Simulation's own bounds.
@@ -367,9 +368,11 @@ class Solver:
             raise ValueError("Optimization problem must have at least one objective or constraint.")
 
 
-        initial_values = np.array(
-            self.simulation.initial_values.values if x0 is None else x0, dtype=float,
-        )
+        if x0 is None:
+            x0 = self.simulation.initial_values
+        if isinstance(x0, InitialValues):
+            x0 = x0.values
+        initial_values = np.array(x0, dtype=float)
         parameter_lower = np.array(
             x_lower if x_lower is not None 
                 else [item.lower_bound for item in self.simulation.parameter_data],
@@ -436,6 +439,8 @@ class Solver:
         with _explain_tracing_errors(jit):
             result = solve(scaled_problem, method=method, options={} if options is None else options)
         result = problem.scaling.unscale(result)
+        # Unscaling can land one rounding step outside a bound; keep the solution inside.
+        result = replace(result, x=np.clip(result.x, problem.x_lower, problem.x_upper))
 
         return Solution(
             result, problem, self.simulation,

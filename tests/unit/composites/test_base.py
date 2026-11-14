@@ -298,7 +298,7 @@ def test_recursive_bindings_preserve_nodes_and_do_not_mutate_child_mappings():
     assert bindings[("calibration", 1)] == 1.5
     with pytest.raises(TypeError):
         bindings["distance"] = 99.0
-    assert composite.bindings is bindings   # gathered once, read-only
+    assert composite.bindings == bindings   # gathered afresh each time, so swapped parts count
     assert left_bindings["distance"] is parameter
     assert tuple(left_bindings) == ("distance",)
     assert right_bindings == {("calibration", 1): 1.5}

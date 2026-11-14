@@ -1,5 +1,12 @@
 """Diffractix: differentiable paraxial optics and inverse design."""
 
+from importlib.metadata import PackageNotFoundError, version as _version
+
+try:
+    __version__ = _version("diffractix")
+except PackageNotFoundError:  # running from a source tree that was never installed
+    __version__ = "0+unknown"
+
 # Optical inputs
 from .core import OpticalBase
 from . import units
@@ -39,17 +46,21 @@ from .graph import (
     Node,
     Parameter,
     Symbol,
+    SymbolicControlFlowError,
 )
 
 # Systems and simulation
 from .system import (
     System,
     SystemValidationError,
+    AMBIENT_N,
+    WAVELENGTH,
 )
 from .simulation import (
     Simulation,
     SimulationResult,
 )
+from .simulation.result import SimulationResultView
 
 # Inverse design
 from .solver import (
@@ -94,12 +105,16 @@ __all__ = [
     "Node",
     "Parameter",
     "Symbol",
+    "SymbolicControlFlowError",
 
     # Systems and simulation
     "System",
     "SystemValidationError",
+    "AMBIENT_N",
+    "WAVELENGTH",
     "Simulation",
     "SimulationResult",
+    "SimulationResultView",
 
     # Inverse design
     "Solver",

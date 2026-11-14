@@ -406,3 +406,49 @@ def test_reporting_rejects_a_finite_residual_whose_cost_overflows():
     solution, _ = make_solution(solver=solver)
     with pytest.raises(ValueError, match="'huge' cost is non-finite"):
         solution.objectives
+
+
+def focus_model():
+    from diffractix import ThinLens
+    lens = ThinLens(f=0.1)
+    distance = Parameter(0.05).variable(bounds=(0, 1))
+    simulation = System(lens, Space(d=distance), source=Ray(x=1e-3, theta=0, n=1)).build()
+    solver = Solver(simulation).target(value=simulation.symbolic.final.x, target=0.0, scale=1e-3)
+    return simulation, solver, lens, distance
+
+
+def test_value_of_a_fixed_parameter_or_its_handle_is_its_current_value():
+    _, solver, lens, distance = focus_model()
+    solution = solver.solve()
+    assert solution.value(lens.f) == solution.value(lens.f.node) == 0.1
+    assert solution.value(distance) == pytest.approx(0.1, abs=1e-6)
+
+
+def test_solved_values_are_kept_inside_their_bounds_so_solves_can_be_chained(monkeypatch):
+    from diffractix.solver import solver as solver_module
+
+    def overshooting(problem, method=None, options=None):
+        return SolverResult(np.nextafter(problem.x_upper, np.inf), True, 0.0, "stub")
+
+    monkeypatch.setattr(solver_module, "solve_scipy", overshooting)
+    simulation, solver, _, distance = focus_model()
+    solution = solver.solve()
+    assert solution.x[0] == 1.0 == distance.upper_bound
+    chained = Solver(solution.simulation).target(value=solution.simulation.symbolic.final.x, target=0.0)
+    assert chained.solve().x[0] == 1.0
+
+
+def test_initial_values_can_be_passed_directly_as_a_starting_point():
+    simulation, solver, _, distance = focus_model()
+    guess = simulation.initial_values
+    guess[distance] = 0.08
+    assert float(simulation.run(guess).final.x) == pytest.approx(float(simulation.run(guess.values).final.x))
+    assert solver.solve(x0=guess).value(distance) == pytest.approx(0.1, abs=1e-6)
+
+
+def test_objectives_and_constraints_compare_by_identity():
+    p = Parameter(1.0)
+    first, second = Constraint(p, 0, 1), Constraint(p, 0, 1)
+    assert first == first and first != second and first in [first] and len({first, second}) == 2
+    objective = Objective(p)
+    assert objective == objective and objective != Objective(p) and len({objective}) == 1

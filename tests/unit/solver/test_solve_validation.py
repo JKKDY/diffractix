@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from diffractix import Parameter, Ray, Solver, Space, System
+from diffractix import Parameter, Ray, Solver, Space, System, ThinLens
 
 
 def make_solver():
@@ -127,3 +127,15 @@ def test_chained_comparisons_explain_how_to_write_the_two_bounds():
     distance = Parameter(0.5)
     with pytest.raises(TypeError, match="chained comparison.*solver.require"):
         _ = 0.1 < distance < 0.9
+
+
+@pytest.mark.parametrize("make_residual", [
+    lambda xp: (lambda sim: xp.abs(sim.final.x)),
+    lambda xp: (lambda sim: xp.where(sim.final.x > 0, sim.final.x, -sim.final.x)),
+], ids=["abs", "where"])
+def test_callables_using_backend_functions_solve_on_every_backend(make_residual):
+    from diffractix.backend import xp
+    distance = Parameter(0.05).variable(bounds=(0, 1))
+    simulation = System(ThinLens(f=0.1), Space(d=distance), source=Ray(x=1e-3, theta=0, n=1)).build()
+    solver = Solver(simulation).target(value=make_residual(xp), target=0.0, scale=1e-3)
+    assert solver.solve().value(distance) == pytest.approx(0.1, abs=1e-6)

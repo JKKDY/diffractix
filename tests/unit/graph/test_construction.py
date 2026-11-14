@@ -618,3 +618,21 @@ def test_full_name_combines_the_owner_label_with_the_parameter_name():
     assert Parameter(1.0).full_name == "<parameter>"
     assert repr(Parameter(1.5, name="spacing").variable()) == "spacing=1.5[V]"
     assert repr(Parameter(1.5, name="spacing")) == "spacing=1.5[F]"
+
+
+def test_operator_symbols_are_ascii_so_printing_works_on_any_console():
+    from diffractix.graph.ops import Op
+    assert all(op.symbol.isascii() for op in Op)
+    x = Parameter(1.0, name="x")
+    text = repr(abs(-x * 2 / x - x ** 2 + x.sqrt().sigmoid()))
+    assert text.isascii() and "*" in text and "/" in text and "**" in text
+
+
+@pytest.mark.parametrize("array_first", [True, False])
+def test_numpy_operands_on_either_side_build_a_node(array_first):
+    x = Parameter(1.0)
+    values = np.array([1.0, 2.0])
+    expression = values - x if array_first else x - values
+    assert isinstance(expression, Node)
+    np.testing.assert_allclose(expression.evaluate(), [0.0, 1.0] if array_first else [0.0, -1.0])
+    assert isinstance(np.float64(2.0) * x, Node)

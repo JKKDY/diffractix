@@ -74,15 +74,17 @@ def test_wavefront_radius_rejects_singular_or_nan_values(radius):
 
 @pytest.mark.parametrize("position", [np.nan, np.inf, -np.inf])
 def test_waist_position_must_be_finite(position):
-    with pytest.raises(ValueError, match="z_waist_loc.*finite"):
-        GaussianBeam.from_waist(1e-3, 1e-6, z_waist_loc=position)
+    with pytest.raises(ValueError, match="z0.*finite"):
+        GaussianBeam.from_waist(1e-3, 1e-6, z0=position)
 
 
-def test_fiber_mode_selection_retains_na_precedence_and_requires_a_mode():
+def test_fiber_mode_needs_exactly_one_of_na_and_mfd():
     with pytest.raises(ValueError, match="NA.*MFD"):
         GaussianBeam.from_fiber_tip(1e-6)
-    beam = GaussianBeam.from_fiber_tip(1e-6, NA=0.1, MFD=50e-6).numeric()
-    assert beam.w == pytest.approx(1e-6 / (np.pi * 0.1))
+    with pytest.raises(ValueError, match="not both"):
+        GaussianBeam.from_fiber_tip(1e-6, NA=0.1, MFD=50e-6)
+    assert GaussianBeam.from_fiber_tip(1e-6, NA=0.1).numeric().w == pytest.approx(1e-6 / (np.pi * 0.1))
+    assert GaussianBeam.from_fiber_tip(1e-6, MFD=50e-6).numeric().w == pytest.approx(25e-6)
 
 
 def test_factory_preserves_backend_arrays_and_broadcasting():
@@ -97,7 +99,7 @@ def test_factory_preserves_backend_arrays_and_broadcasting():
 def test_waist_factory_first_second_and_nested_derivatives_and_jit():
     def moments(t):
         beam = GaussianBeam.numerical_type().from_waist(1e-3 * t[0], 1e-6 * t[1], n=t[2],
-                                       z_waist_loc=0.01 * t[3])
+                                       z0=0.01 * t[3])
         return xp.stack((xp.real(beam.q) / 0.01, xp.imag(beam.q) / np.pi))
 
     point = xp.array([1.2, 0.9, 1.5, -2.0])
@@ -312,7 +314,7 @@ def test_string_form_reports_the_beam_here_and_its_waist():
     assert at_waist.startswith("GaussianBeam(lam=1.0 um, Current[w=500.0 um, R=Plane]")
     assert "Waist[w0=500.0 um" in at_waist
 
-    converging = str(GaussianBeam.from_waist(5e-4, 1e-6, z_waist_loc=0.2).numeric())
+    converging = str(GaussianBeam.from_waist(5e-4, 1e-6, z0=0.2).numeric())
     assert "Current[w=516.0 um, R=-3.28 m]" in converging
     assert "Waist[w0=500.0 um @ z=200.0 mm]" in converging
 
@@ -324,7 +326,7 @@ def test_debug_plot_draws_the_envelope_marks_the_waist_and_shows_once(span, monk
     import matplotlib.pyplot as plt
     shown = []
     monkeypatch.setattr(plt, "show", lambda: shown.append(True))
-    beam = GaussianBeam.from_waist(5e-4, 1e-6, z_waist_loc=0.1).numeric()
+    beam = GaussianBeam.from_waist(5e-4, 1e-6, z0=0.1).numeric()
 
     beam.plot(span=span, points=51)
 
@@ -348,7 +350,7 @@ def test_debug_plot_omits_the_waist_marker_when_the_waist_is_out_of_view(monkeyp
     import matplotlib.pyplot as plt
     monkeypatch.setattr(plt, "show", lambda: None)
     try:
-        GaussianBeam.from_waist(5e-4, 1e-6, z_waist_loc=10.0).numeric().plot(span=0.1, points=11)
+        GaussianBeam.from_waist(5e-4, 1e-6, z0=10.0).numeric().plot(span=0.1, points=11)
         assert "Waist Location" not in plt.gca().get_legend_handles_labels()[1]
     finally:
         plt.close("all")

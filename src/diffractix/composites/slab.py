@@ -38,7 +38,7 @@ class Slab(CompositeElement):
     n: Node
     ambient_n: Node
 
-    def __init__(self, d: float, n: float, ambient_n: float | Node = AMBIENT_N, label: str | None = None):
+    def __init__(self, *, d: float, n: float, ambient_n: float | Node = AMBIENT_N, label: str | None = None):
         super().__init__(label)
         self.d = d
         self.n = n

@@ -32,6 +32,9 @@ class Node:
     another Node or number.
     """
 
+    # NumPy defers mixed operations (``array - node``) to the Node's own operators.
+    __array_ufunc__ = None
+
     def __bool__(self):
         raise SymbolicControlFlowError("Symbolic values cannot be used as Python booleans.")
 
@@ -251,7 +254,7 @@ class BinaryOp(Node):
         self.right = right
 
     def __repr__(self) -> str:
-        return f"({self.left} {self.op.unicode} {self.right})"
+        return f"({self.left} {self.op.symbol} {self.right})"
 
     @property
     def value(self):
@@ -273,7 +276,7 @@ class UnaryOp(Node):
         self.operand = operand
 
     def __repr__(self) -> str:
-        return f"{self.op.unicode}({self.operand})"
+        return f"{self.op.symbol}({self.operand})"
 
     @property
     def value(self):
@@ -308,6 +311,9 @@ class InputNode(Node):
         self.node = node
 
     def __getattr__(self, name):
+        # copy and pickle look up dunders before __init__ has set `node`.
+        if name == "node" or name.startswith("__"):
+            raise AttributeError(name)
         if self.node is None:
             raise AttributeError(f"InputNode is empty and has no attribute '{name}'")
         return getattr(self.node, name)
@@ -325,7 +331,7 @@ class InputNode(Node):
         setattr(self.node, name, value)
 
     def __repr__(self):
-        return f"Input:{self.node}"
+        return "<empty>" if self.node is None else repr(self.node)
 
     @property
     def is_variable(self):

@@ -88,7 +88,7 @@ def test_build_validation_defers_values_that_are_only_known_at_build(make):
     pytest.param(lambda: Space(d=0.1), [("d", Relation.GE)], id="space"),
     pytest.param(lambda: Space(d=0.1, n=1.5), [("n", Relation.GT), ("d", Relation.GE)], id="space-in-medium"),
     pytest.param(lambda: Interface(n1=1.0, n2=1.5), [("n1", Relation.GT), ("n2", Relation.GT)], id="interface"),
-    pytest.param(lambda: ABCD(thickness=0.1), [("thickness", Relation.GE)], id="abcd"),
+    pytest.param(lambda: ABCD(d=0.1), [("d", Relation.GE)], id="abcd"),
     pytest.param(lambda: GaussianAperture(a=1e-3), [("a", Relation.GT)], id="aperture"),
 ])
 def test_elements_declare_the_physical_domain_of_their_parameters(make, expected):
@@ -104,7 +104,7 @@ def test_elements_declare_the_physical_domain_of_their_parameters(make, expected
 
 
 @pytest.mark.parametrize("make, name, relation, position", [
-    pytest.param(lambda: ABCD(thickness=0.1, n=1.5), "n", Relation.GT, 0, id="abcd-index"),
+    pytest.param(lambda: ABCD(d=0.1, n=1.5), "n", Relation.GT, 0, id="abcd-index"),
     pytest.param(lambda: GRIN(d=0.02, g=10.0, n=1.5), "d", Relation.GE, 0, id="grin-length"),
     pytest.param(lambda: GRIN(d=0.02, g=10.0, n=1.5), "n", Relation.GT, -1, id="grin-index"),
 ])
@@ -336,7 +336,7 @@ def test_abcd_declaration():
     element = ABCD(
         A=2.0,
         D=0.5,
-        thickness=0.1,
+        d=0.1,
         n=1.5,
         label="Relay",
     )
@@ -346,7 +346,7 @@ def test_abcd_declaration():
         "B",
         "C",
         "D",
-        "thickness",
+        "d",
         "n",
     )
 
@@ -355,7 +355,7 @@ def test_abcd_declaration():
     assert element.C.value == 0.0
     assert element.D.value == 0.5
 
-    assert element.element_length is element.thickness
+    assert element.element_length is element.d
     assert element.refractive_index is element.n
 
 
@@ -386,17 +386,16 @@ def test_abcd_matrix_override():
         [0.1, 1.0],
     ])
 
-    element = ABCD(
-        matrix_val=matrix,
-        thickness=0.1,
-    )
+    element = ABCD.from_matrix(matrix, d=0.1, n=1.5, label="Relay")
 
     np.testing.assert_allclose(
         evaluate_matrix(element),
         matrix,
     )
 
-    assert element.thickness.value == 0.1
+    assert (element.d.value, element.n.value, element.label) == (0.1, 1.5, "Relay")
+    with pytest.raises(ValueError, match=r"shape \(2, 2\)"):
+        ABCD.from_matrix(np.eye(3))
 
 
 def test_abcd_matrix_setter_preserves_handles():
@@ -426,7 +425,7 @@ def test_abcd_matrix_setter_preserves_handles():
 
 
 def test_abcd_can_request_refractive_index_inheritance():
-    element = ABCD(thickness=1.0)
+    element = ABCD(d=1.0)
 
     assert isinstance(element.n, InputNode)
     assert element.n.node is None
@@ -582,7 +581,7 @@ def test_aperture_instances_have_independent_symbols_and_complex_power():
 
 @pytest.mark.parametrize("factory, field", [
     (lambda: Space(d=0.1), "d"),
-    (lambda: ABCD(thickness=0.1), "thickness"),
+    (lambda: ABCD(d=0.1), "d"),
     (lambda: GRIN(d=0.1, g=2.0, n=1.5), "d"),
     (lambda: GaussianAperture(a=1e-3), "a"),
 ])
@@ -611,3 +610,13 @@ def test_abcd_rejected_matrix_shape_leaves_coefficients_and_existing_expressions
     assert all(old is new for old, new in zip(handles, element.parameters[:4]))
     np.testing.assert_array_equal(evaluate_matrix(element), [[2.0, 3.0], [4.0, 5.0]])
     assert expression.evaluate() == 5.0
+
+
+def test_elements_can_be_deep_copied_into_independent_parameters():
+    import copy
+    lens = ThinLens(f=Parameter(0.1).variable(bounds=(0.05, 0.2)))
+    clone = copy.deepcopy(lens)
+    assert clone.f.node is not lens.f.node
+    assert (clone.f.value, clone.f.is_variable, clone.f.bounds) == (0.1, True, (0.05, 0.2))
+    clone.f.value = 0.15
+    assert lens.f.value == 0.1

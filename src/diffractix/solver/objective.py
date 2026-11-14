@@ -10,7 +10,8 @@ from diffractix.graph import Node, Symbol, SymbolicControlFlowError, precompile,
 from .utils import callable_arity
 
 
-@dataclass(frozen=True)
+# eq=False: fields hold graph Nodes, whose == builds a comparison.
+@dataclass(frozen=True, eq=False)
 class Objective:
     """A soft optimization objective: one or more residuals, weighted in the total cost.
 
@@ -72,7 +73,8 @@ def prepare_objectives(objectives, tracer, bindings):
         if not isinstance(expression, Node):
             try:
                 expression = expression(tracer)
-            except SymbolicControlFlowError:
+            # A TypeError is how JAX's xp functions reject a graph Node: evaluate numerically.
+            except (SymbolicControlFlowError, TypeError):
                 callables.append((position, objective))
                 continue
             if not isinstance(expression, Node):

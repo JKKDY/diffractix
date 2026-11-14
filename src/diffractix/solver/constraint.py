@@ -72,7 +72,8 @@ def describe_callable(func: Callable) -> str:
 
 
 
-@dataclass(frozen=True)
+# eq=False: fields hold graph Nodes, whose == builds a comparison.
+@dataclass(frozen=True, eq=False)
 class Constraint:
     """A hard optimization constraint: a quantity kept between a lower and an upper bound.
 
@@ -256,7 +257,8 @@ def prepare_constraints(constraints, *, tracer, bindings):
                 continue
             try:
                 expression = expression(tracer)
-            except SymbolicControlFlowError:
+            # A TypeError is how JAX's xp functions reject a graph Node: evaluate numerically.
+            except (SymbolicControlFlowError, TypeError):
                 callables.append((position, constraint))
                 continue
             if not isinstance(expression, Node):
