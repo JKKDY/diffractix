@@ -5,6 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "diffractix"
 version = "0.0.1"
+authors = [
+  { name = "JKKDY" },
+]
 description = "Differentiable paraxial optics and inverse design."
 readme = "README.md"
 license = "AGPL-3.0-or-later"
