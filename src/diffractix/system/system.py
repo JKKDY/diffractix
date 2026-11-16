@@ -431,6 +431,9 @@ class System:
             visit(element)
         for placement in placements:
             visit(placement.element)
+
+        from diffractix.solver.constraint import label_constraints
+        constraints.extend(label_constraints((self.ambient_n > 0,), "Ambient refractive index > 0"))
         return tuple(constraints)
 
     def require(self, *constraints, label: str | None = None):

@@ -6,7 +6,6 @@ from numbers import Complex as Scalar, Real
 from typing import TYPE_CHECKING
 import numpy as np
 
-from diffractix.backend import xp
 
 from .ops import Op
 from .relations import Relation, Comparison, SymbolicControlFlowError
@@ -380,11 +379,15 @@ class Literal(Node):
         if isinstance(value, Scalar):
             self._value = value
             return
-        if isinstance(value, (np.ndarray, xp.ndarray)):
+        # Duck-typed so a backend array is accepted without initializing the backend.
+        if isinstance(value, np.ndarray) or (hasattr(value, "shape") and hasattr(value, "dtype")):
+            from_numpy = isinstance(value, np.ndarray)
             try:
                 value = np.array(value, copy=True)
             except (TypeError, ValueError) as error:
                 raise TypeError("Literal value must be a concrete numeric scalar or array.") from error
+            if value.dtype.kind == "O" and not from_numpy:   # e.g. a value being differentiated
+                raise TypeError("Literal value must be a concrete numeric scalar or array.")
             if value.dtype.kind not in "biufc":
                 raise TypeError(f"Literal array must have a numeric dtype, got {value.dtype}.")
             if value.ndim == 0:

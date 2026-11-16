@@ -300,3 +300,13 @@ def test_statistics_of_an_empty_bundle_are_nan_without_warnings(name):
 def test_string_form_reports_size_and_medium():
     assert str(RayBundle.parallel(radius=1e-3, count=3, n=1.5).numeric()) == "RayBundle(size=3, n=1.5)"
     assert str(RayBundle(x=np.array([]), theta=np.array([])).numeric({"ambient_n": 1.0})) == "RayBundle(size=0, n=1)"
+
+
+@pytest.mark.parametrize("make", [
+    lambda: RayBundle.parallel(radius=2e-3, count=1),
+    lambda: RayBundle.converging(radius=2e-3, count=1, focal_distance=0.05),
+], ids=["parallel", "converging"])
+def test_a_single_ray_is_on_the_axis(make):
+    bundle = make().numeric()
+    np.testing.assert_array_equal(bundle.x, [0.0])
+    np.testing.assert_array_equal(bundle.theta, [0.0])

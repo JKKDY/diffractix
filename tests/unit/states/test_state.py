@@ -399,8 +399,10 @@ def test_builtin_default_symbols_and_constraints_are_independent_per_input():
     assert first.numeric({"ambient_n": 1.5}).n == 1.5
     with pytest.raises(KeyError, match="ambient_n"):
         second.numeric()
-    assert len(first.constraints) == 1 and first.constraints[0] is constraint
-    assert second.constraints == ()
+    # Each source carries its own n > 0, plus what the user added.
+    assert [item.label for item in first.constraints[:1]] == [f"{first.label}: n > 0"]
+    assert len(first.constraints) == 2 and first.constraints[1] is constraint
+    assert [item.label for item in second.constraints] == [f"{second.label}: n > 0"]
 
 
 @pytest.mark.parametrize("input_type, arguments, quantity, expected", [

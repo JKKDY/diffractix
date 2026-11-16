@@ -357,3 +357,12 @@ def test_messages_name_a_parameter_by_the_object_label_or_its_type():
         labelled.variable("x")
     with pytest.raises(TypeError, match=r"'TwoParameterElement\.x'"):
         TwoParameterElement(x=2 * derived, y=1.0).variable("x")
+
+
+def test_named_fixed_is_atomic_when_a_name_holds_an_expression():
+    element = TwoParameterElement(x=1.0, y=2.0)
+    element.variable("x")
+    element.y = 2 * element.x
+    with pytest.raises(TypeError, match="cannot itself be marked fixed"):
+        element.fixed("x", "y")
+    assert element.x.node.is_variable

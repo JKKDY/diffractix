@@ -49,6 +49,11 @@ class Ray(ParaxialState):
         "theta",
     )
 
+    def __post_init__(self):
+        super().__post_init__()
+        if not getattr(type(self), "_is_numerical", False) and self.n.node is not None:
+            self.require(self.n > 0, label=f"{self.label}: n > 0")
+
     def propagate(self, A, B, C, D, n) -> "Ray":
         """Return the ray after a first-order (ABCD) transformation.
 

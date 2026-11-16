@@ -36,7 +36,9 @@ def test_constraint_infinite_endpoints_and_finite_objective_weights_remain_valid
 @pytest.mark.parametrize("args, kwargs, error, message", [
     ((), {"value": lambda sim: 1.0}, ValueError, "target must be specified"),
     ((), {"value": 1.0, "target": 0}, TypeError, "value must be a graph expression or a callable"),
-    ((), {"value": lambda sim: 1.0, "target": 0, "scale": 0}, ValueError, "scale must be nonzero"),
+    ((), {"value": lambda sim: 1.0, "target": 0, "scale": 0}, ValueError, "scale must be finite and nonzero"),
+    ((), {"value": lambda sim: 1.0, "target": np.nan}, ValueError, "target must be finite"),
+    ((), {"value": lambda sim: 1.0, "target": np.inf, "scale": 1}, ValueError, "target must be finite"),
     ((lambda sim: 1.0,), {"value": lambda sim: 1.0, "target": 0}, ValueError, "positional objectives"),
     ((lambda sim: 1.0,), {"target": 0}, ValueError, "require value"),
     ((lambda sim: 1.0,), {"scale": 2}, ValueError, "require value"),
@@ -259,10 +261,13 @@ def test_entry_constructor_requires_graph_or_callable(constructor, invalid):
         constructor(invalid)
 
 
-@pytest.mark.parametrize("scale", [np.array([1., 0.]), np.array([[0.], [2.]]), np.array(0.)])
-def test_value_matching_rejects_any_zero_scale_entry_without_adding_objective(scale):
+@pytest.mark.parametrize("scale", [
+    np.array([1., 0.]), np.array([[0.], [2.]]), np.array(0.),
+    np.inf, -np.inf, np.nan, np.array([1., np.inf]),   # an infinite scale would silently remove the objective
+])
+def test_value_matching_rejects_any_zero_or_nonfinite_scale_entry_without_adding_objective(scale):
     solver = make_solver()
-    with pytest.raises(ValueError, match="scale must be nonzero"):
+    with pytest.raises(ValueError, match="scale must be finite and nonzero"):
         solver.target(value=lambda sim: sim.final.x, target=np.array([1., 2.]), scale=scale)
     assert solver._objectives == []
 

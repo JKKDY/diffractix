@@ -375,14 +375,18 @@ class OpticalBase:
         strict = bool(parameter_names)
         names = self._validate_parameter_names(parameter_names)
 
-        for name in names:
+        parameters = []
+        for name in names:   # validate every name before changing anything
             parameter = self._get_parameter_node(name)
             if parameter is not None:
-                parameter.fixed()
+                parameters.append(parameter)
             elif strict:
                 raise TypeError(
                     f"Parameter {self._get_parameter_label(name)!r} does not directly contain "
                     "a Parameter and cannot itself be marked fixed."
                 )
+                
+        for parameter in parameters:
+            parameter.fixed()
 
         return self

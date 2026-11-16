@@ -62,6 +62,13 @@ affected by a change, and the full suite only before finishing larger work.
   (`check_docs.py` fails if an exported name is missing).
 - Change tests, examples and docs in the same step as the code they cover.
 - Library (`src/`) changes stay small and are agreed with the maintainer first.
+- Keep the code and API clean; do not overengineer. Before adding machinery for a
+  fix or review finding (class-level registries, metaprogramming such as
+  `__init_subclass__` or wrapped properties, special-case fields, lone module-level
+  helpers), say that it would overcomplicate things and propose the simple option:
+  an explicit line where it is needed, a sentence in the docs, or leaving it.
+  Explicit beats implicit: `self.require(self.n > 0)` in a class's own
+  `__post_init__`, not a declarative attribute interpreted by a base class.
 
 ## More context
 

@@ -57,6 +57,7 @@ Default n is a fresh Symbol with ambient_n key.
 Standalone numerical conversion must supply n or an ambient binding.
 Do not assume `.numeric()` silently chooses air. RayBundle factories and
 Gaussian factories explicitly default n=1.0, unlike direct constructors.
+A single-ray bundle is on the axis (x=0).
 
 Ray and RayBundle follow physical angle theta: free-space x'=x+d*theta,
 thin-lens theta'=theta-x/f, planar refraction theta'=n1*theta/n2, curved
@@ -107,3 +108,9 @@ not arrays. Custom propagation that hardcodes a declarative constructor may lose
 its numerical subclass. Empty bundle construction and propagation are supported;
 factory-domain and empty-statistics validation is not yet a settled contract.
 See ../qa-status.md for the remaining policies.
+
+Physical domains (added 2026-11-16): every declarative source requires `n > 0`
+(GaussianBeam also `wavelength > 0`) as a labelled constraint, e.g.
+"Ray1: n > 0", added explicitly in each class's `__post_init__`. A fixed
+nonphysical value fails at build; a variable one is constrained in the Solver.
+The System adds "Ambient refractive index > 0".

@@ -85,6 +85,11 @@ class Program:
             Computed outputs in their compiled order.
         """
         # TODO: this should maybe be removed because our program may only access a subset of actual theta parameters 
+        if np.ndim(theta) != 1:
+            raise ValueError(
+                f"Expected a one-dimensional array of {len(self.parameter_indices)} variable values, "
+                f"got shape {np.shape(theta)}."
+            )
         if len(theta) != len(self.parameter_indices):
             raise ValueError(
                 f"Expected {len(self.parameter_indices)} variable values, got {len(theta)}."

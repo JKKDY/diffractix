@@ -199,11 +199,11 @@ class Solver:
             Quantity to match to `target`: a graph expression, or a callable
             accepting the result. Requires `target`.
         target : float or array_like, optional
-            Target value for `value`. Required together with `value`.
+            Target value for `value`; must be finite. Required together with `value`.
         scale : float or array_like, optional
             Scale for the residual ``(value - target) / scale``. Defaults to
             ``abs(target)`` where nonzero and to 1 where `target` is zero; give it
-            explicitly for a zero target. Must be nonzero.
+            explicitly for a zero target. Must be finite and nonzero.
         weight : float, optional
             Multiplies the squared residual in the total cost; applies to `value` or
             to a single objective in `*objectives`. Defaults to 1.
@@ -224,7 +224,8 @@ class Solver:
             If `value` is given but is not a graph expression or callable.
         ValueError
             If `value` is combined with `*objectives`, `target` or `scale` is given
-            without `value`, `scale` is zero, or `label` or `weight` is given
+            without `value`, `target` is not finite, `scale` is zero or not finite, or
+            `label` or `weight` is given
             together with more than one objective in `*objectives`, or with a
             single objective that is already an `Objective` instance.
 
@@ -244,12 +245,16 @@ class Solver:
             if target is None:
                 raise ValueError("target must be specified when value is supplied.")
 
+            if not isinstance(target, Node) and not np.all(np.isfinite(target)):
+                raise ValueError("target must be finite.")
+
             if scale is None:
                 magnitude = np.abs(target)
                 scale = np.where(magnitude == 0, 1.0, magnitude)
                 scale = float(scale) if scale.ndim == 0 else scale
-            elif np.any(scale == 0):
-                raise ValueError("scale must be nonzero.")
+            elif not np.all(np.isfinite(scale) & (np.asarray(scale) != 0)):
+                # An infinite scale would silently remove the objective.
+                raise ValueError("scale must be finite and nonzero.")
 
             residual = (
                 (value - target) / scale if isinstance(value, Node)

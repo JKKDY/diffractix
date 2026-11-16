@@ -149,3 +149,16 @@ else:
 assert backend.current_backend() is None
 print('ok')
 ''') == "ok"
+
+
+def test_building_an_expression_with_an_array_does_not_initialize_the_backend():
+    assert run_python('''
+import numpy as np
+from diffractix import Parameter, backend
+expression = Parameter(1.0) + np.array([1.0, 2.0])
+assert backend.current_backend() is None
+backend.configure("autograd")
+np.testing.assert_allclose(expression.evaluate(), [2.0, 3.0])
+assert backend.current_backend() == "autograd"
+print("ok")
+''', "auto") == "ok"

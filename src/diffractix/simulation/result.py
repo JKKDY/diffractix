@@ -285,18 +285,14 @@ class SimulationResult:
 
 @dataclass(frozen=True)
 class SimulationResultView:
-    """Read-only view of a `SimulationResult`, passed to callable Solver objectives and constraints.
+    """Restricted interface to a SimulationResult for solver callbacks.
 
-    Returned by :meth:`SimulationResult.view`. A callable objective or constraint
-    receives one when its quantity cannot be written with `Simulation.symbolic`,
-    for example because it uses an ``if`` on the result's values. The view gives
-    the result's own state objects, not copies.
+    Exposes the initial and final states and the element stages.
+    The underlying numerical states are shared with the result,
+    not copied, and remain mutable.
 
-    See Also
-    --------
-    SimulationResult.view : Returns a view of a result.
-    Simulation.symbolic : The graph-expression counterpart, for quantities that
-        don't need Python control flow.
+    Callbacks should treat the provided states as read-only.
+    Mutating them can affect subsequent calculations.
     """
 
     _result: SimulationResult

@@ -195,3 +195,7 @@ Python callable captures and structural binding snapshots follow the policy in
 ../qa-status.md. Adapters copy options; Solver orchestration forwards them.
 No new signature or domain restriction should be inferred from an implementation
 detail. Record unclear policy rather than inventing an assertion.
+
+`target(value=, target=, scale=)`: `target` must be finite and `scale` finite and
+nonzero (an infinite scale would silently remove the objective); both raise
+ValueError in `target()` without adding an objective.

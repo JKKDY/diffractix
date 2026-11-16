@@ -68,7 +68,8 @@ not diameter. `GaussianBeam.from_w_and_R(w, R, wavelength, n=1.0)`,
 `from_divergence(theta, wavelength, n=1.0)` and `from_fiber_tip(wavelength,
 NA=None, MFD=None, n=1.0)` are also available. `RayBundle.parallel(radius,
 count, n=1.0)` and `RayBundle.converging(radius, count, focal_distance, n=1.0)`
-construct bundles. Bundle positions/angles are matching one-dimensional arrays.
+construct bundles; a single ray is on the axis. Bundle positions/angles are
+matching one-dimensional arrays.
 
 The public input objects are declarative: graph-backed fields are handles, not
 ordinary floats. Pass a declarative input to System, not `input.numeric()`.

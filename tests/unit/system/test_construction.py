@@ -295,11 +295,13 @@ def test_constraints_collect_system_input_composite_and_children_once_in_order()
     system = System(slab, slab, source=source).require(direct)
     source.require(input_constraint)
     slab.require(composite_constraint)
-    expected = (direct, input_constraint, composite_constraint,
+    expected = (direct, *source.constraints, composite_constraint,
                 *slab.front.constraints, *slab.body.constraints, *slab.back.constraints)
+    assert source.constraints[1] is input_constraint and source.constraints[0].label.endswith("n > 0")
     actual = system.constraints
-    assert isinstance(actual, tuple) and len(actual) == len(expected)
+    assert isinstance(actual, tuple) and len(actual) == len(expected) + 1
     assert all(a is b for a, b in zip(actual, expected))
+    assert actual[-1].label == "Ambient refractive index > 0"
     assert system.system_constraints == (direct,) and slab.constraints == (composite_constraint,)
 
 
@@ -332,7 +334,7 @@ def test_summary_describes_design_without_resolving_or_mutating_it():
     before = system.placements
     text = str(system)
     assert "Focus" in text and "ThinLens" in text and "VAR" in text
-    assert "Constraints: 1" in text and "Ray" in text
+    assert "Constraints: 3" in text and "Ray" in text   # plus source n > 0 and ambient n > 0
     assert system.placements == before and system.system_constraints[0] is constraint
 
 
@@ -532,4 +534,4 @@ def test_summary_names_constraints_by_label_then_function_name_then_expression()
     listed = text.split("Constraints\n\n")[1].splitlines()
     assert [line.split(maxsplit=1)[1] for line in listed[:3]] == [
         "Hard stop", "stay_short", "distance=0.1[V] >= 0.01"]
-    assert "Constraints: 4" in text    # the three above and the Space's own d >= 0
+    assert "Constraints: 6" in text    # the three above, d >= 0, source n > 0, ambient n > 0

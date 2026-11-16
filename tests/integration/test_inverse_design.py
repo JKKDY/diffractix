@@ -229,3 +229,26 @@ def test_a_limit_on_every_stage_of_the_system_is_one_loop_over_symbolic_stages()
     assert solution.success and solution.feasible
     assert max(float(state.w) for state in solution.run().states) <= limit * (1 + 1e-6)
     assert len(solution.constraints) >= len(sim.stages)
+
+
+@pytest.mark.parametrize("where", ["ambient", "source"])
+def test_a_variable_refractive_index_cannot_be_optimized_below_zero(where):
+    n = Parameter(1.0).variable(bounds=(-1, 2))
+    if where == "ambient":
+        system = System(Space(d=0.1), ambient_n=n, source=Ray(x=0.001, theta=0))
+    else:
+        system = System(Space(d=0.1), source=Ray(x=0.001, theta=0, n=n))
+    solution = Solver(system).target(value=n, target=-0.5, scale=1).solve()
+    assert solution.value(n) >= 0
+    assert any("n > 0" in entry.label or "index > 0" in entry.label for entry in solution.constraints)
+
+
+@pytest.mark.parametrize("source, message", [
+    (lambda: Ray(x=0, theta=0, n=-1), r"Ray\d+: n > 0"),
+    (lambda: RayBundle.parallel(radius=1e-3, count=3, n=-1.0), r"RayBundle\d+: n > 0"),
+    (lambda: GaussianBeam(q=1j, wavelength=1e-6, n=-1), r"GaussianBeam\d+: n > 0"),
+    (lambda: GaussianBeam(q=1j, wavelength=-1e-6, n=1), r"GaussianBeam\d+: wavelength > 0"),
+], ids=["ray", "bundle", "beam-n", "beam-wavelength"])
+def test_a_source_with_a_nonphysical_fixed_value_fails_at_build(source, message):
+    with pytest.raises(ValueError, match=message):
+        System(Space(d=0.1), source=source()).build()

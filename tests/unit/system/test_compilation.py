@@ -403,8 +403,9 @@ def test_generated_gap_constraints_are_collected_and_reversed_fixed_layout_is_re
     bindings = system._collect_bindings()
     placements, _ = system._resolve_layout(system._resolve_elements(), bindings)
     constraints = system._collect_constraints(placements)
-    assert len(constraints) == 2 and constraints[1] is placements[1].element.constraints[0]
-    assert len(system.constraints) == 1
+    # source n > 0, Space d >= 0, the generated gap, ambient n > 0
+    assert len(constraints) == 4 and constraints[2] is placements[1].element.constraints[0]
+    assert len(system.constraints) == 3
 
     reversed_layout = System(Space(d=0.2), source=Ray(x=0, theta=0, n=1.0)).add(Plane(), z=0.1)
     with pytest.raises(ValueError, match=r"0\.1 m before the preceding elements end at z = 0\.2 m"):
@@ -431,7 +432,7 @@ def test_build_handoff_retains_order_and_does_not_mutate_declarations():
     before_system, before_element = system.system_constraints, space.constraints
     first, second = system.build(), system.build()
     assert [data.label for data in first._constraint_descriptors] == ["system limit", None]
-    assert [data.position for data in first._constraint_descriptors] == [0, 2]
+    assert [data.position for data in first._constraint_descriptors] == [0, 3]   # 2 is the source's fixed n > 0
     assert first._callable_constraints[0][0] == 1 and first._callable_constraints[0][1] is deferred
     assert len(first._constraint_descriptors) == len(second._constraint_descriptors)
     assert system.system_constraints == before_system and space.constraints == before_element

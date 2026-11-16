@@ -334,3 +334,11 @@ def test_string_summary_lists_each_variable_with_its_initial_value_and_bounds():
     rows = [line.split(maxsplit=3) for line in table[2:]]
     assert [row[0] for row in rows] == ["0", "1"]
     assert {(row[1], row[2], row[3].strip()) for row in rows} == {("d", "0.2", "[-inf, inf]"), ("f", "0.1", "[0.05, 0.5]")}
+
+
+@pytest.mark.parametrize("theta", [np.array([[0.1]]), np.array(0.1), 0.1])
+def test_run_rejects_theta_that_is_not_one_dimensional(theta):
+    from diffractix import Space, System
+    simulation = System(Space(d=Parameter(0.1).variable()), source=Ray(x=0, theta=0, n=1)).build()
+    with pytest.raises(ValueError, match="one-dimensional array of 1 variable values, got shape"):
+        simulation.run(theta)

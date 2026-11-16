@@ -218,7 +218,16 @@ class Simulation:
         Raises
         ------
         ValueError
-            If the Simulation does not have exactly one source.
+            If the Simulation does not have exactly one source, or `theta` is not a
+            one-dimensional array with one value per variable Parameter.
+
+        Notes
+        -----
+        `run` only evaluates the model: it does not check `theta` against bounds
+        or constraints, so values outside them (a zero focal length, a negative
+        distance) give whatever the equations give, including ``inf`` or ``nan``.
+        The `Solver` enforces bounds and constraints; `Solution.violations`
+        reports them.
 
         Examples
         --------

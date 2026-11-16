@@ -64,6 +64,8 @@ class RayBundle(ParaxialState):
             raise ValueError("x and theta must have matching shapes.")
         if len(np.shape(self.x)) != 1:
             raise ValueError("RayBundle arrays must be one-dimensional.")
+        if not getattr(type(self), "_is_numerical", False) and self.n.node is not None:
+            self.require(self.n > 0, label=f"{self.label}: n > 0")
     
     @staticmethod
     def _check_count(count):
@@ -93,7 +95,7 @@ class RayBundle(ParaxialState):
             Half-width of the bundle [m]: the rays span ``-radius`` to ``+radius``.
             Zero puts every ray on the axis.
         count : int
-            Number of rays, at least 1.
+            Number of rays, at least 1. A single ray is on the axis.
         n : float, optional
             Refractive index of the medium. Defaults to 1, not to the system's
             ambient index.
@@ -112,7 +114,7 @@ class RayBundle(ParaxialState):
         """
         cls._check_count(count)
         cls._check_radius(radius)
-        x = xp.linspace(-radius, radius, count)
+        x = xp.linspace(-radius, radius, count) if count > 1 else xp.zeros(1)
         theta = xp.zeros_like(x)
         return cls(x=x, theta=theta, n=n)
 
@@ -128,7 +130,7 @@ class RayBundle(ParaxialState):
         radius : float
             Half-width of the bundle [m].
         count : int
-            Number of rays, at least 1.
+            Number of rays, at least 1. A single ray is on the axis.
         focal_distance : float
             Distance to the crossing point [m]. Negative values give rays diverging
             from a point behind the start; ``inf`` gives parallel rays.
@@ -152,7 +154,7 @@ class RayBundle(ParaxialState):
         cls._check_count(count)
         cls._check_radius(radius)
         cls._check_focal_distance(focal_distance)
-        x = xp.linspace(-radius, radius, count)
+        x = xp.linspace(-radius, radius, count) if count > 1 else xp.zeros(1)
         theta = -x / focal_distance
         return cls(x=x, theta=theta, n=n)
 
