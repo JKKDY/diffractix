@@ -4,99 +4,93 @@
 
 **Differentiable paraxial optics in Python.**
 
-Diffractix is a Python library for modeling, simulating, and optimizing paraxial optical systems using ABCD matrices.
-
-Optical systems are defined declaratively through optical elements, input states, and symbolic parameters. These descriptions are compiled into differentiable numerical simulations, enabling both forward propagation and inverse optical design.
+Diffractix models, simulates and optimizes paraxial optical systems with ABCD matrices.
+You declare a system from elements, a light source and parameters; Diffractix compiles it
+into a differentiable simulation that you can run forward or hand to an optimizer for
+inverse design.
 
 ## Features
 
-- ABCD matrix-based optical propagation
-- Ray, ray bundle, and Gaussian beam simulation
-- Parameterized optical elements and system layouts
-- Optimizable optical elements and input conditions
-- Automatic differentiation using Autograd or JAX
-- Constraints and numerical optimization for inverse design
-- Extensible optical elements and input types
+- Rays, ray bundles and Gaussian beams propagated with ABCD matrices
+- Thin and thick lenses, mirrors, interfaces, slabs, GRIN media, Gaussian apertures,
+  telescopes and 4f systems, plus custom ABCD elements
+- Any element parameter, position or source property can be a design variable
+- Automatic differentiation with Autograd or JAX
+- Objectives and constraints for inverse design, solved with SciPy, IPOPT or NLopt
+- Plots of beams and rays through the system
 
 ## Installation
-
-Install the released package with:
 
 ```bash
 pip install diffractix
 ```
 
-The default installation includes Autograd, NumPy, SciPy, and Matplotlib. JAX is opt-in
-with `pip install 'diffractix[jax]'`. If JAX is installed, automatic backend
-selection prefers it; `DIFFRACTIX_BACKEND=autograd` explicitly selects Autograd.
+The base install uses Autograd, NumPy, SciPy and Matplotlib and needs Python 3.11 or
+newer. Optional extras:
 
-To install from a local checkout:
-
-```bash
-pip install -e .
-```
+- `pip install "diffractix[jax]"`: the JAX backend. When JAX is installed it is used by
+  default; set `DIFFRACTIX_BACKEND=autograd` to choose Autograd.
+- `pip install "diffractix[ipopt]"`, `"diffractix[nlopt]"` or `"diffractix[all-solvers]"`:
+  the IPOPT and NLopt optimizers. IPOPT is easiest to install with
+  `conda install -c conda-forge cyipopt`.
 
 ## Quick start
 
-Diffractix lets you define optical systems declaratively and optimize their parameters. In this example, we adjust a lens's focal length to focus a ray onto an image plane.
+Choose the focal length of a lens so that an off-axis ray crosses the axis at an image
+plane:
 
 ```python
-from diffractix import Ray, ThinLens, Plane, System, Solver
+from diffractix import Plane, Ray, Solver, System, ThinLens
+from diffractix.units import mm
 
-# Define the input ray and an adjustable lens
-ray = Ray(x=0.01, theta=0.0)
-lens = ThinLens(f=0.2)
-lens.f.variable(bounds=(0.05, 0.5))
-
-# Place elements at absolute positions (meters)
+# An off-axis ray, parallel to the axis, and a lens whose focal length may vary.
+ray = Ray(x=10 * mm, theta=0.0)
+lens = ThinLens(f=200 * mm).variable(f=(50 * mm, 500 * mm))
 image_plane = Plane(label="Image plane")
 
+# Place the elements at absolute positions; the gaps become Spaces automatically.
 system = System(source=ray)
-system.add(lens, z=0.1)
-system.add(image_plane, z=0.2)
+system.add(lens, z=100 * mm)
+system.add(image_plane, z=200 * mm)
 
 simulation = system.build()
 initial = simulation.run()
 
-# Focus the ray onto the optical axis at the image plane
+# Ask for zero ray height at the image plane.
 solver = Solver(simulation)
 solver.target(
-    value=lambda result: result[image_plane].after.x,
+    value=lambda sim: sim[image_plane].after.x,
     target=0.0,
-    scale=0.01,
+    scale=10 * mm,
 )
-
-solution = solver.solve(method="SLSQP")
+solution = solver.solve()
 optimized = solution.run()
 
-print(f"Focal length: {lens.f.value * 1e3:.1f} → {solution.value(lens.f) * 1e3:.1f} mm")
-print(f"Image height: {float(initial[image_plane].after.x) * 1e3:.1f} → {float(optimized[image_plane].after.x) * 1e3:.1f} mm")
+print(f"Focal length: {lens.f.value / mm:.1f} -> {solution.value(lens.f) / mm:.1f} mm")
+print(f"Image height: {initial[image_plane].after.x / mm:.1f} -> "
+      f"{optimized[image_plane].after.x / mm:.1f} mm")
 ```
-
-Expected output:
 
 ```text
-Focal length: 200.0 → 100.0 mm
-Image height: 5.0 → 0.0 mm
+Focal length: 200.0 -> 100.0 mm
+Image height: 5.0 -> 0.0 mm
 ```
 
-The system automatically inserts propagation spaces between positioned elements. The solver then finds the focal length that brings the ray to the optical axis at the image plane.
+The workflow is always the same: declare a `System`, `build()` it into a `Simulation`,
+`run()` it to get the light at every element, and give it to a `Solver` to optimize the
+variables. More complete designs (beam expanders, fiber coupling, multi-station
+delivery) are in the [examples](https://github.com/JKKDY/diffractix/tree/main/examples).
+
+## Documentation
+
+The documentation, including the API reference, is at
+[jkkdy.github.io/diffractix](https://jkkdy.github.io/diffractix/).
 
 ## Project status
 
-**Pre-release — targeting v0.1.0**
-
-Diffractix is in active development. The API and internal architecture may change before the first stable release.
-
-User documentation is being written. Until it is published, the working notes in
-[docs/agents](docs/agents/system-simulation-result.md) describe the current API, and the
-[examples](examples/) show complete designs.
+Version 0.1.0 is the first release. The API may still change in later 0.x releases.
 
 ## License
 
-See [LICENSE](https://github.com/JKKDY/diffractix/blob/main/LICENSE), included unchanged in both distributions.
-
-## Development and releases
-
-See [DEVELOPMENT.md](https://github.com/JKKDY/diffractix/blob/main/DEVELOPMENT.md) for local validation commands, the CI matrix,
-package verification, and the PyPI Trusted Publishing setup.
+Diffractix is licensed under the GNU Affero General Public License v3.0 or later; see
+[LICENSE](https://github.com/JKKDY/diffractix/blob/main/LICENSE).

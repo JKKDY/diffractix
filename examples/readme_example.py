@@ -29,6 +29,6 @@ solver.target(
 solution = solver.solve()
 optimized = solution.run()
 
-print(f"Focal length: {lens.f.value / mm:.1f} → {solution.value(lens.f) / mm:.1f} mm")
-print(f"Image height: {initial[image_plane].after.x / mm:.1f} → "
+print(f"Focal length: {lens.f.value / mm:.1f} -> {solution.value(lens.f) / mm:.1f} mm")
+print(f"Image height: {initial[image_plane].after.x / mm:.1f} -> "
       f"{optimized[image_plane].after.x / mm:.1f} mm")
