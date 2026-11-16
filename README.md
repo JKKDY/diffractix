@@ -84,7 +84,7 @@ The system automatically inserts propagation spaces between positioned elements.
 
 ## Project status
 
-**Pre-release — targeting v0.0.1**
+**Pre-release — targeting v0.1.0**
 
 Diffractix is in active development. The API and internal architecture may change before the first stable release.
 

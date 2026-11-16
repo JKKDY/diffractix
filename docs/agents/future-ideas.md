@@ -1,6 +1,6 @@
 # Future ideas
 
-Ideas for after 0.0.1. None of these are designed or scheduled; they record intent
+Ideas for after 0.1.0. None of these are designed or scheduled; they record intent
 so the current architecture can avoid closing doors.
 
 ## 1. Multi-beam support and segments
@@ -71,7 +71,7 @@ differentiable and cheap to call repeatedly (JAX could vectorize it).
 
 ## 7. Dimension-checked units
 
-`diffractix.core.units` (0.0.1) only scales numbers: `50 * mm` is the float 0.05 and
+`diffractix.core.units` (0.1.0) only scales numbers: `50 * mm` is the float 0.05 and
 nothing checks dimensions. A later step could check them without putting unit
 objects into the numerics: quantities are converted to SI at the API boundary, and
 their dimensions are kept as metadata on Parameters and element parameters (`f` is a
@@ -92,7 +92,7 @@ the system's ambient index. The factories need `n` as a number because the waist
 radius fixes `q` only together with the index (`z_R = pi * n * w0**2 / wavelength`).
 Following the ambient index would mean keeping the factory inputs (`w0`, waist
 position, ...) and computing `q` at build time once `ambient_n` is known, which
-changes how `GaussianBeam` stores its state. Kept at `n=1` for 0.0.1, documented,
+changes how `GaussianBeam` stores its state. Kept at `n=1` for 0.1.0, documented,
 with the index-mismatch error naming the fix.
 
 ## 9. Element-relative symbols
@@ -175,3 +175,15 @@ optimizers: a smooth approximation, or the usual reformulation with auxiliary
 variables and constraints (`|r| <= t`, minimize `t`). Open question: whether the
 norm belongs on `Objective` or on `Solver.target`.
 
+## 12. Complex parameters
+
+Complex quantities (a Gaussian beam's `q`, complex ABCD entries such as an aperture's)
+can only be constants today. A complex parameter would let the optimizer vary them.
+Design agreed with the maintainer: back it by two real `Parameter`s, so theta gets
+a real entry for the real part and one for the imaginary part, and in the graph it is
+just `re + 1j * im`. The optimizers (SciPy, IPOPT, NLopt) stay purely real, and
+gradients stay ordinary real gradients. Needs: a way to create one (a factory or a
+complex flavour of `Parameter`), bounds per part, `variable()`/`fixed()` acting on
+both, `parameter_data` and `Solution.value()` reporting the pair as one complex value,
+printing, and fields such as `GaussianBeam.q` accepting it. Do not add special-case
+complex fields to elements or states for this; it belongs in the graph.

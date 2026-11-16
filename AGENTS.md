@@ -75,7 +75,7 @@ affected by a change, and the full suite only before finishing larger work.
 - `docs/agents/`: notes written for agents, not published. `diffractix-llm-guide.md`
   (API usage), `system-simulation-result.md` and `graph-reference.md` (how the
   pieces fit), `testing-specifications/` (what each test area must cover),
-  `future-ideas.md` (post-0.0.1 ideas, not to be built unasked).
+  `future-ideas.md` (post-0.1.0 ideas, not to be built unasked).
 - `.github/workflows/`: `ci.yml` (lint, tests on Linux and Windows for Python
   3.11-3.14 on both backends with coverage to Codecov, an oldest-dependencies job,
   wheel checks), `docs.yml` (builds the site on every push and PR, publishes it to
