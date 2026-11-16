@@ -56,6 +56,11 @@ dev = [
     "ruff==0.17.4",  # keep in step with .pre-commit-config.yaml
     "pre-commit",
 ]
+# Build the documentation: zensical build --clean --strict (see zensical.toml).
+docs = [
+    "zensical>=0.1.1,<0.2",
+    "mkdocstrings-python>=2",
+]
 
 [project.urls]
 Repository = "https://github.com/JKKDY/diffractix"
@@ -69,6 +74,7 @@ Issues = "https://github.com/JKKDY/diffractix/issues"
 #   python -m pip install -e ".[all-solvers]"        # Optional solver optimizers
 #   python -m pip install -e ".[dev,jax,all-solvers]"  # Everything
 #   python -m pip install -e ".[dev,all-solvers]"    # Test + solvers, without requiring JAX
+#   python -m pip install -e ".[docs]"               # Build the documentation
 #
 # Runtime backend selection (configure before the first numerical operation):
 #   PowerShell: $env:DIFFRACTIX_BACKEND = "autograd"  # or "jax" or "auto"

@@ -150,3 +150,5 @@ archive/*
 # Repository CI helpers (not virtual-environment Scripts).
 !/scripts/
 !/scripts/*.py
+# Built documentation
+site/

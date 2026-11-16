@@ -546,12 +546,11 @@ class SimulationResultTracer:
 
         Parameters
         ----------
-        element : OpticalElement
-            An element of the built system. Composites are resolved to their leaf
-            elements, so look up the leaf, for example ``relay.lens1``.
-        occurrence : int, optional
-            Which occurrence to select when `element` appears more than once.
-            Required in that case.
+        key : OpticalElement or tuple of (OpticalElement, int)
+            An element of the built system, or ``(element, occurrence)`` to select
+            one occurrence of an element that appears more than once. Composites
+            are resolved to their leaf elements, so look up the leaf, for example
+            ``relay.lens1``.
 
         Returns
         -------
@@ -561,18 +560,14 @@ class SimulationResultTracer:
         Raises
         ------
         KeyError
-            If `element` is not part of this simulation.
+            If the element is not part of this simulation.
         TypeError
-            If `occurrence` is given and is not an integer.
+            If `key` is not an element or an ``(element, occurrence)`` pair, or the
+            occurrence is not an integer.
         IndexError
-            If `occurrence` is out of range.
+            If the occurrence is out of range.
         ValueError
-            If `element` occurs more than once and `occurrence` is not given.
-
-        Notes
-        -----
-        Index with ``result[element]``, or ``result[element, occurrence]`` for a
-        repeated element.
+            If the element occurs more than once and no occurrence is given.
         """
         if isinstance(key, tuple):
             if len(key) != 2:

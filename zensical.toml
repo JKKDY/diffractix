@@ -1,0 +1,38 @@
+[project]
+site_name = "Diffractix"
+site_description = "Differentiable paraxial optics and inverse design."
+site_url = "https://jkkdy.github.io/diffractix/"
+repo_url = "https://github.com/JKKDY/diffractix"
+repo_name = "JKKDY/diffractix"
+docs_dir = "docs"
+site_dir = "site"
+
+# docs/agents/ holds notes for coding agents; it is not part of the site.
+exclude_docs = """
+/agents/
+"""
+
+nav = [
+  "index.md",
+  { "API reference" = [
+    "api/system.md",
+    "api/elements.md",
+    "api/composites.md",
+    "api/states.md",
+    "api/graph.md",
+    "api/simulation.md",
+    "api/solver.md",
+    "api/backend.md",
+  ] },
+]
+
+[project.plugins.mkdocstrings.handlers.python]
+# Read the package from the checkout, whether or not it is installed.
+paths = ["src"]
+
+[project.plugins.mkdocstrings.handlers.python.options]
+docstring_style = "numpy"
+show_root_heading = true
+show_source = false
+members_order = "source"
+extensions = ["scripts/griffe_crossrefs.py"]

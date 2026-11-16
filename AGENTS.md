@@ -19,6 +19,11 @@ matrices, and optimize design parameters with gradients from JAX or Autograd.
 - `solver/`: `Solver`, `Solution`, objectives, constraints; `optimizers/` wraps SciPy, IPOPT, NLopt.
 - `plotting/`, `backend/` (numerical backend selection), `units.py` (re-exports `core.units`).
 
+Outside `src/`: `docs/` holds the published site (Zensical, configured in
+`zensical.toml`; `docs/api/*.md` are `::: diffractix.X` blocks rendered from the
+docstrings) and, unpublished, `docs/agents/`. `scripts/` has `run_examples.py`,
+`griffe_crossrefs.py` (links names in docstrings to the API pages) and `check_docs.py`.
+
 ## Commands
 
 The `.venv` is managed by uv and has no pip: install with
@@ -28,6 +33,14 @@ The `.venv` is managed by uv and has no pip: install with
 DIFFRACTIX_BACKEND=autograd .venv/Scripts/python.exe -m pytest -q   # also run with jax
 .venv/Scripts/python.exe -m ruff check .
 MPLBACKEND=Agg .venv/Scripts/python.exe scripts/run_examples.py --backend autograd
+```
+
+Documentation (needs `uv pip install --python .venv/Scripts/python.exe -e ".[docs]"`):
+
+```bash
+.venv/Scripts/python.exe -m zensical build --clean --strict
+.venv/Scripts/python.exe scripts/check_docs.py   # links, unrendered roles, API coverage
+.venv/Scripts/python.exe -m zensical serve       # preview at http://localhost:8000
 ```
 
 The full suite on both backends is slow on the maintainer's laptop: run the tests
@@ -43,6 +56,10 @@ affected by a change, and the full suite only before finishing larger work.
   only re-exported.
 - Keep each file's existing line endings (most are CRLF, some tests are LF); check
   with Python byte counts, not `grep`, and never leave a file mixed.
+- Docstrings refer to other objects with plain backticks (`Solver.target`); a method
+  may also use `:meth:`. The docs build turns names that are documented on an API page
+  into links, so a new public class or function goes on a page under `docs/api/`
+  (`check_docs.py` fails if an exported name is missing).
 - Change tests, examples and docs in the same step as the code they cover.
 - Library (`src/`) changes stay small and are agreed with the maintainer first.
 
@@ -54,6 +71,8 @@ affected by a change, and the full suite only before finishing larger work.
   `future-ideas.md` (post-0.0.1 ideas, not to be built unasked).
 - `.github/workflows/`: `ci.yml` (lint, tests on Linux and Windows for Python
   3.11-3.14 on both backends with coverage to Codecov, an oldest-dependencies job,
-  wheel checks) and `release.yml` (tag-triggered PyPI release that reruns CI).
+  wheel checks), `docs.yml` (builds the site on every push and PR, publishes it to
+  GitHub Pages from `main`) and `release.yml` (tag-triggered PyPI release that
+  reruns CI).
 - `pyproject.toml`: dependencies and their minimums, extras, tool settings
   (pytest, ruff, coverage).
