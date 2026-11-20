@@ -27,8 +27,8 @@ class Ray(ParaxialState):
 
     See Also
     --------
-    RayBundle : Many rays traced together.
-    GaussianBeam : A beam with a finite width and diffraction.
+    `RayBundle` : Many rays traced together.
+    `GaussianBeam` : A beam with a finite width and diffraction.
 
     Examples
     --------

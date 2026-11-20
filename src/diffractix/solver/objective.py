@@ -31,7 +31,7 @@ class Objective:
     Raises
     ------
     TypeError
-        If `quantity` is not a Node or callable.
+        If `quantity` is not a `Node` or callable.
     ValueError
         If `weight` is not finite, or is negative.
 

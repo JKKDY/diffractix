@@ -19,13 +19,13 @@ if TYPE_CHECKING:
 
 
 class InitialValues:
-    """Editable copy of theta, the variable Parameters' values, indexed by Parameter.
+    """Editable copy of theta, the variable Parameters' values, indexed by `Parameter`.
 
     Returned by `Simulation.initial_values`; see `Simulation` for theta. It lets
-    you read or set a value by its Parameter, as in ``guess[lens.f] = 0.2``,
+    you read or set a value by its `Parameter`, as in ``guess[lens.f] = 0.2``,
     instead of by its position in theta. Its `values` attribute holds the plain
     array, to pass to :meth:`Simulation.run`. Editing it does not change the
-    Simulation or the Parameters it was built from.
+    `Simulation` or the Parameters it was built from.
 
     Examples
     --------
@@ -52,12 +52,12 @@ class InitialValues:
         return self._parameter_indices[id(parameter)]
 
     def __getitem__(self, parameter: Parameter | InputNode):
-        """Return the current value of a variable Parameter.
+        """Return the current value of a variable `Parameter`.
 
         Parameters
         ----------
         parameter : Parameter or InputNode
-            A variable Parameter in this theta, or its direct handle (for example
+            A variable `Parameter` in this theta, or its direct handle (for example
             ``lens.f``, not an expression built from it).
 
         Returns
@@ -68,26 +68,26 @@ class InitialValues:
         Raises
         ------
         TypeError
-            If `parameter` is not a Parameter or one of its direct handles.
+            If `parameter` is not a `Parameter` or one of its direct handles.
         KeyError
             If `parameter` is not part of this Simulation's theta.
         """
         return self.values[self._index(parameter)]
 
     def __setitem__(self, parameter: Parameter | InputNode, value):
-        """Set the value of a variable Parameter.
+        """Set the value of a variable `Parameter`.
 
         Parameters
         ----------
         parameter : Parameter or InputNode
-            A variable Parameter in this theta, or its direct handle.
+            A variable `Parameter` in this theta, or its direct handle.
         value : float
             The new value.
 
         Raises
         ------
         TypeError
-            If `parameter` is not a Parameter or one of its direct handles, or `value`
+            If `parameter` is not a `Parameter` or one of its direct handles, or `value`
             is not a real numeric scalar.
         ValueError
             If `value` is not finite.
@@ -128,7 +128,7 @@ class Simulation:
 
     See Also
     --------
-    System.build : Produces a Simulation.
+    System.build : Produces a `Simulation`.
     """
 
     def __init__(
@@ -156,24 +156,24 @@ class Simulation:
 
     @cached_property
     def symbolic(self):
-        """Symbolic result: this Simulation's result as graph expressions, for
-        writing Solver objectives and constraints.
+        """Symbolic result: this `Simulation`'s result as graph expressions, for
+        writing `Solver` objectives and constraints.
 
         Its values depend on the variable Parameters instead of being fixed
         numbers. For example, ``simulation.symbolic[lens].after.w <= 1 * mm``
-        is a constraint on the beam radius after `lens`, which the Solver checks
-        each time it runs the simulation. Use it only with a Solver for this
-        same Simulation.
+        is a constraint on the beam radius after `lens`, which the `Solver` checks
+        each time it runs the simulation. Use it only with a `Solver` for this
+        same `Simulation`.
 
         Returns
         -------
-        SimulationResultTracer
+        `SimulationResultTracer`
             The symbolic result.
 
         Raises
         ------
         ValueError
-            If the Simulation does not have exactly one source.
+            If the `Simulation` does not have exactly one source.
         """
         if len(self._optical_inputs) != 1:
             raise ValueError("Simulation.symbolic requires exactly one source.")
@@ -191,7 +191,7 @@ class Simulation:
         """Initial values: the variable Parameters' build-time values (theta; see
         `Simulation`), as an editable copy.
 
-        Edits do not change the Simulation or its Parameters; pass the edited
+        Edits do not change the `Simulation` or its Parameters; pass the edited
         `InitialValues.values` to :meth:`run`.
 
         Returns
@@ -218,8 +218,8 @@ class Simulation:
         Raises
         ------
         ValueError
-            If the Simulation does not have exactly one source, or `theta` is not a
-            one-dimensional array with one value per variable Parameter.
+            If the `Simulation` does not have exactly one source, or `theta` is not a
+            one-dimensional array with one value per variable `Parameter`.
 
         Notes
         -----

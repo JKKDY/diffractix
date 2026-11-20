@@ -7,6 +7,7 @@ remaining system length. Values are written with unit constants; diffractix
 computes in SI.
 """
 
+# --8<-- [start:setup]
 from diffractix import GaussianBeam, Plane, Solver, Space, System, ThinLens, units
 from diffractix.units import mm, mrad, nm, um
 
@@ -38,11 +39,13 @@ system.require(working_distance.d >= MIN_WORKING_DISTANCE)
 
 simulation = system.build()
 initial = simulation.run()
+# --8<-- [end:setup]
 
 
 # ------------
 # OPTIMIZATION
 # ------------
+# --8<-- [start:targets]
 solver = Solver(simulation)
 sim = simulation.symbolic  # the result as expressions, for objectives and constraints
 
@@ -61,6 +64,7 @@ solver.require(sim[lens].after.w <= LENS_CLEAR_DIAMETER / 4, label="Lens apertur
 
 solution = solver.solve(method="SLSQP")
 optimized = solution.run()
+# --8<-- [end:targets]
 
 
 # -------
@@ -90,6 +94,7 @@ row("Working distance", working_distance.d.value, solution.value(working_distanc
 row("System length", initial.z[-1], optimized.z[-1], mm)
 print(f"Minimum working distance: {units.format(MIN_WORKING_DISTANCE, mm)}")
 
+# --8<-- [start:results]
 before, after = initial[workpiece].after, optimized[workpiece].after
 table("Focus at the workpiece")
 row("Spot radius", before.w, after.w, um)
@@ -99,6 +104,7 @@ row("Confocal parameter", before.b, after.b, mm)
 row(f"Spot {units.format(DEFOCUS, mm)} before", before.w_at_z(-DEFOCUS), after.w_at_z(-DEFOCUS), um)
 row(f"Spot {units.format(DEFOCUS, mm)} after", before.w_at_z(DEFOCUS), after.w_at_z(DEFOCUS), um)
 print(f"Target waist radius: {units.format(target_focus.w, um)}")
+# --8<-- [end:results]
 
 table("Model checks")
 row("Beam radius at lens", initial[lens].after.w, optimized[lens].after.w, mm)

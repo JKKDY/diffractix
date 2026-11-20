@@ -104,7 +104,7 @@ class OpticalBase:
 
     @staticmethod
     def _annotation_contains_node(annotation) -> bool:
-        """Return whether an annotation contains Node or a Node subclass."""
+        """Return whether an annotation contains `Node` or a `Node` subclass."""
         if isinstance(annotation, type):
             try:
                 return issubclass(annotation, Node)
@@ -123,7 +123,7 @@ class OpticalBase:
 
     @property
     def parameter_names(self) -> tuple[str, ...]:
-        """Parameter names: the parameter fields of this class, in declaration order."""
+        """`Parameter` names: the parameter fields of this class, in declaration order."""
         cls = type(self)
         cached = cls.__dict__.get("_parameter_names")
 
@@ -162,7 +162,7 @@ class OpticalBase:
 
     @property
     def values(self) -> tuple[float | None, ...]:
-        """Values: the current value of each parameter, or ``None`` where it has none (for example an unbound Symbol)."""
+        """Values: the current value of each parameter, or ``None`` where it has none (for example an unbound `Symbol`)."""
         values = []
         for handle in self.parameters:
             try:

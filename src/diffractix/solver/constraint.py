@@ -95,7 +95,7 @@ class Constraint:
     Raises
     ------
     TypeError
-        If `quantity` is not a Node or callable.
+        If `quantity` is not a `Node` or callable.
     ValueError
         If `lower_bound` or `upper_bound` is NaN, or `lower_bound` exceeds
         `upper_bound`.
@@ -233,7 +233,7 @@ def normalize_to_constraint(value) -> Constraint:
 
 
 def label_constraints(constraints, label):
-    """Return constraints unchanged, or the single comparison as a Constraint named label."""
+    """Return constraints unchanged, or the single comparison as a `Constraint` named label."""
     if label is None:
         return tuple(constraints)
     if len(constraints) != 1 or isinstance(constraints[0], Constraint):

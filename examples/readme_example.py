@@ -3,6 +3,7 @@
 Values are written with unit constants; diffractix computes in SI (metres).
 """
 
+# --8<-- [start:setup]
 from diffractix import Plane, Ray, Solver, System, ThinLens
 from diffractix.units import mm
 
@@ -18,7 +19,9 @@ system.add(image_plane, z=200 * mm)
 
 simulation = system.build()
 initial = simulation.run()
+# --8<-- [end:setup]
 
+# --8<-- [start:target]
 # Ask for zero ray height at the image plane.
 solver = Solver(simulation)
 solver.target(
@@ -28,7 +31,10 @@ solver.target(
 )
 solution = solver.solve()
 optimized = solution.run()
+# --8<-- [end:target]
 
+# --8<-- [start:results]
 print(f"Focal length: {lens.f.value / mm:.1f} -> {solution.value(lens.f) / mm:.1f} mm")
 print(f"Image height: {initial[image_plane].after.x / mm:.1f} -> "
       f"{optimized[image_plane].after.x / mm:.1f} mm")
+# --8<-- [end:results]

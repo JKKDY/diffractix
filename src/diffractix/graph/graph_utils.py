@@ -22,9 +22,9 @@ def describe_node(node: Node) -> str:
 def evaluate_ast(root: Node, bindings: Mapping = {}, parameter_values: Mapping | None = None):
     """Evaluate a graph using symbol bindings and optional parameter values.
 
-    When parameter_values is supplied, it must contain every Parameter in the
-    graph, keyed by its identity. Otherwise current Parameter values are used.
-    Symbol bindings may contain numerical values or other Nodes.
+    When parameter_values is supplied, it must contain every `Parameter` in the
+    graph, keyed by its identity. Otherwise current `Parameter` values are used.
+    `Symbol` bindings may contain numerical values or other Nodes.
     """
     active = set()
     values = {}
@@ -82,7 +82,7 @@ def evaluate_ast(root: Node, bindings: Mapping = {}, parameter_values: Mapping |
 def clone_ast(node: Node, memo: dict[int, Node] | None = None) -> Node:
     """Copy the structure of a graph so later edits to the original do not reach it.
 
-    Operations and InputNode handles are copied. Parameters, Literals and Symbols
+    Operations and `InputNode` handles are copied. Parameters, Literals and Symbols
     are shared, so Parameters keep their identity (and with it their theta
     association and live values). Shared subexpressions stay shared; pass one
     memo to several calls to also share them across the cloned roots.

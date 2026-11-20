@@ -5,8 +5,8 @@ scale factors: multiply to write a value, divide to read one back.
 
     from diffractix.units import mm, um, nm
 
-    beam = GaussianBeam.from_waist(w0=500 * um, wavelength=1064 * nm)
-    lens = ThinLens(f=50 * mm).variable(f=(20 * mm, 100 * mm))
+    beam = `GaussianBeam`.from_waist(w0=500 * um, wavelength=1064 * nm)
+    lens = `ThinLens`(f=50 * mm).variable(f=(20 * mm, 100 * mm))
     solution.value(lens.f) / mm                 # 47.3...
     units.format(solution.run().final.w, um)    # '45.02 um'
 

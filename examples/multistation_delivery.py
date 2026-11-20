@@ -116,6 +116,7 @@ for lens in thick_lenses:
 # --------
 # STATIONS
 # --------
+# --8<-- [start:module]
 class CrystalModule(CompositeElement):
     """A passive crystal centred in a module of fixed length, between two station planes."""
 
@@ -130,6 +131,7 @@ class CrystalModule(CompositeElement):
         self.air_after = Space(d=(length - self.d) / 2)
         self.exit = Plane(label=f"{label} exit")
         super().__init__()
+# --8<-- [end:module]
 
 
 aom = CrystalModule(d=9 * mm, n=AOM_CRYSTAL_INDEX, length=AOM_LENGTH, label="AOM")
@@ -155,6 +157,7 @@ stations = (
 # infeasible, which keeps the lenses in order.
 
 # Absolute position of each lens's front surface
+# --8<-- [start:layout]
 expander1_z = Parameter(135 * mm, name="Expander 1 position").variable()
 relay1_z = Parameter(270 * mm, name="Relay 1 position").variable()
 expander2_z = Parameter(365 * mm, name="Expander 2 position").variable()
@@ -177,11 +180,13 @@ system.add(workpiece, z=WORKPIECE_Z)
 
 simulation = system.build()
 initial = simulation.run()
+# --8<-- [end:layout]
 
 
 # ------------
 # OPTIMIZATION
 # ------------
+# --8<-- [start:targets]
 solver = Solver(simulation)
 sim = simulation.symbolic  # the result as expressions, for objectives and constraints
 
@@ -202,8 +207,10 @@ for lens in thick_lenses:
     solver.target(value=lens.d, target=6 * mm, label=f"{lens.label} preferred thickness")
 solver.target(value=aom.d, target=10 * mm, label="AOM preferred crystal thickness")
 solver.target(value=eom.d, target=14 * mm, label="EOM preferred crystal thickness")
+# --8<-- [end:targets]
 
 
+# --8<-- [start:limits]
 # Air gaps, measured on the result so they follow every thickness and position.
 solver.require(sim[expander2].z_start - sim[relay1.back].z_end >= MIN_LENS_GAP,
                label="Relay 1 to expander 2 gap")
@@ -237,6 +244,7 @@ for element, diameter in apertures:
 
 solution = solver.solve(method=SOLVER_METHOD, options=SOLVER_OPTIONS[SOLVER_METHOD])
 optimized = solution.run()
+# --8<-- [end:limits]
 
 
 # -------
@@ -295,6 +303,7 @@ def worst_aperture_use(result):
     return max(float(result[element].after.w) / (diameter / 4) for element, diameter in apertures)
 
 
+# --8<-- [start:results]
 status = "converged" if solution.success else "did not converge"
 feasibility = "all requirements hold" if solution.feasible else f"{len(solution.violations)} violated"
 print(f"Optimization {status}, {feasibility} ({SOLVER_METHOD}, {solution.iterations} iterations, "
@@ -311,6 +320,7 @@ goal("Workpiece spot radius", initial[workpiece].after.w, optimized[workpiece].a
 goal("Workpiece waist offset", initial[workpiece].after.z0, optimized[workpiece].after.z0,
      lambda z0: near(z0, 0.0, GOAL_TOLERANCE * target_focus.z_r),
      f"0 ± {units.format(GOAL_TOLERANCE * target_focus.z_r, mm, 2)} (1 % of the Rayleigh range)", mm)
+# --8<-- [end:results]
 
 heading("Requirements")
 goal("Relay 1 to expander 2 air gap", gap(initial, relay1.back, expander2),

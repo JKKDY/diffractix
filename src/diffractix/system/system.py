@@ -345,7 +345,7 @@ class System:
         return MappingProxyType(self._bindings)
 
     def bind(self, key: Hashable, value: Node | Scalar):
-        """Provide a value for a Symbol.
+        """Provide a value for a `Symbol`.
 
         Elements can depend on values that are only known in the system, such as the
         ambient index or the wavelength; they refer to them with a `Symbol`, which is
@@ -354,7 +354,7 @@ class System:
         Parameters
         ----------
         key : hashable
-            Key of the Symbol, for example ``"wavelength"``.
+            Key of the `Symbol`, for example ``"wavelength"``.
         value : float, complex or Node
             The value. A real number becomes a fixed `Parameter` named after a string
             key; a complex number becomes a constant.
@@ -367,7 +367,7 @@ class System:
         Raises
         ------
         TypeError
-            If `key` is not hashable or `value` is not a number or Node.
+            If `key` is not hashable or `value` is not a number or `Node`.
         """
         try:
             hash(key)
@@ -711,7 +711,7 @@ class System:
         """Compile optics and register variable dependencies of generated continuity.
 
         Theta follows first occurrence in optical roots, then additional
-        continuity dependencies. ParameterData is returned in theta order.
+        continuity dependencies. `ParameterData` is returned in theta order.
         """
         roots = []
         steps = []
@@ -828,12 +828,12 @@ class System:
 
         Raises
         ------
-        SystemValidationError
+        `SystemValidationError`
             If the system has no input or an element is invalid. All problems are
             listed together.
         ValueError
             If the refractive index the light arrives in does not match what an
-            element expects, two sources bind the same Symbol, a Symbol has no value,
+            element expects, two sources bind the same `Symbol`, a `Symbol` has no value,
             or a constraint is constant and violated.
         """
         self._validate()

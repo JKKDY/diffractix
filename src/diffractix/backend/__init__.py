@@ -1,11 +1,14 @@
 """Process-wide numerical backend selection for Diffractix.
 
-The default preference ("auto") selects JAX when installed, otherwise
-Autograd. Set "DIFFRACTIX_BACKEND" or call "configure(name)" *before* the
-first numerical operation to select "auto", "jax" or "autograd".
+The default preference (`auto`) selects JAX when installed, otherwise
+Autograd. Set `DIFFRACTIX_BACKEND` or call `configure(name)` before the
+first numerical operation to select `auto`, `jax` or `autograd`.
 
-Importing this module, "xp", or a differentiation wrapper does not initialize
-the backend. The first "xp" attribute access or derivative/JIT construction
+`xp` provides the selected backend's differentiable NumPy interface:
+`jax.numpy` or `autograd.numpy`.
+
+Importing this module, `xp`, or a differentiation wrapper does not initialize
+the backend. The first `xp` attribute access or derivative/JIT construction
 resolves and permanently freezes the backend for the current Python process.
 
 Numerical modules should use::
@@ -20,7 +23,7 @@ Numerical modules should use::
         require,
     )
 
-Do not bind "xp" attributes into module-level registries during import;
+Do not bind `xp` attributes into module-level registries during import;
 resolve those attributes lazily when preparing compiled numerical instructions.
 """
 

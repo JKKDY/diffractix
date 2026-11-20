@@ -18,17 +18,17 @@ class Node:
     """Base class for a node in diffractix's expression graph.
 
     Arithmetic between Nodes and numbers builds a graph rather than computing a
-    result immediately: ``2 * x + 1`` returns a new Node. `Literal`, `Parameter`,
+    result immediately: ``2 * x + 1`` returns a new `Node`. `Literal`, `Parameter`,
     `Symbol`, `InputNode`, `UnaryOp` and `BinaryOp` are its concrete subclasses.
     Comparisons such as ``x <= 1`` return a `Comparison`, for use in constraints,
     not a Python bool.
 
     Notes
     -----
-    Beyond the usual operators, a Node supports ``sigmoid``, ``exp``, ``log``,
+    Beyond the usual operators, a `Node` supports ``sigmoid``, ``exp``, ``log``,
     ``sqrt``, ``sin``, ``cos``, ``tan``, ``sinh``, ``cosh``, ``tanh``, ``sinc``
     (unnormalized: ``sinc(x) = sin(x) / x``), and ``maximum``/``minimum`` with
-    another Node or number.
+    another `Node` or number.
     """
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
@@ -53,14 +53,14 @@ class Node:
         Parameters
         ----------
         bindings : Mapping, optional
-            The value of each Symbol in the graph, keyed by `Symbol.key`, such as
+            The value of each `Symbol` in the graph, keyed by `Symbol.key`, such as
             ``{"wavelength": 1.064e-6}``. A value can also be an expression,
             such as ``{"k": 2 * p}``, which is evaluated as part of the graph.
             Defaults to ``{}``.
         parameter_values : Mapping, optional
             Values to use instead of the Parameters' current values, keyed by
-            ``id(parameter)``. If given, it must cover every Parameter in the
-            graph. Defaults to ``None``: each Parameter's current `value` is used.
+            ``id(parameter)``. If given, it must cover every `Parameter` in the
+            graph. Defaults to ``None``: each `Parameter`'s current `value` is used.
 
         Returns
         -------
@@ -70,8 +70,8 @@ class Node:
         Raises
         ------
         KeyError
-            If a Symbol in the graph has no binding, or
-            `parameter_values` is given and misses a Parameter in the graph.
+            If a `Symbol` in the graph has no binding, or
+            `parameter_values` is given and misses a `Parameter` in the graph.
 
         Examples
         --------
@@ -87,7 +87,7 @@ class Node:
         return evaluate_ast(self, bindings=bindings, parameter_values=parameter_values)
 
     def has_variable_parameters(self, bindings: Mapping[Hashable, object] = {}) -> bool:
-        """Check whether this graph contains a variable Parameter.
+        """Check whether this graph contains a variable `Parameter`.
 
         Symbols are resolved recursively through `bindings` along the way.
 
@@ -99,12 +99,12 @@ class Node:
         Returns
         -------
         bool
-            Whether a variable Parameter was reached.
+            Whether a variable `Parameter` was reached.
 
         Raises
         ------
         KeyError
-            If a reached Symbol has no entry in `bindings`.
+            If a reached `Symbol` has no entry in `bindings`.
         """
         from .graph_utils import walk_ast
 
@@ -279,13 +279,13 @@ class BinaryOp(Node):
 
     @property
     def is_variable(self) -> bool:
-        """Whether either operand reaches a variable Parameter."""
+        """Whether either operand reaches a variable `Parameter`."""
         return self.left.is_variable or self.right.is_variable
 
 
 class UnaryOp(Node):
     """A unary operation, such as ``-a`` or ``a.sqrt()``, built automatically by
-    arithmetic on a Node."""
+    arithmetic on a `Node`."""
 
     def __init__(self, op: Op, operand: Node):
         self.op = op
@@ -301,7 +301,7 @@ class UnaryOp(Node):
 
     @property
     def is_variable(self):
-        """Whether the operand reaches a variable Parameter."""
+        """Whether the operand reaches a variable `Parameter`."""
         return self.operand.is_variable
 
 
@@ -351,7 +351,7 @@ class InputNode(Node):
 
     @property
     def is_variable(self):
-        """Whether the underlying node reaches a variable Parameter; ``False`` if
+        """Whether the underlying node reaches a variable `Parameter`; ``False`` if
         the handle is empty."""
         return self.node.is_variable if self.node is not None else False
 
@@ -418,7 +418,7 @@ class Parameter(Node):
 
     Parameters are fixed by default i.e. excluded from optimization.
     Mark one variable with :meth:`variable` to make it an optimizable degree of freedom.
-    A Parameter may stand alone or come from an `OpticalBase` field that was
+    A `Parameter` may stand alone or come from an `OpticalBase` field that was
     assigned a number.
 
     Parameters
@@ -428,11 +428,11 @@ class Parameter(Node):
     name : str, optional
         Name used in `full_name` and in messages. Defaults to ``None``: no name.
     variable : bool, optional
-        Whether this Parameter is variable. Defaults to ``False``.
+        Whether this `Parameter` is variable. Defaults to ``False``.
     bounds : tuple of (float or None, float or None), optional
         ``(lower, upper)``; see `bounds`. Defaults to unbounded.
     owner : OpticalElement, optional
-        The element this Parameter belongs to. Only used to name it, in
+        The element this `Parameter` belongs to. Only used to name it, in
         `full_name` and so in its repr and error messages. Held weakly.
         Defaults to ``None``: it stands alone.
 
@@ -475,11 +475,11 @@ class Parameter(Node):
 
     @property
     def is_variable(self) -> bool:
-        """Whether this Parameter is currently a degree of freedom."""
+        """Whether this `Parameter` is currently a degree of freedom."""
         return self._is_variable
 
     def variable(self, *, bounds=None):
-        """Mark this Parameter variable.
+        """Mark this `Parameter` variable.
 
         Parameters
         ----------
@@ -497,7 +497,7 @@ class Parameter(Node):
         return self
 
     def fixed(self) -> Parameter:
-        """Mark this Parameter fixed and return it.
+        """Mark this `Parameter` fixed and return it.
 
         Returns
         -------
@@ -509,7 +509,7 @@ class Parameter(Node):
 
     @staticmethod
     def _validate_bounds(lower_bound, upper_bound) -> None:
-        """Validate a Parameter's numerical interval."""
+        """Validate a `Parameter`'s numerical interval."""
         for name, bound in (
             ("lower_bound", lower_bound),
             ("upper_bound", upper_bound),
@@ -524,7 +524,7 @@ class Parameter(Node):
 
     @property
     def bounds(self) -> tuple[float, float]:
-        """Bounds: the interval ``(lower, upper)`` this Parameter's value must lie
+        """Bounds: the interval ``(lower, upper)`` this `Parameter`'s value must lie
         in; infinities mean unbounded.
 
         Assign a ``(lower, upper)`` pair to change it. A ``None`` endpoint keeps
@@ -562,7 +562,7 @@ class Parameter(Node):
 
     @property
     def owner(self):
-        """Owner: the element this Parameter belongs to, or ``None`` if it stands
+        """Owner: the element this `Parameter` belongs to, or ``None`` if it stands
         alone or the element has been garbage-collected."""
         if self._owner is None:
             return None
@@ -571,7 +571,7 @@ class Parameter(Node):
     @property
     def full_name(self) -> str:
         """Full name: the owner's label (or type name), joined to this
-        Parameter's name by a dot if it has one, else just the label; just the
+        `Parameter`'s name by a dot if it has one, else just the label; just the
         name, or ``"<parameter>"``, if it has no owner."""
         owner = self.owner
 
@@ -594,14 +594,14 @@ class Symbol(Node):
     runtime bindings.
 
     Elements can depend on values that are only known elsewhere, such as the system's
-    ambient index or wavelength, by using a Symbol with an agreed-on key; the
-    System or Solver supplies the value through bindings at compile time, or the
+    ambient index or wavelength, by using a `Symbol` with an agreed-on key; the
+    System or `Solver` supplies the value through bindings at compile time, or the
     value is supplied at runtime (e.g. traced Constraints).
 
     Parameters
     ----------
     key : hashable
-        Identifies this Symbol; Symbols with the same key are interchangeable.
+        Identifies this `Symbol`; Symbols with the same key are interchangeable.
 
     Raises
     ------
@@ -619,7 +619,7 @@ class Symbol(Node):
 
     @property
     def key(self):
-        """Key: identifies this Symbol."""
+        """Key: identifies this `Symbol`."""
         return self._key
 
     @property
@@ -629,7 +629,7 @@ class Symbol(Node):
 
     @property
     def value(self):
-        """A Symbol has no standalone value; resolve it through bindings instead.
+        """A `Symbol` has no standalone value; resolve it through bindings instead.
 
         Raises
         ------

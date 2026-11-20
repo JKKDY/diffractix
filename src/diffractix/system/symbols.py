@@ -3,9 +3,9 @@ from ..graph import Symbol
 from dataclasses import field
 
 def make_symbol(key):
-    """Create a dataclass field that initializes a Symbol for each instance.
+    """Create a dataclass field that initializes a `Symbol` for each instance.
 
-    Accepts a symbol key or an existing Symbol.
+    Accepts a symbol key or an existing `Symbol`.
     """
     if isinstance(key, Symbol):
         key = key.key

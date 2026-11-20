@@ -1,5 +1,5 @@
 """
-Defines the Telescope composite element.
+Defines the `Telescope` composite element.
 """
 
 from .composite import CompositeElement

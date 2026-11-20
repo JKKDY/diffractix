@@ -80,7 +80,7 @@ class CompositeElement(OpticalBase, Sequence):
         Raises
         ------
         ValueError
-            If two different elements provide a value for the same Symbol.
+            If two different elements provide a value for the same `Symbol`.
         """
         bindings = {}
         for element in {id(leaf): leaf for leaf in self.leaf_elements}.values():  # once per identity

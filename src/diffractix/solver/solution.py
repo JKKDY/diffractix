@@ -17,7 +17,7 @@ from .scale import Scaling
 
 @dataclass(frozen=True)
 class SolverResult:
-    """Optimization result; Solver returns x in physical SI coordinates."""
+    """Optimization result; `Solver` returns x in physical SI coordinates."""
 
     x: np.ndarray
     success: bool
@@ -66,7 +66,7 @@ class ConstraintResult:
     ----------
     position : int
         Index of the constraint among all the solved problem's constraints: the
-        System's first, then the Solver's, each in the order they were given.
+        System's first, then the `Solver`'s, each in the order they were given.
     label : str or None
         Name given to the constraint, or ``None``.
     description : str
@@ -97,12 +97,12 @@ class ConstraintResult:
 
 @dataclass(frozen=True)
 class ParameterBoundResult:
-    """One variable Parameter's bound violation, at the solution.
+    """One variable `Parameter`'s bound violation, at the solution.
 
     Attributes
     ----------
     parameter : ParameterData
-        The Parameter's metadata, including its name.
+        The `Parameter`'s metadata, including its name.
     value : float
         Solved value.
     lower_bound : float
@@ -115,7 +115,7 @@ class ParameterBoundResult:
         How far `value` lies inside the bounds; negative where it violates them.
     satisfied : bool
         Whether the bound holds. Always ``False`` here, since a
-        ParameterBoundResult is only created for a violated bound; the field
+        `ParameterBoundResult` is only created for a violated bound; the field
         matches `ConstraintResult`, so every entry of `Solution.violations` has it.
     """
     parameter: ParameterData
@@ -128,7 +128,7 @@ class ParameterBoundResult:
 
 
 class Solution:
-    """Solved Parameter values, and the model's objectives, constraints and bounds evaluated there.
+    """Solved `Parameter` values, and the model's objectives, constraints and bounds evaluated there.
 
     Returned by :meth:`Solver.solve`. All quantities are in physical SI
     coordinates, regardless of the optimizer's internal scaling.
@@ -140,7 +140,7 @@ class Solution:
     problem : Problem
         The scaled optimization problem that was solved.
     simulation : Simulation
-        The Simulation the Solver optimized.
+        The `Simulation` the Solver optimized.
     objective_program, constraint_program : Program
         Compiled graph-expression objectives and constraints.
     objective_descriptors, constraint_descriptors : tuple
@@ -224,7 +224,7 @@ class Solution:
 
     @property
     def simulation(self):
-        """Simulation: a copy of the optimized Simulation, with the solved values as initial values and the current bounds."""
+        """`Simulation`: a copy of the optimized `Simulation`, with the solved values as initial values and the current bounds."""
         return self._simulation
 
     @property
@@ -278,12 +278,12 @@ class Solution:
         return self._optical_result
 
     def value(self, quantity):
-        """Return a design Parameter, or an expression of them, evaluated at the solution.
+        """Return a design `Parameter`, or an expression of them, evaluated at the solution.
 
         Parameters
         ----------
         quantity : Parameter, InputNode or Node
-            A variable Parameter in the model (or its direct handle) to read its
+            A variable `Parameter` in the model (or its direct handle) to read its
             solved value, or any other graph expression to evaluate, such as a
             derived gap.
 
@@ -291,16 +291,16 @@ class Solution:
         -------
         float or array_like
             The value. Solved values replace the model's variable Parameters, fixed
-            Parameters keep their current value, and the Simulation's bindings
+            Parameters keep their current value, and the `Simulation`'s bindings
             resolve its Symbols.
 
         Raises
         ------
         TypeError
-            If `quantity` is not a Parameter or graph expression.
+            If `quantity` is not a `Parameter` or graph expression.
         KeyError
-            If `quantity` depends on a variable Parameter outside the model, an
-            unbound Symbol, or a runtime result quantity;
+            If `quantity` depends on a variable `Parameter` outside the model, an
+            unbound `Symbol`, or a runtime result quantity;
             read that from :meth:`run`.
         """
         parameter = quantity.node if isinstance(quantity, InputNode) else quantity
@@ -372,7 +372,7 @@ class Solution:
     def constraints(self):
         """Constraints: one `ConstraintResult` per constraint, evaluated at the solution.
 
-        Includes the Simulation's own generated constraints, such as refractive
+        Includes the `Simulation`'s own generated constraints, such as refractive
         index continuity.
         """
         results = []
@@ -397,10 +397,10 @@ class Solution:
 
     @cached_property
     def violations(self):
-        """Violations: constraints and Parameter bounds the solution does not satisfy within `feasibility_tolerance`.
+        """Violations: constraints and `Parameter` bounds the solution does not satisfy within `feasibility_tolerance`.
 
         Violated constraints come first, as `ConstraintResult`, followed by violated
-        Parameter bounds as `ParameterBoundResult`.
+        `Parameter` bounds as `ParameterBoundResult`.
         """
         violations = [entry for entry in self.constraints if not entry.satisfied]
         for info, value in zip(self.simulation.parameter_data, self.x, strict=True):

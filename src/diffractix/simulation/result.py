@@ -142,7 +142,7 @@ class SimulationResult:
         return tuple(self.Stage(self, index) for index in range(len(self.element_data)))
 
     def view(self) -> SimulationResultView:
-        """Return a read-only view of this result, for use in callable Solver objectives and constraints.
+        """Return a read-only view of this result, for use in callable `Solver` objectives and constraints.
 
         Returns
         -------
@@ -285,7 +285,7 @@ class SimulationResult:
 
 @dataclass(frozen=True)
 class SimulationResultView:
-    """Restricted interface to a SimulationResult for solver callbacks.
+    """Restricted interface to a `SimulationResult` for solver callbacks.
 
     Exposes the initial and final states and the element stages.
     The underlying numerical states are shared with the result,
@@ -321,7 +321,7 @@ class SimulationResultView:
 
 
 class ResultSymbolKind(Enum):
-    """Which part of a SimulationResult a result Symbol stands for."""
+    """Which part of a `SimulationResult` a result Symbol stands for."""
     INITIAL = auto()    # a field of the input state
     FINAL = auto()      # a field of the last state
     BEFORE = auto()     # a field of the state entering stage `index`
@@ -332,8 +332,8 @@ class ResultSymbolKind(Enum):
 
 @dataclass(frozen=True)
 class ResultSymbolKey:
-    """Key of a Symbol produced by SimulationResultTracer; resolved against
-    each run's SimulationResult by `resolve_symbol`.
+    """Key of a Symbol produced by `SimulationResultTracer`; resolved against
+    each run's `SimulationResult` by `resolve_symbol`.
 
     `index` is the stage index for stage kinds; `name` is the state field for
     state kinds.
@@ -344,7 +344,7 @@ class ResultSymbolKey:
 
 
 def resolve_symbol(key, result):
-    """Return the value a result Symbol's key stands for in a SimulationResult."""
+    """Return the value a result Symbol's key stands for in a `SimulationResult`."""
     if not isinstance(key, ResultSymbolKey):
         raise KeyError(f"Unsupported runtime Symbol: {key!r}.")
 
@@ -397,11 +397,11 @@ def _stage_index(positions, element, occurrence):
 
 
 class SimulationResultTracer:
-    """Symbolic `SimulationResult`, for writing Solver objectives and constraints.
+    """Symbolic `SimulationResult`, for writing `Solver` objectives and constraints.
 
     Returned by `Simulation.symbolic`. It has the same interface as
     `SimulationResult`: `initial`, `final`, `stages` and indexing by element.
-    But every value is a graph expression instead of a number. The Solver
+    But every value is a graph expression instead of a number. The `Solver`
     evaluates these expressions each time it runs the simulation with new
     values for the variable Parameters.
 
@@ -421,8 +421,8 @@ class SimulationResultTracer:
 
     See Also
     --------
-    SimulationResult : The numerical result this mirrors.
-    Simulation.symbolic : Returns a tracer bound to a Simulation.
+    `SimulationResult` : The numerical result this mirrors.
+    `Simulation`.symbolic : Returns a tracer bound to a `Simulation`.
     """
 
     class SymbolicState:
@@ -431,7 +431,7 @@ class SimulationResultTracer:
 
         Produced by the tracer's `initial` and `final`, and by a stage's `before`
         and `after`. It holds no values: reading a field, such as ``x`` or ``w``,
-        produces a Symbol that the Solver fills in when it runs the simulation.
+        produces a Symbol that the `Solver` fills in when it runs the simulation.
 
         Raises
         ------

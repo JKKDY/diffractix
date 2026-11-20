@@ -6,6 +6,7 @@ spacing and the second focal length, subject to a length limit and lens
 apertures. Values are written with unit constants; diffractix computes in SI.
 """
 
+# --8<-- [start:setup]
 from diffractix import GaussianBeam, Plane, Solver, Space, System, ThinLens, units
 from diffractix.units import mm, mrad, nm
 
@@ -48,11 +49,13 @@ initial = simulation.run()
 input_beam = initial.source
 target_radius = EXPANSION * input_beam.w
 target_divergence = input_beam.divergence_angle / EXPANSION
+# --8<-- [end:setup]
 
 
 # ------------
 # OPTIMIZATION
 # ------------
+# --8<-- [start:targets]
 solver = Solver(simulation)
 sim = simulation.symbolic  # the result as expressions, for objectives and constraints
 
@@ -68,6 +71,7 @@ for lens in (lens1, lens2):
 
 solution = solver.solve(method="SLSQP")
 optimized = solution.run()
+# --8<-- [end:targets]
 
 
 # -------
@@ -96,12 +100,14 @@ row("Collimating focal length", lens2.f.value, solution.value(lens2.f), mm)
 row("Optical length", initial.z[-1], optimized.z[-1], mm)
 print(f"Limit: {units.format(MAX_OPTICAL_LENGTH, mm)}")
 
+# --8<-- [start:results]
 before, after = initial[output].after, optimized[output].after
 table("Output beam")
 row("Radius", before.w, after.w, mm)
 row("Expansion factor", before.w / input_beam.w, after.w / input_beam.w)
 row("Divergence", before.divergence_angle, after.divergence_angle, mrad)
 print(f"Targets: {units.format(target_radius, mm)}, {units.format(target_divergence, mrad)}")
+# --8<-- [end:results]
 
 table("Beam radius at each lens")
 for lens in (lens1, lens2):

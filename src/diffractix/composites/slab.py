@@ -1,5 +1,5 @@
 """
-Defines the Slab composite element.
+Defines the `Slab` composite element.
 """
 
 from .composite import CompositeElement

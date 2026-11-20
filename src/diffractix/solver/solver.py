@@ -80,11 +80,11 @@ class Optimizer(str, Enum):
 
 
 class Solver:
-    """An optimization model built from a Simulation, with objectives and constraints solved together for one theta.
+    """An optimization model built from a `Simulation`, with objectives and constraints solved together for one theta.
 
     Add objectives with :meth:`target` and hard constraints with :meth:`require`,
     then call :meth:`solve`. The model is fixed at the first :meth:`solve`; add
-    more objectives or constraints to a new Solver instead.
+    more objectives or constraints to a new `Solver` instead.
 
     Parameters
     ----------
@@ -94,7 +94,7 @@ class Solver:
     Raises
     ------
     TypeError
-        If `simulation` is not a Simulation or System.
+        If `simulation` is not a `Simulation` or System.
 
     Notes
     -----
@@ -177,7 +177,7 @@ class Solver:
 
     @property
     def simulation(self) -> Simulation:
-        """Simulation: the optical model this Solver optimizes."""
+        """`Simulation`: the optical model this Solver optimizes."""
         return self._simulation
 
     def target(self, *objectives, value=None, target=None, scale=None, weight=None, label=None):
@@ -272,7 +272,7 @@ class Solver:
         return self
 
     def require(self, *constraints, label=None):
-        """Add hard optimization constraints, on top of the Simulation's own contstraints.
+        """Add hard optimization constraints, on top of the `Simulation`'s own contstraints.
 
         Parameters
         ----------
@@ -336,10 +336,10 @@ class Solver:
             be traced.
         x0 : array_like or InitialValues, optional
             Starting point, in `simulation.parameter_data` order, such as an edited
-            `simulation.initial_values`. Defaults to the Simulation's initial values.
+            `simulation.initial_values`. Defaults to the `Simulation`'s initial values.
         x_lower, x_upper : array_like, optional
-            Parameter bounds, in `simulation.parameter_data` order. Default to the
-            Simulation's own bounds.
+            `Parameter` bounds, in `simulation.parameter_data` order. Default to the
+            `Simulation`'s own bounds.
 
         Returns
         -------
@@ -350,7 +350,7 @@ class Solver:
         ------
         ValueError
             If `optimizer` is not a supported name, `feasibility_tolerance` is not
-            finite or is negative, the model has no variable Parameter, the
+            finite or is negative, the model has no variable `Parameter`, the
             model has no objective or constraint, `x0`, `x_lower` or `x_upper` has
             the wrong shape, `x0` is non-finite, `x_lower` or `x_upper` is NaN,
             `x_lower` exceeds `x_upper`, or `x0` lies outside the bounds.
@@ -476,7 +476,7 @@ class Solver:
     # INTERNAL METHODS
     #-----------------
     def _finalize_constraints(self):
-        """Align and fuse prepared constraints with the Simulation's constraints."""
+        """Align and fuse prepared constraints with the `Simulation`'s constraints."""
         tracer = SimulationResultTracer(self.simulation.element_data, self.simulation._optical_inputs[0].initial_state)
 
         (
@@ -522,7 +522,7 @@ class Solver:
 
 
     def _finalize_objectives(self):
-        """Trace objectives and align their program with the Simulation's theta."""
+        """Trace objectives and align their program with the `Simulation`'s theta."""
         tracer = SimulationResultTracer(self.simulation.element_data, self.simulation._optical_inputs[0].initial_state)
         program, descriptors, callables = prepare_objectives(
             self._objectives, tracer=tracer, bindings=self.simulation.bindings,

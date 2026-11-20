@@ -6,6 +6,7 @@ its mode, while the package stays short. Values are written with unit constants;
 diffractix computes in SI.
 """
 
+# --8<-- [start:package]
 from diffractix import (
     CompositeElement, GaussianBeam, Node, Plane, Solver, Space, System, ThinLens, units,
 )
@@ -31,11 +32,13 @@ class PackagedThinLens(CompositeElement):
         self.lens = ThinLens(f=self.f, label=label)
         self.back = Space(d=length / 2, label=f"{label} back")
         super().__init__()
+# --8<-- [end:package]
 
 
 # ------
 # DESIGN
 # ------
+# --8<-- [start:setup]
 source = GaussianBeam.from_fiber_tip(wavelength=WAVELENGTH, MFD=10.4 * um)
 target_mode = GaussianBeam.from_fiber_tip(wavelength=WAVELENGTH, MFD=9.2 * um).numeric()
 if max(source.numeric().divergence_angle, target_mode.divergence_angle) > MAX_DIVERGENCE:
@@ -60,11 +63,13 @@ system.require(package_length <= MAX_PACKAGE_LENGTH)
 
 simulation = system.build()
 initial = simulation.run()
+# --8<-- [end:setup]
 
 
 # ------------
 # OPTIMIZATION
 # ------------
+# --8<-- [start:targets]
 solver = Solver(simulation)
 sim = simulation.symbolic  # the result as expressions, for objectives and constraints
 
@@ -88,6 +93,7 @@ for package in (lens1, lens2):
 
 solution = solver.solve(method="SLSQP", options={"maxiter": 300})
 optimized = solution.run()
+# --8<-- [end:targets]
 
 
 # -------
@@ -122,12 +128,14 @@ for label, parameter in (
 row("Package length", initial.z[-1], optimized.z[-1], mm)
 print(f"Preferred {units.format(PREFERRED_PACKAGE_LENGTH, mm)}, maximum {units.format(MAX_PACKAGE_LENGTH, mm)}")
 
+# --8<-- [start:results]
 before, after = initial[target].after, optimized[target].after
 table("Coupling into the target fiber")
 row("Beam radius", before.w, after.w, um)
 row("Waist offset", before.z0, after.z0, um)
 row("Mode overlap [%]", 100 * before.overlap_with(target_mode), 100 * after.overlap_with(target_mode))
 print(f"Target mode radius: {units.format(target_mode.w, um)}")
+# --8<-- [end:results]
 
 table("Model checks")
 for package in (lens1, lens2):

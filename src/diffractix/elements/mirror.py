@@ -1,5 +1,5 @@
 """
-Defines the Mirror element.
+Defines the `Mirror` element.
 """
 
 from dataclasses import dataclass

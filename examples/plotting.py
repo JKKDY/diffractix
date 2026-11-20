@@ -4,6 +4,7 @@ Matplotlib is installed with Diffractix. Plotting returns (figure, axes) and
 never calls show(), so figures can be customised or saved before display.
 """
 
+# --8<-- [start:plots]
 from diffractix import GaussianBeam, Ray, RayBundle, Space, System, ThinLens
 from diffractix.units import mm, mrad, nm
 
@@ -26,10 +27,13 @@ def make_plots():
         axes.set_title(title)
         figures.append(figure)
     return figures
+# --8<-- [end:plots]
 
 
+# --8<-- [start:display]
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
     make_plots()
     plt.show()
+# --8<-- [end:display]

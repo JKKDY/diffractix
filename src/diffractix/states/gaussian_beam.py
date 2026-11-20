@@ -74,7 +74,7 @@ class GaussianBeam(ParaxialState):
 
     See Also
     --------
-    Ray, RayBundle : Geometric rays.
+    Ray, `RayBundle` : Geometric rays.
 
     Notes
     -----

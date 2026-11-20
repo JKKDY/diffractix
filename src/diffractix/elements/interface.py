@@ -1,5 +1,5 @@
 """
-Defines the dielectric Interface element.
+Defines the dielectric `Interface` element.
 """
 
 from dataclasses import dataclass
