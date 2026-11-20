@@ -6,6 +6,8 @@ repo_url = "https://github.com/JKKDY/diffractix"
 repo_name = "JKKDY/diffractix"
 docs_dir = "docs"
 site_dir = "site"
+extra_css = ["stylesheets/fonts.css", "stylesheets/extra.css"]
+extra_javascript = ["javascripts/nav-state.js"]
 
 # docs/agents/ holds notes for coding agents; it is not part of the site.
 exclude_docs = """
@@ -14,17 +16,97 @@ exclude_docs = """
 
 nav = [
   "index.md",
+  { "Guide" = [
+    "guide/overview.md",
+    "guide/declaring.md",
+    "guide/parameters.md",
+    "guide/building.md",
+    "guide/results.md",
+    "guide/solving.md",
+    "guide/backends.md",
+  ] },
+  { "Examples" = [
+    "examples/index.md",
+    "examples/focus-a-ray.md",
+    "examples/plotting.md",
+    "examples/beam-expander.md",
+    "examples/beam-focusing.md",
+    "examples/fiber-mode-matching.md",
+    "examples/multistation-delivery.md",
+  ] },
   { "API reference" = [
+    "api/index.md",
     "api/system.md",
-    "api/elements.md",
-    "api/composites.md",
-    "api/states.md",
-    "api/graph.md",
-    "api/simulation.md",
-    "api/solver.md",
+    { "Elements" = [
+      "api/elements.md",
+      "api/custom-elements.md",
+    ] },
+    { "Composites" = [
+      "api/composites.md",
+      "api/custom-composites.md",
+    ] },
+    { "Sources and states" = [
+      { "Overview" = "api/states.md" },
+      "api/ray.md",
+      "api/ray-bundle.md",
+      "api/gaussian-beam.md",
+    ] },
+    { "Graph" = [
+      "api/graph.md",
+      "api/expressions.md",
+    ] },
+    { "Simulation" = [
+      "api/simulation.md",
+      "api/simulation-result.md",
+      "api/symbolic-results.md",
+    ] },
+    { "Solver" = [
+      "api/solver.md",
+      "api/objectives-and-constraints.md",
+      "api/solution.md",
+    ] },
     "api/backend.md",
+    "api/plotting.md",
   ] },
 ]
+
+[project.markdown_extensions]
+abbr = {}
+admonition = {}
+attr_list = {}
+def_list = {}
+footnotes = {}
+md_in_html = {}
+toc.permalink = "#"
+toc.permalink_title = "Link to this heading"
+pymdownx.arithmatex.generic = true
+pymdownx.betterem = {}
+pymdownx.caret = {}
+pymdownx.details = {}
+pymdownx.emoji.emoji_generator = "zensical.extensions.emoji.to_svg"
+pymdownx.emoji.emoji_index = "zensical.extensions.emoji.twemoji"
+pymdownx.highlight.anchor_linenums = true
+pymdownx.highlight.line_spans = "__span"
+pymdownx.highlight.pygments_lang_class = true
+pymdownx.inlinehilite = {}
+pymdownx.keys = {}
+pymdownx.magiclink = {}
+pymdownx.mark = {}
+pymdownx.smartsymbols = {}
+pymdownx.snippets.base_path = ["."]
+pymdownx.snippets.check_paths = true
+pymdownx.superfences.custom_fences = [{ name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" }]
+pymdownx.tabbed.alternate_style = true
+pymdownx.tabbed.combine_header_slug = true
+pymdownx.tasklist.custom_checkbox = true
+pymdownx.tilde = {}
+
+[project.theme]
+features = ["navigation.tabs"]
+font = false
+
+[project.theme.icon]
+repo = "fontawesome/brands/github"
 
 [project.plugins.mkdocstrings.handlers.python]
 # Read the package from the checkout, whether or not it is installed.
@@ -36,3 +118,19 @@ show_root_heading = true
 show_source = false
 members_order = "source"
 extensions = ["scripts/griffe_crossrefs.py"]
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+primary = "indigo"
+accent = "blue"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+primary = "indigo"
+accent = "light blue"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to light mode"

@@ -6,9 +6,11 @@ on:
   pull_request:
     paths:
       - "docs/**"
+      - "examples/**"
       - "zensical.toml"
       - "scripts/griffe_crossrefs.py"
       - "scripts/check_docs.py"
+      - "scripts/run_doc_examples.py"
       - "src/**"
       - "pyproject.toml"
       - ".github/workflows/docs.yml"
@@ -47,6 +49,8 @@ jobs:
           if grep -q "^griffe:" build.log; then echo "::error::griffe reported docstring problems"; exit 1; fi
       - name: Check cross-references and API coverage
         run: python scripts/check_docs.py
+      - name: Run the code examples of the guide pages
+        run: python scripts/run_doc_examples.py
       - uses: actions/configure-pages@v6
         if: github.event_name != 'pull_request'
       - uses: actions/upload-pages-artifact@v5

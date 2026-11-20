@@ -1,8 +1,5 @@
-# Backend and plotting
+# Numerical backend
 
-Choosing JAX or Autograd, and plotting results.
+Choose Autograd or JAX and use backend-independent differentiation functions.
 
 ::: diffractix.backend
-
-::: diffractix.plotting.plot
-

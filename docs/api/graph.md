@@ -1,22 +1,7 @@
-# Parameters and expressions
+# Parameters and symbols
 
-Parameters, symbols and the expression graph they build.
+Use `Parameter` for a fixed or optimizable value and `Symbol` for a value supplied through a binding. See [Expressions](expressions.md) for the nodes these values form.
 
 ::: diffractix.Parameter
 
 ::: diffractix.Symbol
-
-::: diffractix.Node
-
-::: diffractix.graph.Comparison
-
-::: diffractix.graph.Literal
-
-::: diffractix.graph.InputNode
-
-::: diffractix.graph.UnaryOp
-
-::: diffractix.graph.BinaryOp
-
-::: diffractix.SymbolicControlFlowError
-

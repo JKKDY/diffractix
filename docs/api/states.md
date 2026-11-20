@@ -1,14 +1,9 @@
 # Sources and states
 
-The light entering a system, and the states along it.
+Pass a [Ray](ray.md), [RayBundle](ray-bundle.md), or [GaussianBeam](gaussian-beam.md) to a [System](system.md) as its source. A [Simulation result](simulation-result.md) exposes numerical states at each stage.
 
-::: diffractix.Ray
-
-::: diffractix.RayBundle
-
-::: diffractix.GaussianBeam
+The base classes below define numerical conversion and paraxial propagation.
 
 ::: diffractix.OpticalState
 
 ::: diffractix.ParaxialState
-

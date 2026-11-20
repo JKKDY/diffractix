@@ -22,7 +22,11 @@ matrices, and optimize design parameters with gradients from JAX or Autograd.
 Outside `src/`: `docs/` holds the published site (Zensical, configured in
 `zensical.toml`; `docs/api/*.md` are `::: diffractix.X` blocks rendered from the
 docstrings) and, unpublished, `docs/agents/`. `scripts/` has `run_examples.py`,
-`griffe_crossrefs.py` (links names in docstrings to the API pages) and `check_docs.py`.
+`griffe_crossrefs.py` (links names in docstrings to the API pages), `check_docs.py`
+and `run_doc_examples.py` (runs the code blocks of the guide pages). The guide in
+`docs/guide/` goes from the overview to one page per step (declare, build, run,
+solve); its code blocks must run, and a `text` block titled `Output` must match what
+the block before it prints.
 
 ## Commands
 
@@ -40,6 +44,7 @@ Documentation (needs `uv pip install --python .venv/Scripts/python.exe -e ".[doc
 ```bash
 .venv/Scripts/python.exe -m zensical build --clean --strict
 .venv/Scripts/python.exe scripts/check_docs.py   # links, unrendered roles, API coverage
+.venv/Scripts/python.exe scripts/run_doc_examples.py   # code blocks of the guide pages
 .venv/Scripts/python.exe -m zensical serve       # preview at http://localhost:8000
 ```
 

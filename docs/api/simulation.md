@@ -1,14 +1,9 @@
-# Simulation and results
+# Simulation
 
-A built system, and the results of running it.
+Build a [System](system.md) to obtain a simulation. Use `initial_values` to prepare a parameter vector and `run()` to get a [Simulation result](simulation-result.md). For optimization expressions, see [Symbolic results](symbolic-results.md).
 
 ::: diffractix.Simulation
-
-::: diffractix.SimulationResult
-
-::: diffractix.SimulationResultView
+    options:
+      show_root_toc_entry: false
 
 ::: diffractix.simulation.simulation.InitialValues
-
-::: diffractix.simulation.result.SimulationResultTracer
-

@@ -187,3 +187,84 @@ complex flavour of `Parameter`), bounds per part, `variable()`/`fixed()` acting 
 both, `parameter_data` and `Solution.value()` reporting the pair as one complex value,
 printing, and fields such as `GaussianBeam.q` accepting it. Do not add special-case
 complex fields to elements or states for this; it belongs in the graph.
+
+## 13. Elliptical Gaussian beams and per-axis elements
+
+A beam with different beam parameters in x and y (`q_x`, `q_y`), such as a diode
+laser, and elements that act differently on the two axes, such as cylindrical lenses,
+anamorphic prism pairs and mirrors at an angle. Circularizing a diode beam is the
+typical design problem.
+
+Two parts, which are only useful together:
+
+- An elliptical beam state. Through round optics each axis propagates independently
+  with the same ABCD matrix, so the simulation is unchanged: the state propagates
+  `q_x` and `q_y` with the matrix it is given. The work is in the state: per-axis
+  properties (`w_x`, `w_y`, `R_x`, ...), the symbolic result, result columns,
+  plotting both axes and factories.
+- Elements with a matrix per axis, for example an optional `matrix_x` and `matrix_y`
+  that default to `matrix`. This changes the element contract: the compile step keeps
+  two matrices per stage and `propagate` takes both.
+
+Open questions: whether `Ray` and `RayBundle` gain a y coordinate or stay x only, and
+how plots show two axes.
+
+Out of scope: general astigmatism, where a rotated cylindrical lens couples x and y.
+It needs 4x4 ray matrices and a complex 2x2 beam matrix, a different propagation
+model, so it belongs with idea 3 (pluggable simulation methods).
+
+## 14. Solving several simulations together
+
+Let one `Solver` optimize several Simulations at once, coupled by shared Parameters
+and shared elements: for example the same optics at several wavelengths, a system
+used with two different sources, or one design checked at several focus positions.
+Objectives and constraints can then combine quantities from different simulations,
+such as the difference between two beams' focus positions.
+
+The variables would be the union of the simulations' variable Parameters, matched by
+identity, so a shared Parameter has one entry in the combined theta. Each
+simulation's programs are remapped into that order, as objectives and constraints are
+today. Each simulation keeps its own symbolic result, and `Solution` reports values
+and runs per simulation.
+
+This is likely a prerequisite for idea 1 (multi-beam setups and segments): several
+paths through shared elements are several coupled simulations.
+
+Open questions: how a user addresses a simulation's result in an objective (one
+symbolic result per simulation, or one combined object); how `solution.run()` and
+`solution.simulation` look for several simulations; and how a shared element that
+appears in several systems with different positions is handled.
+
+## 15. Watching an optimization: an iteration callback
+
+Let `Solver.solve()` take one optional callback, for example `on_iteration`, that is
+called after each optimizer iteration with a copy of the current design vector `theta`
+in physical SI units. The user can record it, run `simulation.run(theta)` on it, or
+update a plot or UI. This makes it possible to replay how an optical system converges:
+lenses moving, waists changing, constraints becoming active. It also shows parameter
+coupling and why a solve stalls, which complements idea 5 (diagnostics).
+
+`Simulation.run(theta)` already accepts any parameter vector, so no change to the
+graph compiler or the simulation is needed. The change is in the optimizer layer:
+
+- SciPy: `minimize` takes a `callback` for both SLSQP and trust-constr. It receives
+  the scaled variables `y`, which must be converted back with `x = x_center +
+  x_scale * y` (`Scaling.unscale`) before the user's callback sees them.
+- IPOPT: the adapter already has an `intermediate` callback that counts iterations,
+  so it is the natural hook. Whether the current iterate can be read there depends on
+  the CyIpopt version; check before relying on it.
+- NLopt: only objective evaluations are visible, with no accepted-iteration callback.
+  Calling the user's function there would mix trial points with real iterations, so
+  either skip NLopt or say plainly what the callback receives.
+
+Keep it to the single callback. No generators, asynchronous solver classes or event
+architecture. The callback does not report the starting and final designs, so a
+history that wants both adds them itself (`x0` and `solution.x`).
+
+Open questions: the exact name and signature (only `theta`, or also the iteration
+number and cost); what happens when the callback raises (stop the solve, or let the
+error out); and how to say that intermediate designs can violate constraints and may
+give non-finite results, so a UI should treat them as candidates, not solutions.
+
+A browser UI could first record the vectors and replay them at a chosen speed, since
+many optical solves finish in 5 to 20 iterations, too fast to watch live.

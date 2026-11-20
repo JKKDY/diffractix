@@ -1,0 +1,347 @@
+/* Keep section boundaries visible in both color schemes. */
+.md-typeset h2 {
+  margin-top: 2.8em;
+  padding-top: 0.85em;
+  border-top: 1px solid var(--md-default-fg-color--lighter);
+  font-weight: 650;
+}
+
+.md-typeset h3 {
+  margin-top: 2.2em;
+  font-weight: 650;
+}
+
+.md-typeset .doc-heading {
+  padding: 0.75rem 1rem;
+  background: var(--md-code-bg-color);
+  border-radius: 0.25rem;
+  overflow-wrap: anywhere;
+}
+
+.md-typeset > .doc.doc-object {
+  margin-block: 3rem 4rem;
+}
+
+.md-typeset > .doc.doc-object > .doc-heading {
+  margin-top: 0;
+  padding: 1rem 1.2rem;
+  border: 1px solid var(--md-default-fg-color--lighter);
+  border-inline-start: 4px solid var(--md-accent-fg-color);
+  color: var(--md-default-fg-color);
+  font-size: 1.15rem;
+}
+
+.md-typeset > .doc.doc-object > .doc-contents {
+  padding-top: 0.5rem;
+}
+
+.md-typeset .doc-contents {
+  padding-left: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.md-typeset .doc-contents .doc-contents {
+  padding-left: 0;
+}
+
+.md-typeset .doc-contents .doc-object {
+  margin-top: 2.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--md-default-fg-color--lighter);
+}
+
+.md-typeset .doc-section-title {
+  font-size: 0.85em;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.md-typeset table:not([class]) {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.md-typeset .highlight pre {
+  overflow-x: auto;
+}
+
+.md-typeset .language-text .filename {
+  font-weight: 700;
+  color: var(--md-default-fg-color);
+}
+
+.md-typeset p, .md-typeset li {
+  line-height: 1.7;
+}
+
+.md-typeset > p, .md-typeset > ul, .md-typeset > ol {
+  max-width: 70ch;
+}
+
+.md-typeset .mermaid {
+  overflow-x: auto;
+}
+
+.md-typeset .mermaid svg {
+  min-width: 35rem;
+}
+
+@media screen and (max-width: 44.9375em) {
+  .md-typeset .doc-contents {
+    padding-left: 0.5rem;
+  }
+
+  .md-typeset table:not([class]) {
+    width: 100%;
+  }
+
+
+}
+
+/* Keep the selected navigation link readable against its tinted background. */
+[data-md-color-scheme="default"] .md-nav__link--active {
+  color: var(--diffractix-nav-active-fg);
+}
+
+/* Keep the repository link compact in the header. */
+.md-header__source .md-source__repository {
+  display: none;
+}
+
+/* Keep navigation distinct from the reading column. */
+@media screen and (min-width: 76.25em) {
+  .md-sidebar--primary .md-sidebar__inner {
+    border-right: 1px solid var(--md-default-fg-color--lightest);
+  }
+
+  .md-sidebar--secondary .md-sidebar__inner {
+    border-left: 1px solid var(--md-default-fg-color--lightest);
+  }
+
+  .md-sidebar--secondary .md-nav__link--active {
+    font-weight: 700;
+  }
+
+  .md-tabs {
+    border-bottom: 1px solid var(--md-default-fg-color--lightest);
+  }
+}
+
+/* Center the top-level navigation. */
+.md-tabs__list {
+  justify-content: center;
+}
+
+@media screen and (min-width: 76.25em) {
+  .md-header__source {
+    width: 2.4rem;
+    margin-left: 0.6rem;
+  }
+
+  .md-sidebar {
+    padding-top: 0.25rem;
+  }
+}
+
+/* Place the section tabs in the desktop header. */
+@media screen and (min-width: 76.25em) {
+  .md-tabs {
+    position: fixed;
+    top: 0;
+    left: 50%;
+    z-index: 5;
+    width: auto;
+    max-width: 38%;
+    transform: translateX(-50%);
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+  }
+
+  .md-tabs__list {
+    justify-content: center;
+  }
+}
+
+@media screen and (min-width: 76.25em) {
+  .md-tabs[hidden] {
+    display: block;
+    pointer-events: auto;
+  }
+
+  .md-tabs[hidden] .md-tabs__link {
+    opacity: 0.7;
+    transform: none;
+    transition: none;
+  }
+
+  .md-tabs[hidden] .md-tabs__item--active {
+    border-bottom-color: var(--md-default-fg-color);
+  }
+
+  .md-tabs[hidden] .md-tabs__item--active .md-tabs__link {
+    opacity: 1;
+  }
+}
+
+/* Diffractix Studio's warm surfaces and terracotta accents. */
+[data-md-color-scheme="default"] {
+  --md-default-bg-color: #f9f8f3;
+  --md-default-bg-color--light: #fffefa;
+  --md-default-fg-color: #262b29;
+  --md-default-fg-color--light: #4d5854;
+  --md-default-fg-color--lighter: #7f8d81;
+  --diffractix-nav-active-fg: #713a25;
+  --diffractix-nav-active-bg: #f7eae3;
+  --md-default-fg-color--lightest: #d3d6ce;
+  --md-primary-fg-color: #8a4a30;
+  --md-accent-fg-color: #8a4a30;
+  --md-typeset-a-color: #8a4a30;
+  --md-code-bg-color: #f1f0ea;
+  /* Syntax colors darkened to at least 4.5:1 on the code background. */
+  --md-code-hl-keyword-color: #3867bd;
+  --md-code-hl-constant-color: #6a55d8;
+  --md-code-hl-function-color: #9e42ae;
+  --md-code-hl-number-color: #cc2828;
+  --md-code-hl-special-color: #cd1351;
+  --md-code-hl-string-color: #1b794a;
+}
+
+/* The extra attribute outranks the theme's per-primary-color link rule. */
+[data-md-color-scheme="slate"][data-md-color-primary] {
+  --diffractix-nav-active-fg: #e9ab91;
+  --diffractix-nav-active-bg: #42372f;
+  --md-default-bg-color: #1c211e;
+  --md-default-bg-color--light: #222923;
+  --md-default-fg-color: #f4f1e9;
+  --md-default-fg-color--light: #cbd5c8;
+  --md-default-fg-color--lighter: #6a7a6b;
+  --md-default-fg-color--lightest: #404d43;
+  --md-primary-fg-color: #e9ab91;
+  --md-accent-fg-color: #e9ab91;
+  --md-typeset-a-color: #e9ab91;
+  --md-code-bg-color: #2a312c;
+  --md-code-hl-keyword-color: #749ae3;
+  --md-code-hl-constant-color: #9e8fe5;
+  --md-code-hl-function-color: #cc7bdb;
+  --md-code-hl-number-color: #e9796d;
+  --md-code-hl-special-color: #f16e9a;
+}
+
+[data-md-color-scheme="default"] .md-nav__link--active {
+  background-color: var(--diffractix-nav-active-bg);
+}
+
+[data-md-color-scheme="slate"] .md-nav__link--active {
+  color: var(--diffractix-nav-active-fg);
+  background-color: var(--diffractix-nav-active-bg);
+}
+
+.md-header, .md-tabs, .md-sidebar {
+  font-family: "Archivo", sans-serif;
+}
+
+::selection {
+  background: var(--md-accent-fg-color);
+  color: var(--md-default-bg-color);
+}
+
+/* Apply the same accent to prose links in both schemes. */
+[data-md-color-scheme] .md-typeset a {
+  color: var(--md-typeset-a-color);
+}
+
+:root {
+  --md-text-font: "Archivo";
+  --md-code-font: "DM Mono";
+}
+
+.md-typeset table:not([class]) td,
+.md-typeset table:not([class]) td code {
+  font-size: 0.64rem;
+}
+
+.md-typeset table:not([class]) th,
+.md-typeset table:not([class]) td {
+  border-color: var(--md-default-fg-color--lighter);
+}
+
+[data-md-color-scheme="slate"] .md-typeset a,
+[data-md-color-scheme="slate"] .md-typeset a code {
+  color: var(--md-typeset-a-color);
+}
+
+@media screen and (max-width: 44.9375em) {
+  .md-content__inner {
+    padding-bottom: 4rem;
+  }
+
+  .md-header__button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .md-typeset .doc-contents table,
+  .md-typeset .doc-contents tbody,
+  .md-typeset .doc-contents tr,
+  .md-typeset .doc-contents td {
+    display: block;
+    width: 100%;
+  }
+
+  .md-typeset .doc-contents thead {
+    display: none;
+  }
+
+  .md-typeset .doc-contents tr {
+    padding: 0.4rem 0;
+    border-bottom: 1px solid var(--md-default-fg-color--lighter);
+  }
+
+  .md-typeset .doc-contents td {
+    padding: 0.1rem 0.6rem;
+    border: 0;
+  }
+
+  .md-typeset .doc-contents td:first-child {
+    font-weight: 700;
+  }
+
+  .md-typeset .doc-contents td:last-child:not(:nth-child(2)):not(:nth-child(3))::before {
+    content: "Default: ";
+    font-weight: 700;
+  }
+}
+
+@media screen and (max-width: 44.9375em) {
+  .md-typeset .doc-contents table:has(th:nth-child(3)) tr.doc-section-item {
+    display: grid;
+    grid-template-columns: fit-content(50%) minmax(0, 1fr);
+    column-gap: 0.5rem;
+  }
+
+  .md-typeset .doc-contents table:has(th:nth-child(3)) tr.doc-section-item td:nth-child(n+3) {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Keep nested API descriptions free of the theme's vertical guide line. */
+.md-typeset div.doc-contents:not(.first) {
+  border-left: 0;
+}
+
+/* Align the API overview table with the content column. */
+.md-typeset:has(> #api-reference) > .md-typeset__scrollwrap,
+.md-typeset:has(> #api-reference) .md-typeset__table,
+.md-typeset:has(> #api-reference) table:not([class]) {
+  width: 100%;
+}
+
+@media screen and (min-width: 45em) {
+  .md-typeset:has(> #api-reference) table:not([class]) {
+    display: table;
+    width: 100%;
+  }
+}
