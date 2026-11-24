@@ -4,9 +4,6 @@ from pathlib import Path
 import sys
 
 import numpy as np
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 
 import diffractix
 from diffractix import Plane, Ray, Solver, System, ThinLens
@@ -36,10 +33,15 @@ def main():
     np.testing.assert_allclose(solution.value(lens.f), 0.1, atol=1e-6)
     np.testing.assert_allclose(solution.run()[target].after.x, 0.0, atol=1e-6)
     np.testing.assert_allclose(lens.f.value, 0.2)
-    fig, ax = solution.run().plot()
-    if ax.figure is not fig:
-        raise RuntimeError("Plot did not return its Figure and Axes.")
-    plt.close(fig)
+    if "--plot" in sys.argv:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        fig, ax = solution.run().plot()
+        if ax.figure is not fig:
+            raise RuntimeError("Plot did not return its Figure and Axes.")
+        plt.close(fig)
     print(f"Wheel smoke passed: diffractix {version('diffractix')} at {location}; backend={current_backend()}")
 
 

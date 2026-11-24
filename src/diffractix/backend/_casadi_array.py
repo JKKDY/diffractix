@@ -8,9 +8,7 @@ import casadi as ca
 import numpy as np
 from numpy.lib.mixins import NDArrayOperatorsMixin
 
-
-class TracingError(TypeError):
-    """An operation needs a concrete value or is unsupported during SX tracing."""
+from . import _TracingError as TracingError
 
 
 class _Array(NDArrayOperatorsMixin):

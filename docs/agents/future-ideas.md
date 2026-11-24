@@ -268,3 +268,66 @@ give non-finite results, so a UI should treat them as candidates, not solutions.
 
 A browser UI could first record the vectors and replay them at a chosen speed, since
 many optical solves finish in 5 to 20 iterations, too fast to watch live.
+
+## 16. Elements that describe themselves
+
+Each element and source states what its fields are: dimension (length, angle,
+refractive index, dimensionless, ...), default, valid domain (`f != 0`, `n > 0`,
+`d >= 0`) and a one-line description. For example
+`f: Node = field(metadata={"dimension": "length", "description": "Focal length"})`,
+readable through one small public function such as `describe(ThinLens)`.
+
+Why: a UI (Diffractix Studio) can then generate its element forms, units and input
+checks from Diffractix instead of keeping a hand-written copy, so a new element shows
+up there with working fields before anyone draws it. It is also the basis for idea 7
+(dimension-checked units).
+
+Keep it to data on the existing dataclass fields. No registry of element classes and
+no metaclass: the caller passes the classes it wants described.
+
+## 17. Serialising a model: `to_dict()` and `from_dict()`
+
+A `System` (elements in order, source, labels, Parameters with their values, bounds and
+variable flags) and a `Solver` (objectives and constraints with targets, scales,
+weights and labels) written to plain JSON-compatible data, and read back.
+
+- Expressions are written as trees (operator and operands), not as Python source
+  strings, so another program can read and evaluate them without parsing Python.
+- Objectives and constraints are included, not only the System, so a reader does not
+  have to translate goals by hand.
+- A Parameter used in several places is written once and referenced wherever it is
+  used. For example, `gap = Parameter(0.05)` used by two Spaces must come back as one
+  Parameter shared by both (one theta entry), not as two independent copies that
+  happen to start at the same value.
+- No promise of compatibility between Diffractix versions. A program that reads the
+  format (such as Studio) supports one Diffractix version at a time and moves to a
+  new one deliberately, since new versions may bring features its UI must learn
+  first. The data says which Diffractix version wrote it, so a mismatch is reported
+  rather than misread.
+
+Deferred callables (objectives or constraints that cannot be traced) cannot be serialised;
+`to_dict()` should say so clearly rather than drop them.
+
+## 18. Knowing where things were created
+
+Elements, Parameters, objectives and constraints record where they were created: the
+file, line and column of the call (Python 3.11 and later report columns), and the
+order of creation. Read it through a small public attribute or function.
+
+Why: a UI showing a script beside a drawing can then edit the script exactly. To
+change a focal length it finds the `ThinLens(f=100 * mm)` call, parses that one call
+with `ast`, and rewrites only the `100 * mm`, so comments and layout survive. Errors
+and selection can point at script lines too. Objects created in a loop or a helper
+share one call site; a UI shows those values as computed ("edit in the script")
+rather than patching them.
+
+Cost to watch: inspecting the caller's frame on every construction. It should be
+cheap (one frame lookup) and must not change behaviour or results.
+
+## Order of the Studio-related ideas
+
+Suggested order, by what each unlocks in Studio: idea 12 (a graph-backed complex
+`q`, so dragging a source stops rebuilding the model), then 16 (cheapest, and it
+removes Studio's hand-written element mapping), then 17 (opening scripts in Studio, a
+format Studio and LLM tools can share), then 18 (only needed for two-way script
+editing).

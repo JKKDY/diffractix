@@ -86,6 +86,8 @@ to the waist `z0`, Rayleigh range `z_r`, Gouy phase and more. The
 
 ## Plotting
 
+Install `diffractix[plot]` to use the plotting methods.
+
 `result.plot()` draws the light along the system, with the elements marked, and
 returns the Matplotlib figure and axes:
 

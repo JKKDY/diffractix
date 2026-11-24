@@ -9,8 +9,7 @@ from typing import TYPE_CHECKING, Callable
 import numpy as np
 from contextlib import contextmanager
 
-from diffractix.backend import xp, current_backend, grad, hessian, jacobian, require, tracing_errors
-from diffractix.backend import jit as backend_jit
+from diffractix.backend import _solver_callback_compiler, _TracingError, require, tracing_errors, xp
 
 from diffractix.graph import (
     Node,
@@ -59,8 +58,10 @@ def _explain_tracing_errors(jit: bool):
     """Add the jit=False hint to errors from callables that cannot be traced."""
     try:
         yield
+    except _TracingError:
+        raise
     except tracing_errors() as error:
-        if not jit or current_backend() == "casadi":
+        if not jit:
             raise
         raise TypeError(
             "A callable used a value that is unknown while JIT traces it (Python control "
@@ -567,6 +568,23 @@ class Solver:
         constraint_program, constraint_descriptors, callable_constraints,
         initial_values, jit,
     ):
+        compiler = _solver_callback_compiler(
+            self.simulation._execution_cache, initial_values, self.simulation.run, resolve_symbol,
+            jit_enabled=jit,
+            has_deferred_callables=bool(callable_objectives or callable_constraints),
+            has_result_symbols=bool(objective_program.runtime_symbols or constraint_program.runtime_symbols),
+        )
+
+        def result_bindings(theta, keys, callables):
+            if not (keys or callables):
+                return None, {}
+            if compiler.bind_traced_result is not None:
+                bindings = compiler.bind_traced_result(theta, keys)
+                if bindings is not None:
+                    return None, bindings
+            result = self.simulation.run(theta)
+            return result, {key: resolve_symbol(key, result) for key in keys}
+
         def evaluate_callable(entry, view):
             value = entry.quantity(view)
             if isinstance(value, Node):
@@ -592,10 +610,7 @@ class Solver:
             return descriptor.weight * xp.sum(xp.square(value))
 
         def objective(theta):
-            result = None
-            if objective_program.runtime_symbols or callable_objectives:
-                result = self.simulation.run(theta)
-            bindings = {key: resolve_symbol(key, result) for key in objective_program.runtime_symbols}
+            result, bindings = result_bindings(theta, objective_program.runtime_symbols, callable_objectives)
             values = objective_program.evaluate(theta, bindings)
             view = result.view() if callable_objectives else None
 
@@ -619,10 +634,7 @@ class Solver:
         )
 
         def constraint_values(theta):
-            result = None
-            if constraint_program.runtime_symbols or callable_constraints:
-                result = self.simulation.run(theta)
-            bindings = {key: resolve_symbol(key, result) for key in constraint_program.runtime_symbols}
+            result, bindings = result_bindings(theta, constraint_program.runtime_symbols, callable_constraints)
             values = constraint_program.evaluate(theta, bindings)
             if callable_constraints:
                 view = result.view()
@@ -656,13 +668,15 @@ class Solver:
         n = len(initial_values)
         m = sum(sizes)
 
-        objective_gradient = grad(objective)
-        objective_hessian = hessian(objective)
-        constraint_jacobian = jacobian(constraints) if m else lambda theta: xp.zeros((0, n))
-        constraint_hessian = hessian(weighted_constraints, 0) if m else lambda theta, multipliers: xp.zeros((n, n))
+        objective_gradient = compiler.grad(objective)
+        objective_hessian = compiler.hessian(objective)
+        constraint_jacobian = compiler.jacobian(constraints) if m else lambda theta: xp.zeros((0, n))
+        constraint_hessian = (
+            compiler.hessian(weighted_constraints) if m else lambda theta, multipliers: xp.zeros((n, n))
+        )
 
-        full_objective = backend_jit(objective) if jit else objective
-        full_constraints = backend_jit(constraints) if jit else constraints
+        full_objective = compiler.jit(objective) if jit else objective
+        full_constraints = compiler.jit(constraints) if jit else constraints
 
         def checked_objective(theta):
             return check_finite_value(full_objective(theta), "Objective cost")
@@ -672,11 +686,11 @@ class Solver:
 
         callbacks = self._Callbacks(
             objective          = checked_objective,
-            gradient           = backend_jit(objective_gradient)  if jit else objective_gradient,
-            objective_hessian  = backend_jit(objective_hessian)   if jit else objective_hessian,
+            gradient           = compiler.jit(objective_gradient)  if jit else objective_gradient,
+            objective_hessian  = compiler.jit(objective_hessian)   if jit else objective_hessian,
             constraints        = checked_constraints,
-            jacobian           = backend_jit(constraint_jacobian) if jit else constraint_jacobian,
-            constraint_hessian = backend_jit(constraint_hessian)  if jit else constraint_hessian,
+            jacobian           = compiler.jit(constraint_jacobian) if jit else constraint_jacobian,
+            constraint_hessian = compiler.jit(constraint_hessian)  if jit else constraint_hessian,
         )
 
         return callbacks, graph_constraint_rows, callable_constraint_rows

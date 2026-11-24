@@ -56,6 +56,14 @@ consumes the compiled callbacks through the existing optimizer adapter.
 See the [public tracing contract](../guide/backends.md#casadi-tracing) for
 supported operations and concrete conversions.
 
+A built Simulation owns a private execution cache. The backend selects the
+transforms Solver uses for its callbacks. CasADi stores a propagation trace there
+for JIT-enabled Solvers assembled from graph expressions. The trace uses one
+symbolic theta vector in parameter order and saves each result expression when
+a callback first requests it. Each Solver compiles its own goals and constraints.
+Initial guesses and pinned bounds are passed at solve time. A solve with deferred
+Python callables or `jit=False` uses the ordinary callback path.
+
 ## Current verification
 
 The backend suites cover graph evaluation, Gaussian beams, single rays,

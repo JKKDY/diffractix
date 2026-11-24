@@ -121,7 +121,7 @@ def test_deferred_callables_reject_symbolic_nodes(kind, returned):
 
 @pytest.mark.parametrize("dynamic_kind", ["objective", "constraint"])
 def test_requesting_jit_wraps_every_callback_even_with_deferred_callables(dynamic_kind, monkeypatch):
-    import diffractix.solver.solver as solver_module
+    from diffractix import backend
 
     parameter = Parameter(0.5).variable()
     solver = make_solver(parameter)
@@ -142,7 +142,7 @@ def test_requesting_jit_wraps_every_callback_even_with_deferred_callables(dynami
         wrapped.append(function)
         return function
 
-    monkeypatch.setattr(solver_module, "backend_jit", record_jit)
+    monkeypatch.setattr(backend, "jit", record_jit)
     problem = capture_problem(solver, jit=True)
     assert len(wrapped) == 6
     theta = xp.array([2.])

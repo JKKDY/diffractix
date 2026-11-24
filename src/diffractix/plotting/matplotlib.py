@@ -1,8 +1,10 @@
 """Small Matplotlib renderer for concrete paraxial simulation results."""
 import numpy as np
-import matplotlib.pyplot as plt
 
+from . import _pyplot
 from .sampling import sample
+
+plt = _pyplot()
 
 
 # Legend name, colour, line style and width of each thin element kind.

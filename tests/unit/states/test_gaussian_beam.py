@@ -320,13 +320,16 @@ def test_string_form_reports_the_beam_here_and_its_waist():
 
 
 @pytest.mark.parametrize("span", [None, 0.5])
-def test_debug_plot_draws_the_envelope_marks_the_waist_and_shows_once(span, monkeypatch):
+@pytest.mark.parametrize("numerical", [False, True])
+def test_debug_plot_draws_the_envelope_marks_the_waist_and_shows_once(span, numerical, monkeypatch):
     import matplotlib
     matplotlib.use("Agg", force=True)
     import matplotlib.pyplot as plt
     shown = []
     monkeypatch.setattr(plt, "show", lambda: shown.append(True))
-    beam = GaussianBeam.from_waist(5e-4, 1e-6, z0=0.1).numeric()
+    beam = GaussianBeam.from_waist(5e-4, 1e-6, z0=0.1)
+    if numerical:
+        beam = beam.numeric()
 
     beam.plot(span=span, points=51)
 
@@ -336,7 +339,7 @@ def test_debug_plot_draws_the_envelope_marks_the_waist_and_shows_once(span, monk
         envelope = axes.lines[0]
         assert len(envelope.get_xdata()) == 51
         width = np.ptp(envelope.get_xdata())
-        assert width == pytest.approx(0.5 if span else 4 * max(0.1, float(beam.z_r)))
+        assert width == pytest.approx(0.5 if span else 4 * max(0.1, float(beam.numeric().z_r)))
         np.testing.assert_allclose(envelope.get_ydata().min(), 5e-4, rtol=1e-3)   # the waist is in view
         labels = axes.get_legend_handles_labels()[1]
         assert "Current Position" in labels and "Waist Location" in labels

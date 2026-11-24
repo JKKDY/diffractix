@@ -1,13 +1,13 @@
 """SX tracing and compiled numerical functions for the CasADi backend."""
 
-from functools import wraps
+from functools import partial, wraps
 from math import prod
 from threading import RLock
 from weakref import WeakKeyDictionary
 
 import numpy as np
 
-from . import _Backend
+from . import _Backend, _SolverCallbackCompiler
 
 try:
     import casadi as ca
@@ -92,7 +92,8 @@ def _result(values, shape, dtype, symbolic):
 
 
 class _Transforms:
-    def __init__(self):
+    def __init__(self, theta=None):
+        self.theta = theta
         self.traces = WeakKeyDictionary()
         self.lock = RLock()
 
@@ -108,6 +109,9 @@ class _Transforms:
             for index, entry in enumerate(signature):
                 if entry is None:
                     args.append(static_args[index])
+                elif index == 0 and self.theta is not None and entry == _signature(self.theta):
+                    symbols.append(self.theta.data)
+                    args.append(self.theta)
                 else:
                     inputs, arg = _symbol(index, *entry)
                     symbols.extend(inputs)
@@ -179,6 +183,46 @@ class _Transforms:
         return compiled
 
 
+class _OpticalResultTrace:
+    """Trace propagation once using symbolic theta and cache requested result fields."""
+
+    def __init__(self, initial_values):
+        _, self.theta = _symbol(0, *_signature(initial_values))
+        self._result = None
+        self._quantities = {}
+        self._lock = RLock()
+
+    def bindings(self, keys, run, resolve):
+        with self._lock:
+            if self._result is None:
+                self._result = run(self.theta)
+            for key in keys:
+                if key not in self._quantities:
+                    # The callback compiles this expression with its own goals.
+                    self._quantities[key] = resolve(key, self._result)
+            return {key: self._quantities[key] for key in keys}
+
+
+def _optical_callback_compiler(cache, initial_values, run, resolve):
+    trace = cache.get(_OpticalResultTrace)
+    if trace is None:
+        trace = cache.setdefault(_OpticalResultTrace, _OpticalResultTrace(initial_values))
+    transforms = _Transforms(trace.theta)
+
+    def bind_traced_result(theta, keys):
+        if theta is not trace.theta:
+            return None
+        return trace.bindings(keys, run, resolve)
+
+    return _SolverCallbackCompiler(
+        jit=partial(transforms.transform, kind="jit"),
+        grad=partial(transforms.transform, kind="grad"),
+        jacobian=partial(transforms.transform, kind="jacobian"),
+        hessian=partial(transforms.transform, kind="hessian"),
+        bind_traced_result=bind_traced_result,
+    )
+
+
 def _static_key(static):
     return tuple((index, type(value), value) for index, value in static)
 
@@ -212,4 +256,5 @@ def _load_casadi() -> _Backend:
         jit=jit,
         require=require,
         tracing_errors=(TracingError,),
+        optical_callback_compiler=_optical_callback_compiler,
     )

@@ -547,58 +547,9 @@ class GaussianBeam(ParaxialState):
         ValueError
             If a field has no value yet, such as an `n` left to the system's
             ambient index; give it a value, or plot the result of a run.
+        ImportError
+            If Matplotlib cannot be imported.
         """
-        import matplotlib.pyplot as plt
+        from diffractix.plotting.gaussian_beam import _plot_gaussian_beam
 
-        beam = self._for_display()
-        if beam is None:
-            raise ValueError(
-                f"{self._describe_fields()} cannot be plotted: a field has no value yet. "
-                "Give it one (for example n=1.0), or plot a result with result.plot()."
-            )
-        if beam is not self:
-            return beam.plot(span=span, points=points)
-
-        # We want to show enough context. If the waist is 1km away, showing 1mm is useless.
-        # If the waist is 1mm away, showing 1km is useless.
-        if span is None:
-            # Heuristic: Look at distance to waist (z0) and Rayleigh range (z_r)
-            dist_to_waist = abs(self.z0)
-            scale = max(dist_to_waist, self.z_r)
-            span = 4 * scale if scale > 0 else 0.1 # Default to 10cm if scale is tiny
-
-        z_local = np.linspace(-span/2, span/2, points)
-
-        # Calculate Envelope w(z):
-        w_vals = [self.w_at_z(z) for z in z_local]
-        w_vals = np.array(w_vals)
-
-        # Ploting
-        plt.figure(figsize=(8, 4))
-
-        # The Envelope
-        plt.fill_between(z_local, w_vals, -w_vals, color='blue', alpha=0.1, label='Beam Envelope (1/e²)')
-        plt.plot(z_local, w_vals, 'b-', lw=1.5)
-        plt.plot(z_local, -w_vals, 'b-', lw=1.5)
-
-        # Current Position Marker
-        plt.axvline(0, color='red', linestyle='--', label='Current Position')
-        plt.text(0, max(w_vals)*0.1, " You Are Here", color='red', rotation=90, verticalalignment='bottom')
-
-        # Waist Position Marker (if within range)
-        z_waist_rel = self.z0 # z0 is "position of waist relative to us"
-
-        if min(z_local) < z_waist_rel < max(z_local):
-            plt.axvline(z_waist_rel, color='green', linestyle=':', label='Waist Location')
-            plt.text(z_waist_rel, max(w_vals)*0.1, f" Waist (w0={self.w0*1e6:.1f}um)", color='green', rotation=90)
-
-        # Labels
-        plt.title(f"Beam Diagnostic (n={self.n})")
-        plt.xlabel("Relative Propagation Distance [m]\n(z > 0 is forward)")
-        plt.ylabel("Beam Radius w(z) [m]")
-        plt.legend(loc='upper right')
-        plt.grid(True, which='both', alpha=0.3)
-        plt.tight_layout()
-        plt.show()
-
-
+        return _plot_gaussian_beam(self, span, points)

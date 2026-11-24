@@ -33,7 +33,7 @@ import importlib.util
 import os
 from dataclasses import dataclass
 from threading import RLock
-from typing import Any, Callable
+from typing import Any, Callable, NamedTuple
 
 __all__ = [
     "xp",
@@ -53,6 +53,20 @@ _requested = os.environ.get("DIFFRACTIX_BACKEND", "auto").strip().lower()
 _active: _Backend | None = None
 
 
+class _SolverCallbackCompiler(NamedTuple):
+    """Build numerical solver callbacks and optionally bind traced result symbols."""
+
+    jit: Callable
+    grad: Callable
+    jacobian: Callable
+    hessian: Callable
+    bind_traced_result: Callable | None = None
+
+
+class _TracingError(TypeError):
+    """A Diffractix tracing error with its own diagnostic message."""
+
+
 @dataclass(frozen=True)
 class _Backend:
     name: str
@@ -64,6 +78,7 @@ class _Backend:
     require:Callable[[Any, str], None]
     # Errors raised when a function uses a traced value where a concrete one is needed.
     tracing_errors: tuple[type[BaseException], ...] = ()
+    optical_callback_compiler: Callable[..., _SolverCallbackCompiler] | None = None
 
 def configure(name: str) -> None:
     """Choose the numerical backend. Must be run before first use. 
@@ -137,6 +152,16 @@ def _get_backend() -> _Backend:
         if _active is None:
             _active = _initialize(_requested)
         return _active
+
+
+def _solver_callback_compiler(
+    cache, initial_values, run, resolve, *, jit_enabled, has_deferred_callables, has_result_symbols,
+):
+    if jit_enabled and has_result_symbols and not has_deferred_callables:
+        with_optics = _get_backend().optical_callback_compiler
+        if with_optics is not None:
+            return with_optics(cache, initial_values, run, resolve)
+    return _SolverCallbackCompiler(jit, grad, jacobian, hessian)
 
 
 class _LazyXP:

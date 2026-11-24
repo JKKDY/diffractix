@@ -25,11 +25,11 @@ inverse design.
 pip install diffractix
 ```
 
-The base install uses Autograd, NumPy, SciPy and Matplotlib and needs Python 3.11 or
-newer. Optional extras:
+The base install uses Autograd, NumPy and SciPy and needs Python 3.11 or newer. The base isntall is kept deliberately slim, so it can run on most platforms (inclduing inside the browser). Optional extras:
 
 - `pip install "diffractix[jax]"` adds the JAX backend.
 - `pip install "diffractix[casadi]"` adds the CasADi backend.
+- `pip install "diffractix[plot]"` adds Matplotlib for plotting.
 - `pip install "diffractix[ipopt]"`, `"diffractix[nlopt]"` or `"diffractix[all-solvers]"`:
   the IPOPT and NLopt optimizers. IPOPT is easiest to install with
   `conda install -c conda-forge cyipopt`.

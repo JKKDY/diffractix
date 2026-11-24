@@ -154,6 +154,8 @@ class Simulation:
         self._optical_inputs = tuple(optical_inputs)
         self.bindings = MappingProxyType(dict(bindings))
 
+        self._execution_cache = {}
+
     @cached_property
     def symbolic(self):
         """Symbolic result: this `Simulation`'s result as graph expressions, for

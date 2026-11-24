@@ -27,7 +27,6 @@ classifiers = [
 dependencies = [
     "autograd>=1.7",
     "numpy>=1.26",
-    "matplotlib>=3.8",
     "scipy>=1.11.2",
 ]
 
@@ -39,6 +38,9 @@ jax = [
 ]
 casadi = [
     "casadi>=3.7.2",
+]
+plot = [
+    "matplotlib>=3.8",
 ]
 # cyipopt needs the Ipopt library; pip builds it from source. The simplest install
 # is `conda install -c conda-forge cyipopt`, which pip then sees as satisfied.
@@ -53,6 +55,7 @@ all-solvers = [
     "nlopt",
 ]
 dev = [
+    "matplotlib>=3.8",
     "pytest",
     "coverage",
     "ruff==0.17.4",  # keep in step with .pre-commit-config.yaml
@@ -60,6 +63,7 @@ dev = [
 ]
 # Build the documentation: zensical build --clean --strict (see zensical.toml).
 docs = [
+    "matplotlib>=3.8",
     "zensical>=0.1.1,<0.2",
     "mkdocstrings-python>=2",
 ]

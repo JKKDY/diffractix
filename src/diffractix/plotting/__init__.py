@@ -3,6 +3,19 @@
 __all__ = ["plot"]
 
 
+def _pyplot():
+    try:
+        import matplotlib.pyplot as plt
+    except ModuleNotFoundError as error:
+        if error.name and error.name.split(".")[0] == "matplotlib":
+            raise ImportError(
+                'Plotting requires Matplotlib. Install it with python -m pip install matplotlib '
+                'or python -m pip install "diffractix[plot]".'
+            ) from error
+        raise
+    return plt
+
+
 def plot(result, ax=None, *, show_elements=True, show_axis=True):
     """Plot a concrete 2D trace of a result.
 
@@ -38,13 +51,5 @@ def plot(result, ax=None, *, show_elements=True, show_axis=True):
     thick element such as `GRIN` retains only its boundary states; the interior
     is not sampled. General probing at an arbitrary z is not supported.
     """
-    try:
-        from .matplotlib import plot as render
-    except ModuleNotFoundError as error:
-        if error.name and error.name.split(".")[0] == "matplotlib":
-            raise ImportError(
-                "Plotting requires Matplotlib, which is installed with Diffractix. "
-                "Repair the installation with python -m pip install matplotlib."
-            ) from error
-        raise
+    from .matplotlib import plot as render
     return render(result, ax=ax, show_elements=show_elements, show_axis=show_axis)

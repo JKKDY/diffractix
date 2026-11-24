@@ -88,3 +88,89 @@ else:
     raise AssertionError('An integer was silently rounded')
 print('ok')
 """, preference="casadi") == "ok"
+
+
+def test_solver_reuses_one_optics_trace_and_preserves_callbacks():
+    assert run_python("""
+from unittest.mock import patch
+
+import numpy as np
+from diffractix import GaussianBeam, Plane, Solver, Space, System, ThinLens
+from diffractix.backend import _solver_callback_compiler
+from diffractix.backend._casadi_array import SXArray
+from diffractix.simulation import Simulation
+from diffractix.solver import solver as solver_module
+
+traced_inputs = []
+traced_quantities = []
+run = Simulation.run
+resolve = solver_module.resolve_symbol
+
+def counted_run(self, theta=None):
+    if isinstance(theta, SXArray):
+        traced_inputs.append(theta)
+    return run(self, theta)
+
+def counted_resolve(key, result):
+    if isinstance(result.theta, SXArray):
+        traced_quantities.append(key)
+    return resolve(key, result)
+
+for count in (2, 4, 8):
+    spaces = [Space(d=0.06).variable(d=(0.01, 0.4)) for _ in range(count)]
+    lenses = [ThinLens(f=(0.08, 0.12)[i % 2]).variable(f=(0.02, 0.4)) for i in range(count)]
+    image = Plane()
+    parts = [element for pair in zip(spaces, lenses) for element in pair]
+    sim = System(*parts, Space(d=0.15), image,
+                 source=GaussianBeam.from_waist(0.0005, 1.064e-6)).build()
+    symbolic = sim.symbolic
+    assert not sim._execution_cache
+
+    def make_solver(goal, focus):
+        solver = Solver(sim)
+        solver.target(value=symbolic[image].after.w, target=goal, scale=0.00012)
+        if focus:
+            solver.target(value=symbolic[image].after.w0, target=goal, scale=0.00012)
+        for lens in lenses:
+            solver.require(symbolic[lens].after.w <= 0.002)
+        return solver
+
+    theta = sim.initial_values.values
+    lo = np.array([p.lower_bound for p in sim.parameter_data])
+    hi = np.array([p.upper_bound for p in sim.parameter_data])
+    with patch.object(Simulation, 'run', counted_run), patch.object(solver_module, 'resolve_symbol', counted_resolve):
+        first = make_solver(0.00012, False)
+        start = len(traced_inputs)
+        first.solve()
+        assert len(traced_inputs) == start + 1
+        assert len(sim._execution_cache) == 1
+        trace, = sim._execution_cache.values()
+        assert traced_inputs[-1] is trace.theta
+        assert len(trace._quantities) == count + 1
+        start = len(traced_inputs)
+        quantities_start = len(traced_quantities)
+        second = make_solver(0.00011998, True)
+        new_guess = theta * 1.01
+        lo[0] = hi[0] = new_guess[0]
+        second.solve(x0=new_guess, x_lower=lo, x_upper=hi)
+        assert len(traced_inputs) == start
+        assert len(traced_quantities) == quantities_start + 1
+
+    # Bypass only the solver's cache selection. Both sides still use the CasADi
+    # backend and identical solver settings, so callback parity can be exact.
+    def uncached_compiler(cache, initial_values, run, resolve, **options):
+        options['has_result_symbols'] = False
+        return _solver_callback_compiler(cache, initial_values, run, resolve, **options)
+
+    with patch.object(solver_module, '_solver_callback_compiler', uncached_compiler):
+        reference = make_solver(0.00011998, True)
+        reference.solve(x0=new_guess, x_lower=lo, x_upper=hi)
+    sample = theta * 1.03
+    for name in ('objective', 'gradient', 'constraints', 'jacobian', 'objective_hessian'):
+        actual = getattr(second._cache.callbacks, name)(sample)
+        expected = getattr(reference._cache.callbacks, name)(sample)
+        actual, expected = np.asarray(actual), np.asarray(expected)
+        assert actual.shape == expected.shape and actual.dtype == expected.dtype
+        assert actual.tobytes() == expected.tobytes(), name
+print('ok')
+""", preference="casadi") == "ok"
