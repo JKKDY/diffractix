@@ -13,7 +13,7 @@ def test_source_angle_and_lens_focal_length_recover_known_ray_design(use_jit):
     solver = Solver(system)
     solver.target(value=lambda sim: sim[lens].before.x, target=0.004, scale=0.004, label="lens height")
     solver.target(value=lambda sim: sim.final.theta, target=0, scale=0.02, label="collimated")
-    solution = solver.solve(jit=use_jit, options={"ftol": 1e-12, "maxiter": 100})
+    solution = solver.solve(optimizer="scipy", jit=use_jit, options={"ftol": 1e-12, "maxiter": 100})
     assert solution.success and solution.feasible
     assert solution.value(angle) == pytest.approx(0.02, abs=2e-7)
     assert solution.value(lens.f) == pytest.approx(0.2, abs=2e-6)
@@ -46,7 +46,7 @@ def test_system_composite_element_and_solver_constraints_change_physical_optimum
     solver = Solver(system)
     solver.target(value=lambda sim: sim.final.x, target=0.001, scale=0.001)
     solver.require(Constraint(lambda sim: sim.final.x, upper_bound=0.0004, label="output limit"))
-    solution = solver.solve(options={"ftol": 1e-12})
+    solution = solver.solve(optimizer="scipy", options={"ftol": 1e-12})
     assert solution.success and solution.feasible
     # Two planar interfaces conserve n*theta: glass angle = 0.03/1.5.
     assert solution.value(thickness) == pytest.approx(0.02, abs=1e-7)
@@ -62,7 +62,7 @@ def test_independent_indices_remain_continuous_during_optimization():
     interface = Interface(n1=incoming, n2=1)
     solver = Solver(System(interface, source=Ray(x=0, theta=0.01, n=upstream)))
     solver.target(upstream - 1.6, incoming - 1.1)
-    solution = solver.solve(options={"ftol": 1e-12})
+    solution = solver.solve(optimizer="scipy", options={"ftol": 1e-12})
     assert solution.success and solution.feasible
     assert solution.value(upstream) == pytest.approx(1.35, abs=1e-6)
     assert solution.value(incoming) == pytest.approx(1.35, abs=1e-6)
@@ -93,7 +93,7 @@ def test_generated_gap_constraint_prevents_optimized_element_crossing_station():
     system = System(upstream, source=Ray(x=0, theta=0.01, n=1))
     system.add(station, z=0.1)
     solver = Solver(system).target(distance / 0.2 - 1)
-    solution = solver.solve(options={"ftol": 1e-12})
+    solution = solver.solve(optimizer="scipy", options={"ftol": 1e-12})
     assert solution.success and solution.feasible
     assert solution.value(distance) == pytest.approx(0.1, abs=1e-7)
     assert solution.run()[station].z_start == pytest.approx(0.1)
@@ -109,7 +109,7 @@ def test_coupled_optical_gaps_keep_mechanical_clearance_at_small_scale():
                            source=Ray(x=0, theta=0.01, n=1)))
     solver.target((first - 0.01) / 0.01, (middle - 0.014) / 0.01)
     solver.require(Constraint(output.d, lower_bound=0.004, label="output clearance"))
-    solution = solver.solve(options={"ftol": 1e-12})
+    solution = solver.solve(optimizer="scipy", options={"ftol": 1e-12})
     assert solution.success and solution.feasible
     assert solution.value(first) == pytest.approx(0.0085, abs=1e-7)
     assert solution.value(middle) == pytest.approx(0.0125, abs=1e-7)
@@ -127,7 +127,7 @@ def test_ray_bundle_array_residual_recovers_analytical_focus(use_jit):
     solver = Solver(System(ThinLens(f=focal), Space(d=length),
                            source=RayBundle(x=positions, theta=np.zeros(3), n=1)))
     solver.target(lambda sim: sim.final.x / radius, label="bundle focus")
-    solution = solver.solve(jit=use_jit, options={"ftol": 1e-12, "maxiter": 100})
+    solution = solver.solve(optimizer="scipy", jit=use_jit, options={"ftol": 1e-12, "maxiter": 100})
     assert solution.success and solution.feasible
     f = solution.value(focal)
     assert f == pytest.approx(length, abs=1e-7)
@@ -151,7 +151,7 @@ def test_ray_bundle_array_target_and_scale_recover_nonzero_image(use_jit):
     solver = Solver(System(ThinLens(f=focal), Space(d=0.05),
                            source=RayBundle(x=positions, theta=np.zeros(3), n=1)))
     solver.target(value=lambda sim: sim.final.x, target=target, scale=scale, label="image")
-    solution = solver.solve(jit=use_jit, options={"ftol": 1e-12})
+    solution = solver.solve(optimizer="scipy", jit=use_jit, options={"ftol": 1e-12})
     assert solution.success and solution.feasible
     # x_out = x_in*(1-L/f) = x_in/2 requires f=2L.
     assert solution.value(focal) == pytest.approx(0.1, abs=2e-7)
@@ -197,7 +197,7 @@ def test_symbolic_result_expressions_define_objectives_and_labelled_inequalities
     solver.target(value=sim.final.z0, target=0.0, scale=0.08, label="waist at the end")
     # The unconstrained optimum is 0.08; the limit makes the inequality active.
     solver.require(sim[space].z_end <= 0.06, label="short enough")
-    solution = solver.solve(options={"ftol": 1e-12})
+    solution = solver.solve(optimizer="scipy", options={"ftol": 1e-12})
     assert solution.success and solution.feasible
     assert solution.value(distance) == pytest.approx(0.06, abs=1e-7)
     limit = next(entry for entry in solution.constraints if entry.label == "short enough")
@@ -209,7 +209,7 @@ def test_value_expression_with_default_scale_is_a_relative_preference():
     thickness = Parameter(0.01).variable(bounds=(0.001, 0.05))
     solver = Solver(System(source=Ray(x=thickness, theta=0, n=1)))
     solver.target(value=thickness, target=0.02, label="preferred thickness")
-    solution = solver.solve(options={"ftol": 1e-14})
+    solution = solver.solve(optimizer="scipy", options={"ftol": 1e-14})
     assert solution.value(thickness) == pytest.approx(0.02, abs=1e-7)
     assert solution.objectives[0].value == pytest.approx((solution.x[0] - 0.02) / 0.02, abs=1e-12)
 
@@ -225,7 +225,7 @@ def test_a_limit_on_every_stage_of_the_system_is_one_loop_over_symbolic_stages()
     limit = 0.8e-3
     for stage in sim.stages:
         solver.require(stage.after.w <= limit)
-    solution = solver.solve(options={"ftol": 1e-12})
+    solution = solver.solve(optimizer="scipy", options={"ftol": 1e-12})
     assert solution.success and solution.feasible
     assert max(float(state.w) for state in solution.run().states) <= limit * (1 + 1e-6)
     assert len(solution.constraints) >= len(sim.stages)

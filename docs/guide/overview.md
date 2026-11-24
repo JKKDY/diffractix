@@ -72,13 +72,13 @@ solver.target(value=sim[workpiece].after.z0, target=0.0, scale=1 * mm)
 solution = solver.solve()
 
 print("Gap:", units.format(solution.value(gap.d), mm))
-print("Focal length:", units.format(solution.value(lens.f), mm))
+print("Focal length:", units.format(solution.value(lens.f), mm, digits=3))
 print("Spot radius:", units.format(solution.run()[workpiece].after.w, um))
 ```
 
 ```text title="Output"
 Gap: 83.54 mm
-Focal length: 66.43 mm
+Focal length: 66.4 mm
 Spot radius: 30 um
 ```
 

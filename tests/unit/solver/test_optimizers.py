@@ -139,12 +139,17 @@ def import_fake_nlopt_backend(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    ("backend", "function_name", "method", "options"),
+    ("backend", "function_name", "method", "options", "nlopt_available", "expected_options"),
     [
-        (Optimizer.SCIPY, "solve_scipy", "SLSQP", {"maxeval": 100}),
-        (Optimizer.IPOPT, "solve_ipopt", None, {"maxeval": 100}),
-        (Optimizer.NLOPT, "solve_nlopt", "LD_SLSQP", {"maxeval": 100}),
-        pytest.param(None, "solve_scipy", None, None, id="default-scipy"),
+        (Optimizer.SCIPY, "solve_scipy", "SLSQP", {"maxiter": 100}, True, {"maxiter": 100}),
+        (Optimizer.IPOPT, "solve_ipopt", None, {"maxeval": 100}, True, {"maxeval": 100}),
+        (Optimizer.NLOPT, "solve_nlopt", "LD_SLSQP", {"maxeval": 100}, True, {"maxeval": 100}),
+        pytest.param(None, "solve_scipy", None, None, False, {}, id="fallback-scipy"),
+        pytest.param(None, "solve_scipy", "trust-constr", None, True, {}, id="implicit-scipy-method"),
+        pytest.param(
+            None, "solve_nlopt", None, {"maxeval": 100}, True,
+            {"ftol_rel": 1e-12, "xtol_rel": 1e-12, "maxeval": 100}, id="prefer-nlopt",
+        ),
     ],
 )
 def test_solver_dispatch_matrix_forwards_options(
@@ -153,6 +158,8 @@ def test_solver_dispatch_matrix_forwards_options(
     function_name,
     method,
     options,
+    nlopt_available,
+    expected_options,
 ):
     from diffractix.solver import solver as solver_module
 
@@ -172,11 +179,13 @@ def test_solver_dispatch_matrix_forwards_options(
         )
 
     monkeypatch.setattr(solver_module, function_name, solve)
+    monkeypatch.setattr(solver_module, "find_spec", lambda name: object() if nlopt_available else None)
 
-    solution = (
-        solver.solve() if backend is None
-        else solver.solve(optimizer=backend, method=method, options=options)
-    )
+    solve_kwargs = {"method": method, "options": options}
+    if backend is not None:
+        solve_kwargs["optimizer"] = backend
+    original_options = None if options is None else dict(options)
+    solution = solver.solve(**solve_kwargs)
     assert isinstance(solution, Solution)
     np.testing.assert_array_equal(solution.x, [1.5])
     assert solution.success is True
@@ -184,9 +193,8 @@ def test_solver_dispatch_matrix_forwards_options(
     assert solution.message == "solved"
     assert isinstance(received["problem"], Problem)
     assert received["method"] == method
-    assert received["options"] == ({} if options is None else options)
-    if options is not None:
-        assert options == {"maxeval": 100}
+    assert received["options"] == expected_options
+    assert options == original_options
 
 
 @pytest.mark.parametrize(
@@ -805,7 +813,5 @@ def test_unknown_optimizer_is_rejected_with_the_choices_and_solve_is_keyword_onl
     solver = Solver(System(source=Ray(x=parameter, theta=0, n=1))).target(parameter - 1.0)
     with pytest.raises(ValueError, match="'scipy', 'ipopt', 'nlopt'|choose one of"):
         solver.solve(optimizer="gradient-descent")
-    with pytest.raises(ValueError, match="Unsupported optimizer"):
-        solver.solve(optimizer=None)
     with pytest.raises(TypeError):
         solver.solve(Optimizer.SCIPY)

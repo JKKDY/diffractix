@@ -25,7 +25,7 @@ def test_override_arrays_require_canonical_vector_shape(solver, argument, value)
         solver, "_update_reduction",
     ) as reduce, patch.object(solver_module, "solve_scipy") as dispatch:
         with pytest.raises(ValueError, match=rf"{argument}.*shape"):
-            solver.solve(**{argument: value})
+            solver.solve(optimizer="scipy", **{argument: value})
     build.assert_not_called()
     reduce.assert_not_called()
     dispatch.assert_not_called()
@@ -49,7 +49,7 @@ def test_invalid_overrides_fail_before_compilation_reduction_or_dispatch(solver,
         solver, "_update_reduction",
     ) as reduce, patch.object(solver_module, "solve_scipy") as dispatch:
         with pytest.raises(ValueError, match=message):
-            solver.solve(**overrides)
+            solver.solve(optimizer="scipy", **overrides)
     build.assert_not_called()
     reduce.assert_not_called()
     dispatch.assert_not_called()

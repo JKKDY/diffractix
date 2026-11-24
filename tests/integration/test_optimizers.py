@@ -64,6 +64,21 @@ def test_real_nlopt_backend_smoke():
     assert np.all(values <= problem.constraint_upper + 1e-7)
 
 
+@pytest.mark.nlopt
+def test_solver_defaults_to_nlopt_when_installed():
+    nlopt = pytest.importorskip("nlopt")
+    from diffractix import Parameter, Ray, Solver, System
+
+    x = Parameter(0.5).variable(bounds=(0.0, 2.0))
+    solver = Solver(System(source=Ray(x=x, theta=0, n=1))).target(x - 1.25)
+
+    solution = solver.solve()
+
+    assert solution.success, solution.message
+    assert solution.value(x) == pytest.approx(1.25)
+    assert solution._result.raw["algorithm"] == nlopt.opt(nlopt.LD_SLSQP, 1).get_algorithm_name()
+
+
 @pytest.mark.ipopt
 def test_real_ipopt_backend_smoke():
     pytest.importorskip("cyipopt")

@@ -37,6 +37,9 @@ The base install uses Autograd, NumPy and SciPy and needs Python 3.11 or newer. 
 Set `DIFFRACTIX_BACKEND` to `autograd`, `jax`, or `casadi` to select a backend.
 By default Diffractix uses JAX when installed and Autograd otherwise.
 
+`Solver.solve()` prefers NLopt's SLSQP when installed and uses SciPy's SLSQP
+otherwise. Select either optimizer explicitly to use its specific options.
+
 ## Quick start
 
 Choose the focal length of a lens so that an off-axis ray crosses the axis at an image

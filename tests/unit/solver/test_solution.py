@@ -196,7 +196,7 @@ def test_solve_reports_reduced_constraints_and_keeps_overrides_local(monkeypatch
     solver = Solver(System(source=Ray(x=p, theta=0, n=1)))
     solver.target(p - 3)
     solver.require(Constraint(p, lower_bound=1, label="bound-redundant"))
-    solution = solver.solve(x0=[1.5], x_lower=[1], x_upper=[2])
+    solution = solver.solve(optimizer="scipy", x0=[1.5], x_lower=[1], x_upper=[2])
     assert solution.success and solution.feasible
     assert solution.x[0] == pytest.approx(2, abs=1e-6)
     assert solution.cost == pytest.approx(1, abs=1e-6)
@@ -205,7 +205,7 @@ def test_solve_reports_reduced_constraints_and_keeps_overrides_local(monkeypatch
     assert solver._cache.output_indices == ()
     assert solution.simulation.parameter_data[0].upper_bound == 2
     assert solver.simulation.parameter_data[0].upper_bound == 5
-    second = solver.solve(x_upper=[4])
+    second = solver.solve(optimizer="scipy", x_upper=[4])
     assert second.x[0] == pytest.approx(3, abs=1e-6)
     assert solution.x[0] == pytest.approx(2, abs=1e-6)
     assert solution.constraints[0].value == pytest.approx(2, abs=1e-6)
@@ -432,10 +432,10 @@ def test_solved_values_are_kept_inside_their_bounds_so_solves_can_be_chained(mon
 
     monkeypatch.setattr(solver_module, "solve_scipy", overshooting)
     simulation, solver, _, distance = focus_model()
-    solution = solver.solve()
+    solution = solver.solve(optimizer="scipy")
     assert solution.x[0] == 1.0 == distance.upper_bound
     chained = Solver(solution.simulation).target(value=solution.simulation.symbolic.final.x, target=0.0)
-    assert chained.solve().x[0] == 1.0
+    assert chained.solve(optimizer="scipy").x[0] == 1.0
 
 
 def test_initial_values_can_be_passed_directly_as_a_starting_point():
@@ -462,7 +462,7 @@ def test_a_real_bound_violation_is_not_clipped_and_is_reported(monkeypatch):
 
     monkeypatch.setattr(solver_module, "solve_scipy", overshooting)
     _, solver, _, distance = focus_model()
-    solution = solver.solve()
+    solution = solver.solve(optimizer="scipy")
     assert solution.x[0] > distance.upper_bound
     assert not solution.feasible
     assert isinstance(solution.violations[-1], ParameterBoundResult)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from importlib.util import find_spec
 from math import isfinite
 from numbers import Real
 from dataclasses import dataclass, replace
@@ -309,7 +310,7 @@ class Solver:
     def solve(
         self,
         *,
-        optimizer: Optimizer | str = Optimizer.SCIPY,
+        optimizer: Optimizer | str | None = None,
         method=None,
         options: dict | None = None,
         feasibility_tolerance: float = DEFAULT_FEASIBILITY_TOLERANCE,
@@ -323,11 +324,14 @@ class Solver:
         Parameters
         ----------
         optimizer : Optimizer or str, optional
-            Backend to use. Defaults to ``Optimizer.SCIPY``.
+            Backend to use. With neither an optimizer nor a method specified,
+            uses NLopt's SLSQP when installed and SciPy's SLSQP otherwise.
+            A method supplied on its own selects SciPy.
         method : str, optional
             Backend-specific algorithm name. Defaults to the backend's own default.
         options : dict, optional
-            Backend-specific options. Defaults to ``None``.
+            Backend-specific options. Automatic NLopt selection defaults to
+            ``ftol_rel=1e-12``, ``xtol_rel=1e-12``, and ``maxeval=500``.
         feasibility_tolerance : float, optional
             Maximum constraint or bound violation still counted as feasible. Defaults
             to `DEFAULT_FEASIBILITY_TOLERANCE`.
@@ -365,6 +369,12 @@ class Solver:
         may use different `x0`, bounds or `optimizer`.
         """
         n = len(self.simulation._optics_program.parameter_indices)
+        if optimizer is None:
+            optimizer = Optimizer.SCIPY
+            if method is None and find_spec("nlopt") is not None:
+                optimizer = Optimizer.NLOPT
+                options = {"ftol_rel": 1e-12, "xtol_rel": 1e-12, "maxeval": 500, **(options or {})}
+
         try:
             optimizer = Optimizer(optimizer.lower() if isinstance(optimizer, str) else optimizer)
         except ValueError:

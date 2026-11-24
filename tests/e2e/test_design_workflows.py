@@ -49,7 +49,7 @@ def test_galilean_expander_design_reaches_the_geometric_solution_and_reports_it(
     solver.target(value=sim[output].after.divergence_angle, target=initial.source.divergence_angle / 4,
                   label="Output divergence")
     solver.require(sim[collimating].after.w <= 2.5 * mm, label="Collimating lens aperture")
-    solution = solver.solve(options={"ftol": 1e-14})
+    solution = solver.solve(optimizer="scipy", options={"ftol": 1e-14})
     optimized = solution.run()
 
     assert solution.success and solution.feasible
@@ -147,7 +147,7 @@ def test_fiber_coupling_design_with_custom_composites_reaches_the_target_mode():
     solver.target(value=sim[fiber].after.z0, target=0.0, scale=target_mode.z_r, label="Waist position")
     for package in lenses:
         solver.require(sim[package.lens].after.w <= 1 * mm, label=f"{package.label} aperture")
-    solution = solver.solve(options={"maxiter": 400, "ftol": 1e-13})
+    solution = solver.solve(optimizer="scipy", options={"maxiter": 400, "ftol": 1e-13})
     arriving = solution.run()[fiber].after
 
     assert solution.success and solution.feasible
@@ -191,7 +191,7 @@ def test_imaging_design_finds_the_image_plane_of_a_thick_lens_placed_by_its_cent
     simulation = system.build()
     solver = Solver(simulation)
     solver.target(lambda sim: sim[image].after.x / mm, label="Ray heights at the image")
-    solution = solver.solve(options={"ftol": 1e-15})
+    solution = solver.solve(optimizer="scipy", options={"ftol": 1e-15})
     result = solution.run()
 
     # Independent expectation: object distance s to the front vertex, then the image
@@ -237,7 +237,7 @@ def test_an_impossible_requirement_is_reported_as_infeasible_and_named():
     solver = add_focus_goals(Solver(simulation), simulation, workpiece)
     # Diffraction puts the smallest spot this lens range can make far above 1 um.
     solver.require(simulation.symbolic[workpiece].after.w <= 1 * um, label="Sub-micron spot")
-    solution = solver.solve(options={"maxiter": 200})
+    solution = solver.solve(optimizer="scipy", options={"maxiter": 200})
 
     assert not solution.feasible
     assert [entry.label for entry in solution.violations] == ["Sub-micron spot"]
@@ -252,7 +252,7 @@ def test_an_impossible_requirement_is_reported_as_infeasible_and_named():
 
 def test_a_stopped_optimization_can_be_continued_from_its_solution():
     simulation, lens, workpiece = focusing_problem()
-    stopped = add_focus_goals(Solver(simulation), simulation, workpiece).solve(options={"maxiter": 2})
+    stopped = add_focus_goals(Solver(simulation), simulation, workpiece).solve(optimizer="scipy", options={"maxiter": 2})
 
     assert not stopped.success and stopped.feasible
     assert "teration" in stopped.message
@@ -261,7 +261,7 @@ def test_a_stopped_optimization_can_be_continued_from_its_solution():
     # Continue from where it stopped: the solution's simulation starts at the reached design.
     continued_simulation = stopped.simulation
     continued = add_focus_goals(Solver(continued_simulation), continued_simulation, workpiece).solve(
-        options={"ftol": 1e-14})
+        optimizer="scipy", options={"ftol": 1e-14})
 
     assert continued.success and continued.feasible
     assert continued.cost < first_cost

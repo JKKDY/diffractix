@@ -15,7 +15,7 @@ def test_built_constraint_program_retains_handle_before_external_reassignment(ow
     space.d = 0.25
     distance.value = 0.2
     solver = Solver(simulation).target(lambda sim: sim.final.x / 0.002 - 1)
-    solution = solver.solve(options={"ftol": 1e-12})
+    solution = solver.solve(optimizer="scipy", options={"ftol": 1e-12})
     assert solution.success and solution.feasible
     assert solution.value(distance) == pytest.approx(0.1, abs=1e-7)
     assert solution.run().final.x == pytest.approx(0.001, abs=1e-9)
@@ -53,7 +53,7 @@ def _weak_references_after_dropping_the_model():
     system = System(gap, source=Ray(x=0, theta=0.01, n=1)).add(Plane(), z=0.1)
     simulation = system.build()
     solver = Solver(simulation).target(distance / 0.08 - 1)
-    solution = solver.solve(options={"ftol": 1e-12})
+    solution = solver.solve(optimizer="scipy", options={"ftol": 1e-12})
     references = {"parameter": weakref.ref(distance), "element": weakref.ref(gap)}
     del distance, gap, system, solver
     gc.collect()

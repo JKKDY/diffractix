@@ -12,7 +12,7 @@ def test_vector_optical_constraints_and_scalar_target_solve_together(use_jit):
     solver = Solver(System(Space(d=1), source=Ray(x=position, theta=angle, n=1)))
     solver.target(lambda sim: sim.final.x - 1)
     solver.require(Constraint(lambda sim: sim.final.vector, lower_bound=-0.25, upper_bound=0.4))
-    solution = solver.solve(jit=use_jit, options={"ftol": 1e-12})
+    solution = solver.solve(optimizer="scipy", jit=use_jit, options={"ftol": 1e-12})
     assert solution.success and solution.feasible
     assert solution.run().final.x == pytest.approx(0.4, abs=1e-7)
     assert solution.cost == pytest.approx(0.36, abs=1e-7)
@@ -35,7 +35,7 @@ def test_dynamic_branch_optimizes_numerical_outputs_eagerly():
         with pytest.raises(TypeError, match="Cannot branch in Python.*xp.where"):
             solver.solve(jit=False)
         return
-    solution = solver.solve(jit=False, options={"ftol": 1e-12})
+    solution = solver.solve(optimizer="scipy", jit=False, options={"ftol": 1e-12})
     assert solution.success and solution.feasible
     assert solution.value(position) == pytest.approx(1, abs=1e-6)
     assert solution.objectives[0].cost < 1e-11

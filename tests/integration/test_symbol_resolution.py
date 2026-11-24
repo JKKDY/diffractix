@@ -15,7 +15,7 @@ def test_bound_expression_composes_with_runtime_state_and_solution_reporting(ali
     solver = Solver(system)
     key = "objective_distance" if alias else "distance_twice"
     solver.target(lambda sim: Symbol(key) / 0.2 + sim.final.x / 0.001 - 2)
-    solution = solver.solve(options={"ftol": 1e-12})
+    solution = solver.solve(optimizer="scipy", options={"ftol": 1e-12})
     # At d=0.1 each summand is one.
     assert solution.success and solution.feasible
     assert solution.value(distance) == pytest.approx(0.1, abs=1e-7)

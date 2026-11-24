@@ -88,19 +88,22 @@ choices that depend on a result value. Expressions compile with the rest of the 
 solution = solver.solve()
 print(solution.success, solution.feasible)
 print("Gap:", units.format(solution.value(gap.d), mm))
-print("Focal length:", units.format(solution.value(lens.f), mm))
+print("Focal length:", units.format(solution.value(lens.f), mm, digits=3))
 ```
 
 ```text title="Output"
 True True
 Gap: 83.54 mm
-Focal length: 66.43 mm
+Focal length: 66.4 mm
 ```
 
-`solve()` uses SciPy's SLSQP method by default. `method="trust-constr"` selects
-another SciPy method, and `optimizer="ipopt"` or `optimizer="nlopt"` uses IPOPT or NLopt
-if installed; `options` passes settings to the optimizer. `x0`, `x_lower` and `x_upper`
-override the starting values and bounds for one solve.
+`solve()` uses NLopt's SLSQP when NLopt is installed and SciPy's SLSQP otherwise.
+Passing a method on its own, such as `method="trust-constr"`, selects SciPy.
+Use `optimizer="scipy"`, `optimizer="ipopt"`, or `optimizer="nlopt"` to select an
+optimizer explicitly. `options` passes backend-specific settings to the chosen
+optimizer. With automatic NLopt selection, it overrides the default settings
+`ftol_rel=1e-12`, `xtol_rel=1e-12`, and `maxeval=500`.
+`x0`, `x_lower` and `x_upper` override the starting values and bounds for one solve.
 
 The objectives and constraints are fixed at the first `solve()`. Later calls can use
 other starting values, bounds or optimizers, but a different problem needs a new

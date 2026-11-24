@@ -27,7 +27,7 @@ def test_whole_solver_callbacks_jit_and_nested_derivatives(monkeypatch):
 
     monkeypatch.setattr(solver_module, 'solve_scipy', capture)
     with pytest.raises(Captured):
-        solver.solve()
+        solver.solve(optimizer="scipy")
     problem = captured['problem']
     theta = xp.array([0.03])
     for function in (problem.objective, problem.gradient, problem.constraints,

@@ -83,7 +83,7 @@ def capture_problem(solver, **solve_kwargs):
 
     with patch.object(solver_module, "solve_scipy", capture):
         try:
-            solver.solve(**solve_kwargs)
+            solver.solve(optimizer="scipy", **solve_kwargs)
         except Captured:
             pass
     return captured["problem"]

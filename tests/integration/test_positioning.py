@@ -163,7 +163,7 @@ def test_solver_can_choose_a_thickness_around_a_fixed_centre():
     lens = ThickLens(d=thickness, n=1.5, R1=0.2, R2=-0.2)
     system = System(source=source()).add(lens, z=0.1, at="center")
     solver = Solver(system).target(value=lambda sim: sim[lens.back].z_end, target=0.108, scale=0.01)
-    solution = solver.solve(options={"ftol": 1e-14})
+    solution = solver.solve(optimizer="scipy", options={"ftol": 1e-14})
     assert solution.success and solution.feasible
     assert solution.value(thickness) == pytest.approx(0.016, abs=1e-7)
     assert solution.value(lens.d) == pytest.approx(0.016, abs=1e-7)
