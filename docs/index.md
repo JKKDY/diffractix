@@ -1,30 +1,29 @@
 # Diffractix
 
-**Differentiable paraxial optics in Python.**
+Trace rays and Gaussian beams through an optical system in Python. See where
+the light lands, then use an optimizer to find lens positions, focal lengths,
+or other values that meet your design goals.
 
-Diffractix models, simulates and optimizes paraxial optical systems with ABCD matrices.
-You describe a system from elements, a light source and parameters. Diffractix turns
-that description into a differentiable simulation, which you can run to see how light
-travels through the system, or hand to an optimizer to find the parameter values that
-meet your requirements.
+Diffractix uses a single optical axis and the small-angle approximation.
+The [optical model](guide/overview.md#the-optical-model) explains how it
+represents light and optical elements.
 
 ## Installation
+
+Diffractix needs Python 3.11 or newer.
 
 ```bash
 pip install diffractix
 ```
 
-The base install uses Autograd for derivatives and needs Python 3.11 or newer. Extras
-add the JAX backend (`diffractix[jax]`) and the IPOPT and NLopt optimizers
-(`diffractix[ipopt]`, `diffractix[nlopt]`, or both with `diffractix[all-solvers]`).
+## Trace a ray { #quick-start }
 
-## Quick start
-
-Choose the focal length of a lens so that an off-axis ray crosses the axis at an image
-plane:
+Start with a ray 10 mm above the optical axis and parallel to it. Put a lens
+at 100 mm and an image plane at 200 mm. Diffractix fills the gaps between
+these positions with spaces when you build the system.
 
 ```python
-from diffractix import Plane, Ray, Solver, System, ThinLens
+from diffractix import Plane, Ray, System, ThinLens
 from diffractix.units import mm
 
 ray = Ray(x=10 * mm, theta=0.0)
@@ -36,8 +35,31 @@ system.add(lens, z=100 * mm)
 system.add(image_plane, z=200 * mm)
 simulation = system.build()
 
+result = simulation.run()
+print(f"Image height: {result[image_plane].after.x / mm:.1f} mm")
+```
+
+```text title="Output"
+Image height: 5.0 mm
+```
+
+`result[image_plane].after.x` gives the ray height after the image plane.
+The ray is still above the axis.
+
+## Choose a focal length
+
+The lens starts at 200 mm. Marking it variable before the build lets the solver
+choose a focal length between 50 and 500 mm. Set a target of zero for the ray
+height at the image plane. A scale of 10 mm gives a residual of one in magnitude
+when the ray misses the target by 10 mm. Use `simulation.symbolic` to refer to
+the ray height as the solver varies the focal length.
+
+```python
+from diffractix import Solver
+
+sim = simulation.symbolic
 solver = Solver(simulation)
-solver.target(value=lambda sim: sim[image_plane].after.x, target=0.0, scale=10 * mm)
+solver.target(value=sim[image_plane].after.x, target=0.0, scale=10 * mm)
 solution = solver.solve()
 
 print(f"Focal length: {solution.value(lens.f) / mm:.1f} mm")
@@ -46,6 +68,9 @@ print(f"Focal length: {solution.value(lens.f) / mm:.1f} mm")
 ```text title="Output"
 Focal length: 100.0 mm
 ```
+
+The solved focal length equals the 100 mm distance from the lens to the image plane.
+[Focus a ray](examples/focus-a-ray.md) shows the ray path before and after the solve.
 
 ## Where to go next
 
@@ -61,3 +86,10 @@ Focal length: 100.0 mm
 - The [API reference](api/index.md) documents every public class and function.
 - The [examples](examples/index.md) are complete
   designs: beam focusing, a beam expander, fiber mode matching and more.
+
+## Optional packages
+
+The base install uses Autograd for derivatives and SciPy for optimization.
+Install `diffractix[jax]` to use JAX. For other optimizers, install
+`diffractix[ipopt]` or `diffractix[nlopt]`. Install both with `diffractix[all-solvers]`.
+The [backends guide](guide/backends.md) explains how to choose a numerical backend.

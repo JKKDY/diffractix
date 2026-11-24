@@ -58,8 +58,9 @@ which is indexed by parameter instead of position; see
 
 ## The Simulation is a snapshot
 
-The build copies the current values, bounds and structure of the design. Changing the
-declared objects afterwards does not change an existing Simulation:
+The compiled optical model uses the values, bounds, and layout from build time.
+For example, changing a declared focal length leaves the existing simulation's
+starting value in place:
 
 ```python
 lens.f.value = 150 * mm
@@ -70,8 +71,21 @@ print(simulation.parameter_data[1].value, system.build().parameter_data[1].value
 0.1 0.15
 ```
 
-Build again after changing the design. A build is quick, and each Simulation is
-independent of the others.
+Build again to use a changed design. A constraint that runs as a Python function
+can still read objects from outside that function. Keep those objects unchanged
+if you want repeated solves to use the same constraint.
+
+## If the build fails
+
+- **Refractive index mismatch.** The error gives the incoming and expected
+  indices. Check the source or preceding element and the index required at the
+  flagged element. If there is a physical change of medium, add an `Interface`
+  with matching input and output indices.
+  See [Media and refractive index](declaring.md#media-and-refractive-index).
+- **Unsatisfiable constant constraint.** The constraint cannot hold with the
+  fixed values in the design. Check the expression and its units. Correct a
+  fixed value or, if the design allows it, mark a parameter in that expression
+  variable before you build again.
 
 ## Printing a simulation
 

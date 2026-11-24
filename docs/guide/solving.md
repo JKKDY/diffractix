@@ -1,9 +1,11 @@
 # Solving
 
 A `Solver` finds the values of the variable parameters that best meet your
-**objectives**, while satisfying the **constraints**. It works on a built Simulation:
-the variables are its `theta`, the requirements of the design are already part of it,
-and you add the goals of this particular optimization.
+**objectives**, while satisfying the **constraints**. Mark the parameters you want to
+vary, then [build the simulation](building.md). Those parameters form the
+[theta vector](building.md#the-variable-vector-theta).
+The solver includes the design constraints from the build. Add the goals and
+any extra constraints for this solve.
 
 ```python
 from diffractix import Constraint, GaussianBeam, Plane, Solver, Space, System, ThinLens, units
@@ -103,6 +105,23 @@ The objectives and constraints are fixed at the first `solve()`. Later calls can
 other starting values, bounds or optimizers, but a different problem needs a new
 `Solver`.
 
+### Try another starting point
+
+To repeat the same optimization from a different starting point, edit a copy
+of the simulation's initial values by parameter and pass it as `x0`. Here the
+lens starts at 75 mm and the gap keeps its original starting value.
+
+```python
+guess = simulation.initial_values
+guess[lens.f] = 75 * mm
+retry = solver.solve(x0=guess)
+print(retry.success, retry.feasible)
+```
+
+```text title="Output"
+True True
+```
+
 ## Reading the solution
 
 A `Solution` reports what the optimizer found:
@@ -120,3 +139,17 @@ A `Solution` reports what the optimizer found:
 `print(solution)` shows all of this as a report. The declared objects are not changed:
 `lens.f.value` is still the starting value. `solution.simulation` is a copy of the
 Simulation with the solved values as starting values, for a follow-up optimization.
+
+## If the solve fails
+
+- **No variable parameters.** Mark a parameter used by the optical model with
+  `variable()`, then [build the simulation again](building.md) and create a new
+  `Solver`.
+- **Starting values outside the bounds.** Check that each starting value is
+  between its lower and upper bounds, including any bounds passed to `solve()`.
+  Pass a valid starting point as `x0`. See
+  [Try another starting point](#try-another-starting-point).
+- **The optimizer returns a solution that misses a constraint.** Read
+  `solution.message` for the reason it stopped. Inspect `solution.violations`
+  for the constraints and parameter bounds it missed. Check units and limits,
+  then [try another starting point](#try-another-starting-point).

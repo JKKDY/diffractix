@@ -3,6 +3,16 @@
 Couple a Gaussian beam between two single-mode fibers at 1550 nm. Their mode
 field diameters are 10.4 µm and 9.2 µm.
 
+## Run the example
+
+[View the full script on GitHub](https://github.com/JKKDY/diffractix/blob/main/examples/fiber_mode_matching.py).
+
+```console
+python examples/fiber_mode_matching.py
+```
+
+The walkthrough below shows selected parts of the script.
+
 ## Model the lens packages
 
 Each package is a composite made of a thin lens between two equal spaces. Its
@@ -33,20 +43,12 @@ the face. Keep the assembly within 30 mm and add a penalty for length beyond
 ## Read the result
 
 Use `overlap_with(target_mode)` on the beam at the target fiber to compare
-coupling before and after optimization. A typical run gives nearly 100% overlap
-in the Gaussian model. This metric describes mode matching and does not account
-for losses such as reflections or clipping.
+coupling before and after optimization. The result is the fraction of the beam
+power that couples into the target mode. A typical run gives nearly 100% in the
+Gaussian model, which excludes losses such as reflections and clipping.
 
 ```py
 --8<-- "examples/fiber_mode_matching.py:results"
 ```
 
 ![The optimized beam focuses at the target fiber face.](../assets/examples/fiber-mode-matching.png)
-
-## Run the example
-
-[View the full script on GitHub](https://github.com/JKKDY/diffractix/blob/main/examples/fiber_mode_matching.py).
-
-```console
-python examples/fiber_mode_matching.py
-```

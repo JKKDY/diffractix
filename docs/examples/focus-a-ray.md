@@ -3,6 +3,16 @@
 Find the focal length that brings a ray onto the optical axis at an image plane.
 The ray starts 10 mm above the axis and travels parallel to it.
 
+## Run the example
+
+[View the full script on GitHub](https://github.com/JKKDY/diffractix/blob/main/examples/readme_example.py).
+
+```console
+python examples/readme_example.py
+```
+
+The walkthrough below shows selected parts of the script.
+
 ## Set up the design
 
 Place the thin lens at 100 mm and the image plane at 200 mm. Pass these absolute
@@ -35,11 +45,3 @@ Use `solution.value(lens.f)` to read the optimized focal length and
 ```
 
 ![The optimized ray crosses the optical axis at the image plane.](../assets/examples/focus-a-ray.png)
-
-## Run the example
-
-[View the full script on GitHub](https://github.com/JKKDY/diffractix/blob/main/examples/readme_example.py).
-
-```console
-python examples/readme_example.py
-```

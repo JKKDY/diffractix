@@ -7,7 +7,8 @@ constraints, see [Results as expressions](#results-as-expressions) below.
 
 ## Running
 
-The examples on this page use this system:
+Start with a design and call `System.build()`. See [Building a simulation](building.md)
+for what the build checks. The example below uses a ray and a thin lens.
 
 ```python
 from diffractix import Plane, Ray, Space, System, ThinLens
@@ -32,7 +33,10 @@ Without arguments, `run()` uses the starting values of the variables.
 ## Running with other values
 
 `simulation.initial_values` returns a copy of the starting values that you can change
-by parameter. Pass it, or any vector in the order of `theta`, to `run()`:
+by parameter. Pass it to `run()` to try a different design. You can also pass a
+vector in build order, called [theta](building.md#the-variable-vector-theta).
+Here `theta` refers to the design variables. On a ray, `ray.theta` is its angle
+in radians.
 
 ```python
 values = simulation.initial_values

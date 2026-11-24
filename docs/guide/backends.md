@@ -3,37 +3,36 @@
 Diffractix computes derivatives by automatic differentiation, with one of two
 numerical backends:
 
-- **Autograd**, always installed. It runs on any platform where NumPy does.
-- **JAX**, installed with `pip install "diffractix[jax]"`. It compiles the model
-  just in time (JIT), which makes repeated evaluation faster, especially for larger
-  problems.
+- **Autograd** is included in the base install.
+- **JAX** is available with `pip install "diffractix[jax]"`. It supports just-in-time
+  compilation (JIT), which can speed up repeated numerical evaluations.
 
-Your code is the same with either backend. The examples in this documentation run on
-both.
+The examples in this documentation run on both backends. Use the
+[backend's numerical functions](#writing-numerical-code) in custom code
+that needs to run on both.
 
 ## Choosing a backend
 
-By default Diffractix uses JAX if it is installed, and Autograd otherwise. To choose
-explicitly, set the environment variable `DIFFRACTIX_BACKEND` to `jax`, `autograd` or
-`auto`, or call `configure` before the first calculation:
+By default Diffractix uses JAX if it is installed, and Autograd otherwise. Set
+`DIFFRACTIX_BACKEND` to `jax`, `autograd`, or `auto` before starting Python.
+To choose from Python, import `backend` from `diffractix` and call
+`backend.configure("autograd")` before the first numerical calculation. The
+call takes precedence over the environment variable.
 
-```python
-from diffractix import backend
+The first numerical calculation fixes the backend for that Python process.
+`backend.configure()` raises an error after that point. To check which backend
+is active, call `backend.current_backend()`. It returns `None` before the first
+numerical calculation.
 
-backend.configure("autograd")
-```
-
-The choice is made once per Python process, at the first numerical calculation, and
-cannot be changed afterwards; `configure` then raises an error. `backend.current_backend()`
-returns the backend in use, or `None` before the first calculation.
-
-With JAX, Diffractix enables double precision, so results agree with Autograd.
+Diffractix enables double precision for JAX by default. Set `JAX_ENABLE_X64`
+before the first numerical calculation to choose the precision setting explicitly.
 
 ## Derivatives of your own functions
 
-Everything a run computes is differentiable with respect to `theta`. The backend's
-derivative functions, `grad`, `jacobian` and `hessian` in `diffractix.backend`, work on
-any function built from it:
+Use `grad`, `jacobian`, and `hessian` from `diffractix.backend` to differentiate
+functions that use operations supported by the active backend. This example
+uses the selected backend to find how the ray height changes with each
+variable in [the design vector `theta`](building.md#the-variable-vector-theta).
 
 ```python
 from diffractix import Plane, Ray, Space, System, ThinLens
@@ -65,8 +64,8 @@ or a function you differentiate yourself, must be differentiable by the backend:
 
 - use `diffractix.backend.xp` for array functions (`xp.exp`, `xp.where`, ...). It is
   `jax.numpy` or `autograd.numpy`, depending on the backend;
-- do not modify arrays in place, and do not convert values to Python numbers with
-  `float()` or `np.asarray()`;
+- avoid in-place array changes. During differentiation, keep values in the
+  backend rather than converting them with `float()` or `np.asarray()`;
 - with JAX and JIT, an `if` cannot depend on a computed value. Use `xp.where`, or
   solve with `solve(jit=False)`.
 

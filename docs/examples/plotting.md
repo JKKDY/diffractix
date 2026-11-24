@@ -4,6 +4,16 @@ Trace a single ray, a parallel ray bundle, and a Gaussian beam through the same
 lens system. The lens has a focal length of 80 mm, with 60 mm of free space before
 it and 180 mm after it.
 
+## Run the example
+
+[View the full script on GitHub](https://github.com/JKKDY/diffractix/blob/main/examples/plotting.py).
+
+```console
+python examples/plotting.py
+```
+
+The walkthrough below shows selected parts of the script.
+
 ## Make and customize the plots
 
 Build and run a separate system for each source. A single ray gives one path,
@@ -29,11 +39,3 @@ figures. You can use `figure.savefig("trace.png")` to save a figure.
 ![Parallel rays converge after the lens and then spread out.](../assets/examples/ray-bundle.png)
 
 ![The Gaussian beam envelope narrows near the focus and widens again.](../assets/examples/gaussian-beam.png)
-
-## Run the example
-
-[View the full script on GitHub](https://github.com/JKKDY/diffractix/blob/main/examples/plotting.py).
-
-```console
-python examples/plotting.py
-```

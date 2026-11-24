@@ -3,6 +3,16 @@
 Expand a 1064 nm Gaussian beam from a radius of 0.5 mm to about 2 mm. A negative
 lens causes the beam to spread. A second lens reduces its divergence.
 
+## Run the example
+
+[View the full script on GitHub](https://github.com/JKKDY/diffractix/blob/main/examples/beam_expander.py).
+
+```console
+python examples/beam_expander.py
+```
+
+The walkthrough below shows selected parts of the script.
+
 ## Choose what to vary
 
 Keep the first focal length at −20 mm. Let the solver adjust the spacing and the
@@ -35,11 +45,3 @@ spacing is about 60 mm, and the total length is about 70 mm.
 ```
 
 ![The optimized beam exits with a smaller radius than the initial design.](../assets/examples/beam-expander.png)
-
-## Run the example
-
-[View the full script on GitHub](https://github.com/JKKDY/diffractix/blob/main/examples/beam_expander.py).
-
-```console
-python examples/beam_expander.py
-```

@@ -7,37 +7,29 @@ the second with gradient-based optimization over the parameters you mark as vari
 
 This page gives the whole picture. The pages that follow go into each part in detail.
 
-## The four steps
+## From design to results { #the-four-steps }
 
-Every use of Diffractix follows the same four steps: **declare**, **build**, **run**
-and **solve**.
-
-```mermaid
-flowchart LR
-    D["Declare: System"] -- "build()" --> S["Simulation"]
-    S -- "run(theta)" --> R["SimulationResult"]
-    S -- "Solver(simulation)" --> V["Solver"]
-    V -- "solve()" --> N["Solution"]
-    N -- "run()" --> R
-```
+Declare the design, build it once, then run it to see how the light propagates.
+If you want to choose parameter values to meet a goal, pass the built simulation
+to a solver.
 
 | Step | You write | You get |
 | --- | --- | --- |
 | Declare | elements, a source, parameters and requirements, collected in a `System` | a description of the design |
 | Build | `system.build()` | a `Simulation`: the design compiled into a function of the variables |
 | Run | `simulation.run()` | a `SimulationResult`: the light before and after every element |
-| Solve | objectives and constraints on a `Solver`, then `solver.solve()` | a `Solution`: the optimized variables and a report |
+| Solve (optional) | objectives and constraints on a `Solver`, then `solver.solve()` | a `Solution`: the optimized variables and a report |
 
-The steps are separate on purpose. Declaring is ordinary Python and computes nothing.
-Building checks the design once and compiles it, so running and solving are fast and
-can be repeated. Solving does not change the objects you declared; it returns its
-results in a `Solution`.
+The build checks the design and prepares it for repeated runs. The solver runs
+the same simulation with different values. It returns the values it found in a
+`Solution` and leaves the declared design unchanged.
 
 ## An example
 
-A collimated laser beam, 0.75 mm in radius, is to be focused to a 30 um spot on a
-workpiece 150 mm away. A lens sits between the two. Its position and focal length are
-free, and it must stay at least 50 mm from the workpiece.
+Focus a Gaussian beam that starts at a waist radius of 0.75 mm. The goal is a
+30 µm waist at a workpiece 150 mm from the source. A lens sits between the two.
+Its position and focal length can vary. It must stay at least 50 mm from the
+workpiece.
 
 **Declare** the source, the elements in order along the axis, and the requirement:
 
@@ -106,9 +98,9 @@ element. All values are in SI units; `diffractix.units` provides constants such 
 
 ## Parameters and the graph
 
-The numbers in a design are not plain floats. Each one is a **parameter**: a value that
-is fixed unless you mark it variable, optionally with bounds. Arithmetic on
-parameters, such as `150 * mm - gap.d`, builds an **expression**, and a comparison,
+Real scalar fields such as a lens focal length can be **parameters**. The solver
+can change them only if you mark them variable. You can also set bounds.
+Arithmetic on parameters, such as `150 * mm - gap.d`, builds an **expression**, and a comparison,
 such as `working.d >= 50 * mm`, builds a **constraint**. Diffractix records these as a
 graph of operations instead of computing them straight away.
 
@@ -123,12 +115,12 @@ reads the graph once and:
 - compiles the propagation, and later the objectives and constraints, into programs
   that evaluate quickly and that the backend can differentiate.
 
-The requirements of a design are therefore part of the design, are checked before any
-optimization, and cost little to evaluate many times.
+The build rejects fixed requirements that cannot hold. The solver checks
+requirements that depend on the variables as it searches for a solution.
 
 ## Numbers and expressions in results
 
-`simulation.run()` returns numbers: the beam radius at the workpiece is a float.
+`simulation.run()` returns numerical values, such as the beam radius at the workpiece.
 `simulation.symbolic` has the same structure, but returns expressions:
 `sim[workpiece].after.w` is the beam radius at the workpiece as a function of `theta`.
 Objectives and constraints are made from these expressions. A function of the result,
@@ -139,8 +131,8 @@ an expression where it can.
 
 Optimization needs derivatives of the objectives and constraints with respect to
 `theta`. Diffractix computes them by automatic differentiation, with one of two
-numerical backends: Autograd, which is always installed, or JAX, which is optional and
-faster on larger problems. Your code is the same with either.
+numerical backends. Autograd is included in the base install. JAX is optional
+and supports JIT compilation.
 
 ## Where to go next
 
