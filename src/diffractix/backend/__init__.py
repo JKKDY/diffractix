@@ -2,10 +2,10 @@
 
 The default preference (`auto`) selects JAX when installed, otherwise
 Autograd. Set `DIFFRACTIX_BACKEND` or call `configure(name)` before the
-first numerical operation to select `auto`, `jax` or `autograd`.
+first numerical operation to select `auto`, `jax`, `autograd` or `casadi`.
 
 `xp` provides the selected backend's differentiable NumPy interface:
-`jax.numpy` or `autograd.numpy`.
+`jax.numpy`, `autograd.numpy` or the CasADi NumPy interface.
 
 Importing this module, `xp`, or a differentiation wrapper does not initialize
 the backend. The first `xp` attribute access or derivative/JIT construction
@@ -33,7 +33,6 @@ import importlib.util
 import os
 from dataclasses import dataclass
 from threading import RLock
-from types import ModuleType
 from typing import Any, Callable
 
 __all__ = [
@@ -48,7 +47,7 @@ __all__ = [
     "current_backend",
 ]
 
-_CHOICES = frozenset({"auto", "jax", "autograd"})
+_CHOICES = frozenset({"auto", "jax", "autograd", "casadi"})
 _lock = RLock()
 _requested = os.environ.get("DIFFRACTIX_BACKEND", "auto").strip().lower()
 _active: _Backend | None = None
@@ -57,7 +56,7 @@ _active: _Backend | None = None
 @dataclass(frozen=True)
 class _Backend:
     name: str
-    xp: ModuleType
+    xp: Any
     grad: Callable[..., Any]
     jacobian: Callable[..., Any]
     hessian: Callable[..., Any]
@@ -72,8 +71,8 @@ def configure(name: str) -> None:
     Parameters
     ----------
     name : str
-        ``"auto"``, ``"jax"`` or ``"autograd"``. Overrides ``DIFFRACTIX_BACKEND``
-        for this process. Does not import either backend.
+        ``"auto"``, ``"jax"``, ``"autograd"`` or ``"casadi"``. Overrides
+        ``DIFFRACTIX_BACKEND`` for this process. Does not import a backend.
 
     Raises
     ------
@@ -87,10 +86,10 @@ def configure(name: str) -> None:
     global _requested
 
     if not isinstance(name, str):
-        raise TypeError("Backend name must be 'auto', 'jax', or 'autograd'.")
+        raise TypeError("Backend name must be 'auto', 'jax', 'autograd', or 'casadi'.")
     name = name.strip().lower()
     if name not in _CHOICES:
-        raise ValueError(f"Unknown Diffractix backend {name!r}; choose auto, jax, or autograd.")
+        raise ValueError(f"Unknown Diffractix backend {name!r}; choose auto, jax, autograd, or casadi.")
 
     with _lock:
         if _active is not None:
@@ -113,94 +112,23 @@ def current_backend() -> str | None:
         return None if _active is None else _active.name
 
 
-def _identity_jit(fun: Callable[..., Any] | None = None, **_options: Any) -> Any:
-    """Autograd's no-op equivalent of JAX's JIT decorator/function."""
-    return fun
-
-
-def _load_autograd() -> _Backend:
-    try:
-        import autograd
-        import autograd.numpy as anp
-    except ImportError as exc:
-        raise ImportError(
-            "Diffractix requires Autograd for this backend. "
-            "Install it with 'pip install autograd' (or install diffractix)."
-        ) from exc
-
-    def _eager_require(condition: Any, message: str) -> None:
-        """Require a concrete scalar condition to be true."""
-        if not bool(condition):
-            raise ValueError(message)
-
-    return _Backend(
-        name="autograd",
-        xp=anp,
-        grad=autograd.grad,
-        jacobian=autograd.jacobian,
-        hessian=autograd.hessian,
-        jit=_identity_jit,
-        require=_eager_require,
-    )
-
-
-def _load_jax() -> _Backend:
-    try:
-        import jax
-    except ImportError as exc:
-        raise ImportError(
-            "Diffractix cannot import JAX. Install it with "
-            "'pip install \"diffractix[jax]\"', or select Autograd instead."
-        ) from exc
-
-    # use 64 bit 
-    if "JAX_ENABLE_X64" not in os.environ:
-        jax.config.update("jax_enable_x64", True)
-
-    try:
-        import jax.numpy as jnp
-    except ImportError as exc:
-        raise ImportError(
-            "Diffractix found JAX but could not import jax.numpy; "
-            "check the JAX/JAXLIB installation."
-        ) from exc
-
-    def _jax_require(condition, message: str) -> None:
-        try:
-            valid = bool(condition)
-        except jax.errors.TracerBoolConversionError:
-            return
-
-        if not valid:
-            raise ValueError(message)
-
-    return _Backend(
-        name="jax",
-        xp=jnp,
-        grad=jax.grad,
-        jacobian=jax.jacrev,
-        hessian=jax.hessian,
-        jit=jax.jit,
-        require=_jax_require,
-        tracing_errors=(
-            jax.errors.ConcretizationTypeError,
-            jax.errors.TracerArrayConversionError,
-            jax.errors.TracerIntegerConversionError,
-        ),
-    )
-
-
 def _initialize(preference: str) -> _Backend:
     if preference not in _CHOICES:
         raise ValueError(
-            f"Invalid DIFFRACTIX_BACKEND={preference!r}; use auto, jax, or autograd."
+            f"Invalid DIFFRACTIX_BACKEND={preference!r}; use auto, jax, autograd, or casadi."
         )
+    if preference == "auto":
+        preference = "jax" if importlib.util.find_spec("jax") is not None else "autograd"
+
     if preference == "autograd":
+        from ._autograd import _load_autograd
         return _load_autograd()
     if preference == "jax":
+        from ._jax import _load_jax
         return _load_jax()
-    if preference == "auto":
-        return _load_jax() if importlib.util.find_spec("jax") is not None else _load_autograd()
+    if preference == "casadi":
+        from ._casadi import _load_casadi
+        return _load_casadi()
 
 
 def _get_backend() -> _Backend:
@@ -246,7 +174,7 @@ def grad(fun: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
 
 
 def jacobian(fun: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
-    """Construct the Jacobian of `fun`, using reverse mode on either backend.
+    """Construct the Jacobian of `fun` using the selected backend.
 
     Parameters
     ----------
@@ -282,7 +210,7 @@ def hessian(fun: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
 
 
 def jit(fun: Callable[..., Any] | None = None, **kwargs: Any) -> Any:
-    """Just-in-time compile `fun` under JAX, or return it unchanged under Autograd.
+    """Compile `fun` under JAX or CasADi, or return it unchanged under Autograd.
 
     Parameters
     ----------
@@ -290,7 +218,8 @@ def jit(fun: Callable[..., Any] | None = None, **kwargs: Any) -> Any:
         Function to compile. Omit it to use `jit` as a decorator factory, as in
         ``@jit(static_argnums=...)``.
     **kwargs
-        JAX compilation options; accepted and ignored under Autograd.
+        JAX compilation options, or ``static_argnums`` under CasADi.
+        Autograd accepts and ignores these options.
 
     Returns
     -------
@@ -332,10 +261,8 @@ def require(condition: Any, message: str) -> None:
 
     Notes
     -----
-    Under JAX's `jit`, a function's inputs are placeholders whose values are not
-    known yet, so a condition that depends on them cannot be checked and is
-    skipped. A condition that does not depend on them is still checked, once,
-    when the function is compiled. Without `jit`, and always under Autograd,
-    every condition is checked.
+    During JAX JIT or CasADi SX tracing, the inputs are symbolic placeholders.
+    Predicates that depend on them are skipped. Concrete predicates are checked
+    during compilation. Eager calls check every condition.
     """
     _get_backend().require(condition, message)

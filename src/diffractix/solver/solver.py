@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Callable
 import numpy as np
 from contextlib import contextmanager
 
-from diffractix.backend import xp, grad, hessian, jacobian, require, tracing_errors
+from diffractix.backend import xp, current_backend, grad, hessian, jacobian, require, tracing_errors
 from diffractix.backend import jit as backend_jit
 
 from diffractix.graph import (
@@ -60,7 +60,7 @@ def _explain_tracing_errors(jit: bool):
     try:
         yield
     except tracing_errors() as error:
-        if not jit:
+        if not jit or current_backend() == "casadi":
             raise
         raise TypeError(
             "A callable used a value that is unknown while JIT traces it (Python control "

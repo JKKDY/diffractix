@@ -8,5 +8,5 @@
 | Share parameters and write symbolic expressions | [Parameters and symbols](graph.md) |
 | Run a design and inspect propagation | [Simulation](simulation.md) and [Simulation result](simulation-result.md) |
 | Set up an optimization and inspect its outcome | [Solver](solver.md), [Objectives and constraints](objectives-and-constraints.md), and [Solution](solution.md) |
-| Choose Autograd or JAX | [Numerical backend](backend.md) |
+| Choose a numerical backend | [Numerical backend](backend.md) |
 | Draw a propagation trace | [Plotting](plotting.md) |

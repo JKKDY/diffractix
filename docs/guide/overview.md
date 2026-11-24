@@ -130,9 +130,9 @@ an expression where it can.
 ## Derivatives and backends
 
 Optimization needs derivatives of the objectives and constraints with respect to
-`theta`. Diffractix computes them by automatic differentiation, with one of two
-numerical backends. Autograd is included in the base install. JAX is optional
-and supports JIT compilation.
+`theta`. Diffractix computes them by automatic differentiation, with Autograd, JAX, or
+CasADi. Autograd is included in the base install. JAX and CasADi are available
+as separate extras.
 
 ## Where to go next
 
@@ -142,4 +142,4 @@ and supports JIT compilation.
 - [Building](building.md): what `build()` checks and produces.
 - [Running and reading results](results.md): looking up states, plotting.
 - [Solving](solving.md): objectives, constraints, optimizers and the solution.
-- [Backends](backends.md): choosing Autograd or JAX, and writing custom code.
+- [Backends](backends.md): choosing a numerical backend and writing custom code.

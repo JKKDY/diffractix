@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from diffractix import Constraint, Objective, Parameter, Ray, Solver, System
-from diffractix.backend import grad, hessian, jacobian, xp
+from diffractix.backend import current_backend, grad, hessian, jacobian, xp
 from diffractix.graph import Literal, Symbol
 from tests.helpers.backend import capture_problem
 
@@ -61,6 +61,10 @@ def test_dynamic_numeric_branches_work_with_eager_execution():
 
     solver.target(Objective(residual, weight=3))
     solver.require(Constraint(constraint, upper_bound=10))
+    if current_backend() == "casadi":
+        with pytest.raises(TypeError, match="Cannot branch in Python.*xp.where"):
+            capture_problem(solver, jit=False)
+        return
     problem = capture_problem(solver, jit=False)
     parameter.value = 100
     positive, negative = xp.array([2.]), xp.array([-2.])
@@ -81,9 +85,8 @@ def test_dynamic_numeric_arrays_are_flattened():
     solver = make_solver(parameter)
 
     def constraint(result):
-        if result.final.x > 0:
-            return result.final.x - np.array([1., 2.])
-        return np.array([3., 4.])
+        x = result.final.x
+        return xp.where(x > 0, x - xp.array([1., 2.]), xp.array([3., 4.]))
 
     solver.require(Constraint(constraint, upper_bound=10))
     problem = capture_problem(solver, jit=False)
@@ -124,7 +127,8 @@ def test_requesting_jit_wraps_every_callback_even_with_deferred_callables(dynami
     solver = make_solver(parameter)
 
     def dynamic(result):
-        return result.final.x ** 2 if result.final.x > 0 else 5.
+        x = result.final.x
+        return xp.where(x > 0, x ** 2, 5.)
 
     if dynamic_kind == "objective":
         solver.target(dynamic)
@@ -166,6 +170,10 @@ def test_deferred_nodes_are_rejected_when_a_later_evaluation_selects_the_branch(
         solver.target(dynamic)
     else:
         solver.require(Constraint(dynamic))
+        if current_backend() == "casadi":
+            with pytest.raises(TypeError, match="Cannot branch in Python.*xp.where"):
+                capture_problem(solver, jit=False)
+            return
     problem = capture_problem(solver, jit=False)
     callback = problem.objective if kind == "objective" else problem.constraints
     with pytest.raises(TypeError, match="symbolic Node"):

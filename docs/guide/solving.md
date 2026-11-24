@@ -78,8 +78,9 @@ expression. If the function cannot run on expressions, because it uses an `if` o
 result value, or a function that only accepts numbers, Diffractix instead calls it with
 the numerical result each time the optimizer needs its value. It must then return
 numbers, and remain differentiable by the backend (see [Backends](backends.md)). With
-JAX, a function that uses `if` on a result value also needs `solve(jit=False)`. Prefer
-expressions where you can: they are compiled with the rest of the model.
+JAX, a function that uses `if` on a result value also needs `solve(jit=False)`.
+CasADi still traces derivatives with `jit=False`, so use `xp.where` for
+choices that depend on a result value. Expressions compile with the rest of the model.
 
 ## Running the optimization
 

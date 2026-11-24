@@ -1,19 +1,19 @@
 # Numerical backends: integration and verification
 
 Diffractix uses one lazy, process-wide numerical backend. `auto` selects JAX
-when installed and otherwise Autograd. Importing Diffractix does not initialize
-either backend. Select explicitly before numerical execution:
+when installed and otherwise Autograd. Importing Diffractix
+does not initialize a backend. Select explicitly before numerical execution:
 
 ```python
 import diffractix
 from diffractix import backend
 
-backend.configure("autograd")  # or "jax" or "auto"
+backend.configure("autograd")  # or "jax", "casadi", or "auto"
 ```
 
 Alternatively set `DIFFRACTIX_BACKEND`. Once a numerical operation or derivative
 constructor initializes the backend, configuration is frozen. Autograd remains
-a required dependency; JAX remains an optional extra. Packaging is unchanged.
+a required dependency. JAX and CasADi are separate optional extras.
 Numerical differentiation and JIT are selected through the backend/ package.
 
 ## Implementation boundaries
@@ -42,12 +42,29 @@ omits it always uses JIT. Eager and JIT caches are not retained side by side.
 Graph programs are remapped and fused during preparation; there is no separate
 simulator or PyTree registration.
 
+CasADi uses SX vector storage with NumPy-style logical shapes during tracing.
+Concrete calls return NumPy arrays or ordinary scalars. A private pair of real SX
+expressions represents complex traced values, including during Gaussian
+propagation. Concrete beam results retain their existing complex representation.
+The pair carries `re + 1j * im` when both parts are supported graph inputs.
+Declaring complex parameters remains a separate graph feature described in §12 of
+[Future ideas](future-ideas.md).
+
+CasADi's value and derivative transforms share a trace per function and input
+signature, then compile CasADi functions for the requested outputs. SciPy SLSQP
+consumes the compiled callbacks through the existing optimizer adapter.
+See the [public tracing contract](../guide/backends.md#casadi-tracing) for
+supported operations and concrete conversions.
+
 ## Current verification
 
-Latest recorded full-suite results, 9 November 2026: Autograd 1338 passed,
-4 skipped; JAX 1340 passed, 2 skipped; no failures or warnings. Explicit
-fourth-order tests were removed as outside current release scope, not fixed in
-the numerical library. See [QA status](qa-status.md) for remaining release work.
+The backend suites cover graph evaluation, Gaussian beams, single rays,
+ray bundles, and inverse design. Coverage includes complex ABCD coefficients,
+vector constraints, Jacobians, Hessians, nested differentiation and compiled
+results. The full suite passed on Autograd, JAX and CasADi with the existing
+optional-optimizer and JAX-specific skips. The CasADi tests assert the tracing
+error for Python branches on design values. The guide lists the operations
+supported during tracing.
 
 ## JIT and custom-code contract
 
@@ -56,15 +73,18 @@ weighted constraint Hessian, and nested derivative callbacks pass explicit JIT
 tests. Python state/result objects can be created and consumed inside tracing;
 the traced function must return numerical outputs, not a `SimulationResult`.
 
-Solver JIT is on by default (`solve(jit=True)`); `solve(jit=False)` runs all six
-numerical callbacks eagerly. Autograd treats JIT as an identity operation, so the
-flag only matters with JAX. Objectives and requirements are fixed once callbacks have
-been prepared. The following restrictions apply:
+Solver JIT is on by default (`solve(jit=True)`). Autograd treats JIT as an identity
+operation. Under JAX, `solve(jit=False)` runs all six numerical callbacks eagerly.
+Under CasADi, it evaluates objective and constraint values eagerly, while the
+derivatives still require SX tracing. Objectives and requirements are fixed once
+callbacks have been prepared. The following restrictions apply:
 
 1. Dynamic Python branches are supported only with `jit=False` (the eager
    numerical callable fallback); with JAX and `jit=True` they raise an error and
-   are not automatically rewritten into JAX control flow. Their eager
-   values and derivatives pass under both backends away from branch boundaries.
+   are not automatically rewritten into JAX control flow. Their eager values and
+   derivatives pass under Autograd and JAX away from branch boundaries. CasADi
+   raises a tracing error for such branches when compiling derivatives. Use
+   `xp.where` or express the conditional algebraically.
 2. Concrete finite-value and optical-domain checks remain active during eager
    execution. Traced predicates cannot raise ordinary Python validation errors
    based on unknown values. Checks inside a JIT core do not inspect unknown traced

@@ -15,7 +15,7 @@ inverse design.
 - Thin and thick lenses, mirrors, interfaces, slabs, GRIN media, Gaussian apertures,
   telescopes and 4f systems, plus custom ABCD elements
 - Any element parameter, position or source property can be a design variable
-- Automatic differentiation with Autograd or JAX
+- Automatic differentiation with Autograd, JAX or CasADi
 - Objectives and constraints for inverse design, solved with SciPy, IPOPT or NLopt
 - Plots of beams and rays through the system
 
@@ -28,11 +28,14 @@ pip install diffractix
 The base install uses Autograd, NumPy, SciPy and Matplotlib and needs Python 3.11 or
 newer. Optional extras:
 
-- `pip install "diffractix[jax]"`: the JAX backend. When JAX is installed it is used by
-  default; set `DIFFRACTIX_BACKEND=autograd` to choose Autograd.
+- `pip install "diffractix[jax]"` adds the JAX backend.
+- `pip install "diffractix[casadi]"` adds the CasADi backend.
 - `pip install "diffractix[ipopt]"`, `"diffractix[nlopt]"` or `"diffractix[all-solvers]"`:
   the IPOPT and NLopt optimizers. IPOPT is easiest to install with
   `conda install -c conda-forge cyipopt`.
+
+Set `DIFFRACTIX_BACKEND` to `autograd`, `jax`, or `casadi` to select a backend.
+By default Diffractix uses JAX when installed and Autograd otherwise.
 
 ## Quick start
 

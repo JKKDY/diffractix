@@ -1,4 +1,6 @@
 """Current graph, optical propagation and real inverse-design backend parity."""
+import importlib.util
+
 import numpy as np
 import pytest
 from tests.helpers.backend import JAX_AVAILABLE, numerical_results, assert_close
@@ -8,19 +10,23 @@ pytestmark = pytest.mark.skipif(not JAX_AVAILABLE, reason="Cross-backend parity 
 
 @pytest.fixture(scope="module")
 def pair():
-    return tuple(numerical_results(name, "integration")["values"] for name in ("autograd", "jax"))
+    names = ("autograd", "jax")
+    if importlib.util.find_spec("casadi"):
+        names += ("casadi",)
+    return tuple(numerical_results(name, "integration")["values"] for name in names)
 
 
 @pytest.mark.parametrize("group", ["graph", "optics", "solve"])
 def test_backend_parity_and_independent_physical_expectations(pair, group):
-    autograd, jax = pair
-    if group == "solve":
-        for name in ("success", "feasible"):
-            assert jax[group][name] == autograd[group][name]
-        for name in ("x", "cost", "final_x"):
-            assert_close(jax[group][name], autograd[group][name], description=f"solve/{name}", rtol=2e-9, atol=1e-11)
-    else:
-        assert_close(jax[group], autograd[group], description=group, rtol=2e-9, atol=1e-11)
+    autograd, *others = pair
+    for other in others:
+        if group == "solve":
+            for name in ("success", "feasible"):
+                assert other[group][name] == autograd[group][name]
+            for name in ("x", "cost", "final_x"):
+                assert_close(other[group][name], autograd[group][name], description=f"solve/{name}", rtol=2e-9, atol=1e-11)
+        else:
+            assert_close(other[group], autograd[group], description=group, rtol=2e-9, atol=1e-11)
     for values in pair:
         if group == "graph":
             data = values[group]

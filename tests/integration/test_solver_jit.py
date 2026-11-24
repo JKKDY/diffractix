@@ -2,6 +2,7 @@
 import numpy as np
 import pytest
 from diffractix import Constraint, Parameter, Ray, Solver, Space, System
+from diffractix.backend import current_backend
 
 
 @pytest.mark.parametrize("use_jit", [False, True])
@@ -30,6 +31,10 @@ def test_dynamic_branch_optimizes_numerical_outputs_eagerly():
         return 10.
 
     solver.target(residual)
+    if current_backend() == "casadi":
+        with pytest.raises(TypeError, match="Cannot branch in Python.*xp.where"):
+            solver.solve(jit=False)
+        return
     solution = solver.solve(jit=False, options={"ftol": 1e-12})
     assert solution.success and solution.feasible
     assert solution.value(position) == pytest.approx(1, abs=1e-6)
