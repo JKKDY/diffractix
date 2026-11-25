@@ -1,13 +1,31 @@
 """Constraint reduction preserves the feasible set of a full compiled program."""
 
+import builtins
+import importlib.util
 from itertools import product
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 from diffractix.graph import Literal, Parameter, Symbol, precompile, remap_parameters
+from diffractix.solver.lp import LPResult
 from diffractix.solver.constraint import Constraint, ConstraintDescriptor, prepare_constraints, reduce_constraints
+
+
+@pytest.fixture(params=["highs", "numpy"], autouse=True)
+def lp_backend(request, monkeypatch):
+    if request.param == "highs":
+        if importlib.util.find_spec("scipy") is None:
+            pytest.skip("SciPy is required for the HiGHS path.")
+        return
+    original_import = builtins.__import__
+
+    def import_without_linprog(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "scipy.optimize" and fromlist == ("linprog",):
+            raise ModuleNotFoundError("SciPy is unavailable for affine analysis.")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", import_without_linprog)
 
 
 def make_problem(*constraints):
@@ -674,31 +692,27 @@ def implied_and_independent_constraints():
 
 @pytest.mark.parametrize("error", [ValueError, OverflowError, FloatingPointError])
 def test_a_failing_lp_solver_keeps_every_constraint(monkeypatch, error):
-    def linprog(*args, **kwargs):
+    def solve_lp(*args, **kwargs):
         raise error("LP failed")
-    monkeypatch.setattr("diffractix.solver.constraint.linprog", linprog)
+    monkeypatch.setattr("diffractix.solver.constraint.solve_lp", solve_lp)
     program, descriptors = implied_and_independent_constraints()
     indices, active = reduce(program, descriptors)
     assert indices == (0, 1, 2) and active == descriptors
 
 
 @pytest.mark.parametrize("certificate", [
-    SimpleNamespace(success=False, status=2, x=None),                  # no certificate found
-    SimpleNamespace(success=True, status=0, x=np.array([np.nan] * 8)),  # non-finite weights
-    SimpleNamespace(success=True, status=0, x=np.zeros(8)),             # no active rows
-    SimpleNamespace(success=True, status=0, x=np.ones(8)),              # must be verified exactly
+    LPResult("infeasible"),                       # no certificate found
+    LPResult("optimal", np.array([np.nan] * 8)),   # non-finite weights
+    LPResult("optimal", np.zeros(8)),              # no active rows
+    LPResult("optimal", np.ones(8)),               # must be verified exactly
 ], ids=["failed", "non-finite", "empty", "unverified"])
 def test_unverified_lp_answers_never_report_a_feasible_problem_as_infeasible(monkeypatch, certificate):
-    def linprog(c, A_ub=None, **kwargs):
+    def solve_lp(c, A_ub=None, **kwargs):
         if A_ub is not None:   # the feasibility check: wrongly claim infeasibility
-            return SimpleNamespace(success=False, status=2, x=None)
-        return replace_size(certificate, len(c))
-    monkeypatch.setattr("diffractix.solver.constraint.linprog", linprog)
+            return LPResult("infeasible")
+        x = None if certificate.x is None else np.resize(certificate.x, len(c))
+        return LPResult(certificate.status, x)
+    monkeypatch.setattr("diffractix.solver.constraint.solve_lp", solve_lp)
     program, descriptors = implied_and_independent_constraints()
     indices, active = reduce(program, descriptors)
     assert_same_feasible_points(program, descriptors, indices, active, product((-1, 0, 1, 2), (-1, 0, 2, 3)))
-
-
-def replace_size(answer, size):
-    x = None if answer.x is None else np.resize(answer.x, size)
-    return SimpleNamespace(success=answer.success, status=answer.status, x=x)

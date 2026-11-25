@@ -235,8 +235,10 @@ def test_lazy_optimizer_entry_point_matrix(
     assert received["options"] is not options
 
 
-@pytest.mark.parametrize("entry,extra", [("solve_ipopt", "ipopt"), ("solve_nlopt", "nlopt")])
-def test_lazy_optimizer_reports_missing_optional_dependency(monkeypatch, entry, extra):
+@pytest.mark.parametrize("entry,extra", [
+    ("solve_ipopt", "ipopt"), ("solve_nlopt", None), ("solve_scipy", "scipy"),
+])
+def test_lazy_optimizer_reports_missing_dependency(monkeypatch, entry, extra):
     from diffractix.solver import optimizers
 
     def missing(package):
@@ -244,7 +246,8 @@ def test_lazy_optimizer_reports_missing_optional_dependency(monkeypatch, entry, 
 
     monkeypatch.setattr(optimizers, "import_module", missing)
 
-    with pytest.raises(ImportError, match=rf"diffractix\[{extra}\]") as error:
+    hint = rf"Install diffractix\[{extra}\]" if extra else r"Install diffractix\."
+    with pytest.raises(ImportError, match=hint) as error:
         getattr(optimizers, entry)("problem")
     assert ("conda install -c conda-forge cyipopt" in str(error.value)) == (extra == "ipopt")
 

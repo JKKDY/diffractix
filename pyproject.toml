@@ -27,7 +27,11 @@ classifiers = [
 dependencies = [
     "autograd>=1.7",
     "numpy>=1.26",
-    "scipy>=1.11.2",
+    # Preserve the NumPy 1.x minimum on Python 3.11–3.12. Later native
+    # versions use the first releases with both Windows and Linux wheels.
+    "nlopt>=2.7.1; python_version < '3.13' and sys_platform != 'emscripten'",
+    "nlopt>=2.9.0; python_version == '3.13' or sys_platform == 'emscripten'",
+    "nlopt>=2.10.0; python_version >= '3.14' and sys_platform != 'emscripten'",
 ]
 
 [project.optional-dependencies]
@@ -47,12 +51,12 @@ plot = [
 ipopt = [
     "cyipopt",
 ]
-nlopt = [
-    "nlopt",
+scipy = [
+    "scipy>=1.11.2",
 ]
 all-solvers = [
     "cyipopt",
-    "nlopt",
+    "scipy>=1.11.2",
 ]
 dev = [
     "matplotlib>=3.8",
@@ -110,7 +114,7 @@ addopts = "--import-mode=importlib --strict-markers"
 markers = [
     "scipy: integration tests using the real SciPy optimizer",
     "ipopt: integration tests requiring the optional cyipopt package",
-    "nlopt: integration tests requiring the optional nlopt package",
+    "nlopt: integration tests using the real NLopt optimizer",
 ]
 
 # python -m coverage run -m pytest tests; python -m coverage combine; python -m coverage report

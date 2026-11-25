@@ -27,7 +27,7 @@ def main():
     np.testing.assert_allclose(simulation.run()[target].after.x, 0.005, atol=1e-12)
     solution = Solver(simulation).target(
         value=lambda sim: sim[target].after.x, target=0.0, scale=0.01,
-    ).solve(method="SLSQP", options={"ftol": 1e-12})
+    ).solve()
     if not solution.success or not solution.feasible:
         raise RuntimeError(f"Inverse-design smoke failed: {solution.message}")
     np.testing.assert_allclose(solution.value(lens.f), 0.1, atol=1e-6)

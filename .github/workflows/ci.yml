@@ -66,7 +66,7 @@ jobs:
       - name: Install package and test dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "${{ matrix.backend == 'jax' && '.[dev,jax]' || '.[dev]' }}"
+          python -m pip install "${{ matrix.backend == 'jax' && '.[dev,jax,scipy]' || '.[dev,scipy]' }}"
       - name: Verify the selected numerical backend
         run: |
           python -c "import os; from diffractix.backend import xp, current_backend; xp.asarray(0.0); assert current_backend() == os.environ['DIFFRACTIX_BACKEND']; print('Backend:', current_backend())"
@@ -113,7 +113,7 @@ jobs:
       - name: Install the minimum versions from pyproject.toml, then the package without dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "autograd==1.7.0" "numpy==1.26.0" "scipy==1.11.2" "matplotlib==3.8.0" pytest $EXTRA_PINS
+          python -m pip install "autograd==1.7.0" "numpy==1.26.0" "nlopt==2.7.1" "scipy==1.11.2" "matplotlib==3.8.0" pytest $EXTRA_PINS
           python -m pip install --no-deps .
           python -m pip list
       - name: Verify the selected numerical backend

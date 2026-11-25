@@ -97,8 +97,8 @@ Gap: 83.54 mm
 Focal length: 66.4 mm
 ```
 
-`solve()` uses NLopt's SLSQP when NLopt is installed and SciPy's SLSQP otherwise.
-Passing a method on its own, such as `method="trust-constr"`, selects SciPy.
+`solve()` uses NLopt's SLSQP by default. Passing a method on its own, such as
+`method="trust-constr"`, selects SciPy and requires the `diffractix[scipy]` extra.
 Use `optimizer="scipy"`, `optimizer="ipopt"`, or `optimizer="nlopt"` to select an
 optimizer explicitly. `options` passes backend-specific settings to the chosen
 optimizer. With automatic NLopt selection, it overrides the default settings
@@ -123,7 +123,10 @@ remove redundant constraints. For repeated solves, `constraint_reduction="declar
 reuses a reduction computed over the Simulation's original parameter bounds.
 Temporary bounds inside that range, including pinned values, can share this
 reduction. Bounds outside the declared range use per-solve analysis. Use
-`constraint_reduction="off"` to send every constraint to the optimizer.
+`constraint_reduction="off"` to send every constraint to the optimizer. Affine
+analysis uses SciPy's HiGHS when available and a small NumPy solver otherwise.
+Both propose certificates that Diffractix checks with exact rational arithmetic.
+If a certificate cannot be verified, the constraint is kept for the optimizer.
 
 `solution.feasible` and `solution.violations` are evaluated only on access.
 They include all original constraints, even when the optimizer solved a reduced

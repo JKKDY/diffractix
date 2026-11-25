@@ -7,11 +7,11 @@ import math
 
 from fractions import Fraction
 
-from scipy.optimize import linprog
-
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 import numpy as np
+
+from .lp import solve_lp
 
 from diffractix.graph import (
     Comparison,
@@ -729,36 +729,33 @@ def _reduce_affine_constraints(output_forms, output_indices, descriptors, parame
 
 
 def _check_affine_feasibility(rows, size):
-    """Verify a rational infeasibility certificate when HiGHS reports a conflict."""
+    """Verify a rational infeasibility certificate when the LP reports a conflict."""
     if not rows or size == 0:
         return
     try:
-        result = linprog(
+        result = solve_lp(
             c=np.zeros(size),
             A_ub=np.asarray([[float(value) for value in coefficients] for coefficients, _ in rows]),
             b_ub=np.asarray([float(rhs) for _, rhs in rows]),
-            bounds=(None, None),
-            method="highs",
+            free=True,
         )
     except (ValueError, OverflowError, FloatingPointError):
         return
-    if result.status != 2:
+    if result.status != "infeasible":
         return
 
     # A nonnegative combination yielding 0 <= -1 proves infeasibility.
     augmented_rows = [(tuple(coefficients) + (rhs,), Fraction(0)) for coefficients, rhs in rows]
     target = (Fraction(0),) * size + (Fraction(-1),)
     try:
-        certificate = linprog(
+        certificate = solve_lp(
             c=np.zeros(len(rows)),
             A_eq=np.asarray([[float(row[j]) for row, _ in augmented_rows] for j in range(size + 1)]),
             b_eq=np.asarray(target, dtype=float),
-            bounds=(0, None),
-            method="highs",
         )
     except (ValueError, OverflowError, FloatingPointError):
         return
-    if not certificate.success or certificate.x is None or not np.all(np.isfinite(certificate.x)):
+    if certificate.status != "optimal" or certificate.x is None or not np.all(np.isfinite(certificate.x)):
         return
     weights = _recover_exact_weights(augmented_rows, target, certificate.x)
     if weights is None or any(weight < 0 for weight in weights):
@@ -863,7 +860,7 @@ def _recover_exact_weights(rows, target, approximate):
 
 
 def _affine_certificate(rows, target, rhs):
-    """Use HiGHS to propose a Farkas certificate; verify it over rational affine forms."""
+    """Propose a Farkas certificate by LP and verify it over rational affine forms."""
     if not rows:
         return False
     if any(a == target and b <= rhs for a, b in rows):
@@ -872,17 +869,15 @@ def _affine_certificate(rows, target, rhs):
         return False
 
     try:
-        result = linprog(
+        result = solve_lp(
             c=np.asarray([float(b) for _, b in rows]),
             A_eq=np.asarray([[float(a[j]) for a, _ in rows] for j in range(len(target))]),
             b_eq=np.asarray([float(v) for v in target]),
-            bounds=(0, None),
-            method='highs',
         )
     except (ValueError, OverflowError, FloatingPointError):
         return False
 
-    if not result.success or result.x is None or not np.all(np.isfinite(result.x)):
+    if result.status != "optimal" or result.x is None or not np.all(np.isfinite(result.x)):
         return False
 
     weights = _recover_exact_weights(rows, target, result.x)

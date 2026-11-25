@@ -1,20 +1,19 @@
 """Lazy optimizer entry points.
 
-Optional libraries are checked only when their selected optimizer is called.
+Libraries are checked only when their selected optimizer is called.
 This keeps importing :mod:`diffractix.solver` independent of IPOPT and NLopt.
 """
 
 from importlib import import_module
 
 
-def _require_package(package: str, extra: str, hint: str = "") -> None:
+def _require_package(package: str, extra: str | None, hint: str = "") -> None:
     try:
         import_module(package)
     except ImportError as error:
-        raise ImportError(
-            f"The {extra.upper()} optimizer requires optional package "
-            f"{package!r}. Install diffractix[{extra}].{hint}"
-        ) from error
+        install = f"diffractix[{extra}]" if extra else "diffractix"
+        label = extra.upper() if extra else "NLopt"
+        raise ImportError(f"The {label} optimizer requires {package!r}. Install {install}.{hint}") from error
 
 
 def solve_scipy(problem, method: str | None = None, options: dict | None = None):
@@ -40,9 +39,9 @@ def solve_ipopt(problem, method: str | None = None, options: dict | None = None)
 
 
 def solve_nlopt(problem, method: str | None = None, options: dict | None = None):
-    """Dispatch to the optional NLopt optimizer."""
+    """Dispatch to the NLopt optimizer."""
     options = {} if options is None else dict(options)
-    _require_package("nlopt", "nlopt")
+    _require_package("nlopt", None)
     from .nlopt import solve_nlopt as solve
 
     return solve(problem, method=method, options=options)

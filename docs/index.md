@@ -89,7 +89,9 @@ The solved focal length equals the 100 mm distance from the lens to the image pl
 
 ## Optional packages
 
-The base install uses Autograd for derivatives and SciPy for optimization.
-Install `diffractix[jax]` or `diffractix[casadi]` for an optional backend, and `diffractix[plot]` for plotting. For other optimizers, install
-`diffractix[ipopt]` or `diffractix[nlopt]`. Install both with `diffractix[all-solvers]`.
+The base install uses Autograd for derivatives and NLopt for optimization.
+Install `diffractix[jax]` or `diffractix[casadi]` for an optional backend, and
+`diffractix[plot]` for plotting. Install `diffractix[scipy]` for SciPy's
+optimizers and HiGHS affine analysis, or `diffractix[ipopt]` for IPOPT.
+`diffractix[all-solvers]` installs both extras.
 The [backends guide](guide/backends.md) explains how to choose a numerical backend.

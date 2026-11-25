@@ -16,7 +16,7 @@ inverse design.
   telescopes and 4f systems, plus custom ABCD elements
 - Any element parameter, position or source property can be a design variable
 - Automatic differentiation with Autograd, JAX or CasADi
-- Objectives and constraints for inverse design, solved with SciPy, IPOPT or NLopt
+- Objectives and constraints for inverse design, solved with NLopt, SciPy, IPOPT or CasADi
 - Plots of beams and rays through the system
 
 ## Installation
@@ -25,20 +25,22 @@ inverse design.
 pip install diffractix
 ```
 
-The base install uses Autograd, NumPy and SciPy and needs Python 3.11 or newer. The base isntall is kept deliberately slim, so it can run on most platforms (inclduing inside the browser). Optional extras:
+The base install uses Autograd, NumPy and NLopt and needs Python 3.11 or newer.
 
 - `pip install "diffractix[jax]"` adds the JAX backend.
 - `pip install "diffractix[casadi]"` adds the CasADi backend.
 - `pip install "diffractix[plot]"` adds Matplotlib for plotting.
-- `pip install "diffractix[ipopt]"`, `"diffractix[nlopt]"` or `"diffractix[all-solvers]"`:
-  the IPOPT and NLopt optimizers. IPOPT is easiest to install with
+- `pip install "diffractix[scipy]"` adds the SciPy optimizers and HiGHS for affine
+  constraint analysis.
+- `pip install "diffractix[ipopt]"` adds IPOPT. Install both extras with
+  `pip install "diffractix[all-solvers]"`. IPOPT is easiest to install with
   `conda install -c conda-forge cyipopt`.
 
 Set `DIFFRACTIX_BACKEND` to `autograd`, `jax`, or `casadi` to select a backend.
 By default Diffractix uses JAX when installed and Autograd otherwise.
 
-`Solver.solve()` prefers NLopt's SLSQP when installed and uses SciPy's SLSQP
-otherwise. Select either optimizer explicitly to use its specific options.
+`Solver.solve()` uses NLopt's SLSQP by default. Select an optimizer explicitly
+to use its specific options.
 
 ## Quick start
 
