@@ -15,7 +15,7 @@ from diffractix.composites import CompositeElement
 from diffractix.elements import OpticalElement, Interface, Space, GaussianAperture
 from diffractix.core import OpticalBase
 from diffractix.graph import (
-    Node, Parameter, Literal, InputNode, compile_graph, walk_ast, evaluate_ast, clone_ast, Scalar,
+    Node, Parameter, ComplexParameter, Literal, InputNode, compile_graph, walk_ast, evaluate_ast, clone_ast, Scalar,
 )
 from diffractix.simulation.simulation import Simulation
 from diffractix.simulation.result import SimulationResultTracer
@@ -887,7 +887,7 @@ class System:
                 val = val.node
             if val is None:
                 return "-"
-            if isinstance(val, (Parameter, Literal)):
+            if isinstance(val, (Parameter, ComplexParameter, Literal)):
                 return f"{val.value:.4g}"
             return f"{val:.4g}" if isinstance(val, Real) else str(val)
 
@@ -897,7 +897,7 @@ class System:
                 node = handle.node
                 if node is None:
                     parts.append(f"{name}=-")
-                elif isinstance(node, Parameter):
+                elif isinstance(node, (Parameter, ComplexParameter)):
                     state = "VAR" if node.is_variable else "FIX"
                     parts.append(f"{name}={node.value:.4g} [{state}]")
                 else:

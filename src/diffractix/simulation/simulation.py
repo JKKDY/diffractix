@@ -8,7 +8,8 @@ from functools import cached_property
 from typing import TYPE_CHECKING
 from types import MappingProxyType
 
-from diffractix.graph import InputNode, Parameter, Program
+from diffractix.graph import ComplexParameter, InputNode, Parameter, Program
+from diffractix.system.info import ComplexParameterData
 from .info import SimulationInput, SimulationStep
 from .result import SimulationResult, SimulationResultTracer
 
@@ -42,27 +43,25 @@ class InitialValues:
         self.values = np.array(values, dtype=float, copy=True)
         self._parameter_indices = dict(parameter_indices)
 
-    def _index(self, parameter: Parameter | InputNode) -> int:
-        if isinstance(parameter, InputNode):
-            parameter = parameter.node
+    def _index(self, parameter: Parameter) -> int:
         if not isinstance(parameter, Parameter):
             raise TypeError("Initial values can only be indexed by a Parameter or its direct InputNode handle.")
         if id(parameter) not in self._parameter_indices:
             raise KeyError(f"Parameter {parameter!r} is not part of this Simulation's theta.")
         return self._parameter_indices[id(parameter)]
 
-    def __getitem__(self, parameter: Parameter | InputNode):
+    def __getitem__(self, parameter: Parameter | ComplexParameter | InputNode):
         """Return the current value of a variable `Parameter`.
 
         Parameters
         ----------
-        parameter : Parameter or InputNode
+        parameter : Parameter, ComplexParameter or InputNode
             A variable `Parameter` in this theta, or its direct handle (for example
-            ``lens.f``, not an expression built from it).
+            ``lens.f``). For a complex parameter, both components must be in theta.
 
         Returns
         -------
-        float
+        float or complex
             The current value.
 
         Raises
@@ -72,28 +71,40 @@ class InitialValues:
         KeyError
             If `parameter` is not part of this Simulation's theta.
         """
+        if isinstance(parameter, InputNode):
+            parameter = parameter.node
+        if isinstance(parameter, ComplexParameter):
+            return complex(self.values[self._index(parameter.real)], self.values[self._index(parameter.imag)])
         return self.values[self._index(parameter)]
 
-    def __setitem__(self, parameter: Parameter | InputNode, value):
+    def __setitem__(self, parameter: Parameter | ComplexParameter | InputNode, value):
         """Set the value of a variable `Parameter`.
 
         Parameters
         ----------
-        parameter : Parameter or InputNode
+        parameter : Parameter, ComplexParameter or InputNode
             A variable `Parameter` in this theta, or its direct handle.
-        value : float
+            For a complex parameter, both components must be in theta.
+        value : float or complex
             The new value.
 
         Raises
         ------
         TypeError
             If `parameter` is not a `Parameter` or one of its direct handles, or `value`
-            is not a real numeric scalar.
+            is not a compatible numeric scalar.
         ValueError
             If `value` is not finite.
         KeyError
             If `parameter` is not part of this Simulation's theta.
         """
+        if isinstance(parameter, InputNode):
+            parameter = parameter.node
+        if isinstance(parameter, ComplexParameter):
+            real, imag = self._index(parameter.real), self._index(parameter.imag)
+            value = parameter._validate_value(value)
+            self.values[[real, imag]] = (value.real, value.imag)
+            return
         index = self._index(parameter)
         value = np.asarray(value)
         if value.ndim != 0 or value.dtype.kind not in "iuf":
@@ -180,6 +191,29 @@ class Simulation:
         if len(self._optical_inputs) != 1:
             raise ValueError("Simulation.symbolic requires exactly one source.")
         return SimulationResultTracer(self.element_data, self._optical_inputs[0].initial_state)
+
+    @cached_property
+    def grouped_parameter_data(self) -> tuple[ParameterData | ComplexParameterData, ...]:
+        """Display metadata with each complete complex pair grouped together.
+
+        Real entries have the same records as `Simulation.parameter_data`.
+        Grouped complex entries expose a complex ``value``, two ``bounds``
+        intervals and the original ``real`` and ``imag`` records. Parameter
+        indices on those records still address the ordinary real theta vector.
+        """
+        by_id = {info.parameter_id: info for info in self.parameter_data}
+        groups = []
+        paired_ids = set()
+        for info in self.parameter_data:
+            if info.parameter_id in paired_ids:
+                continue
+            pair = getattr(info.parameter, "_complex_parameter", None)
+            if pair is not None and id(pair.real) in by_id and id(pair.imag) in by_id:
+                groups.append(ComplexParameterData(by_id[id(pair.real)], by_id[id(pair.imag)]))
+                paired_ids.update((id(pair.real), id(pair.imag)))
+            else:
+                groups.append(info)
+        return tuple(groups)
 
     @cached_property
     def _initial_values(self):
@@ -340,15 +374,15 @@ class Simulation:
         ]
 
         if self.parameter_data:
-            variable_rows = [
-                (
-                    str(parameter.parameter_index),
-                    parameter.name or "-",
-                    f"{parameter.value:.4g}",
-                    f"[{parameter.lower_bound:.4g}, {parameter.upper_bound:.4g}]",
-                )
-                for parameter in self.parameter_data
-            ]
+            variable_rows = []
+            for parameter in self.grouped_parameter_data:
+                if isinstance(parameter, ComplexParameterData):
+                    index = f"{parameter.real.parameter_index}, {parameter.imag.parameter_index}"
+                    bounds = ", ".join(f"[{lo:.4g}, {hi:.4g}]" for lo, hi in parameter.bounds)
+                else:
+                    index = str(parameter.parameter_index)
+                    bounds = f"[{parameter.lower_bound:.4g}, {parameter.upper_bound:.4g}]"
+                variable_rows.append((index, parameter.name or "-", f"{parameter.value:.4g}", bounds))
             lines.extend(["", "Variables", "", *render_table(("#", "Parameter", "Initial", "Bounds"), variable_rows)])
 
         if constraints:

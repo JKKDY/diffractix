@@ -605,6 +605,8 @@ class Solver:
             return value
 
         def check_finite_value(value, description):
+            if np.iscomplexobj(value):
+                raise TypeError(f"{description} must be real-valued. Use the real or imaginary part, or its magnitude.")
             require(xp.all(xp.isfinite(value)), f"{description} evaluated to a non-finite value.")
             return value
 

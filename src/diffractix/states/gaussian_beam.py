@@ -53,10 +53,11 @@ class GaussianBeam(ParaxialState):
 
     Parameters
     ----------
-    q : complex
+    q : complex or Node
         Complex beam parameter [m]: ``q = z + i z_R``, where ``z`` is the distance
         past the waist and ``z_R`` the Rayleigh range. Its imaginary part must be
-        positive.
+        positive. A declared beam exposes this field as an `InputNode`; use
+        `GaussianBeam.numeric` for a numerical copy.
     wavelength : float or Node
         Vacuum wavelength [m].
     n : float or Node, optional
@@ -93,7 +94,7 @@ class GaussianBeam(ParaxialState):
     >>> units.format(beam.numeric().divergence_angle, mrad)
     '0.6774 mrad'
     """
-    q: complex
+    q: Node
     wavelength: Node
     n: Node = make_symbol(AMBIENT_N)
 
@@ -105,11 +106,21 @@ class GaussianBeam(ParaxialState):
 
     def __post_init__(self):
         super().__post_init__()
-        _require_q(self.q)
-        if not getattr(type(self), "_is_numerical", False):
-            self.require(self.wavelength > 0, label=f"{self.label}: wavelength > 0")
-            if self.n.node is not None:
-                self.require(self.n > 0, label=f"{self.label}: n > 0")
+        if getattr(type(self), "_is_numerical", False):
+            _require_q(self.q)
+            return
+        if self.q.node is None:
+            raise ValueError("Invalid q-parameter: q must have a value.")
+        try:
+            value = self.q.evaluate()
+        except KeyError:
+            pass  # A Symbol can receive its value when the System is built.
+        else:
+            _require_q(value)
+        self.require(self.q.imag > 0, label=f"{self.label}: Im(q) > 0")
+        self.require(self.wavelength > 0, label=f"{self.label}: wavelength > 0")
+        if self.n.node is not None:
+            self.require(self.n > 0, label=f"{self.label}: n > 0")
 
     def propagate(self, A, B, C, D, n) -> 'GaussianBeam':
         """Return the beam after a first-order (ABCD) transformation.

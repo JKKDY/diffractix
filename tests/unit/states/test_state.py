@@ -115,8 +115,8 @@ def test_reassignment_keeps_handles_and_existing_expressions_live(object_type):
     assert expression.value == 24.0
 
 
-@pytest.mark.parametrize("value", [True, 1.0j, np.array([1.0, 2.0])])
-def test_graph_fields_reject_values_outside_the_existing_parameter_model(value):
+@pytest.mark.parametrize("value", [True, np.array([1.0, 2.0])])
+def test_graph_fields_reject_non_numeric_scalar_values(value):
     with pytest.raises(TypeError, match="Parameter"):
         ExampleInput(direct=value)
 
@@ -302,7 +302,7 @@ def test_optional_graph_fields_keep_none_and_can_be_assigned_later():
 @pytest.mark.parametrize("input_type, arguments, expected", [
     (Ray, {"x": 1e-3, "theta": 0.02}, ("x", "theta", "n")),
     (RayBundle, {"x": np.array([1e-3]), "theta": np.array([0.02])}, ("n",)),
-    (GaussianBeam, {"q": 1.0j, "wavelength": 1e-6}, ("wavelength", "n")),
+    (GaussianBeam, {"q": 1.0j, "wavelength": 1e-6}, ("q", "wavelength", "n")),
 ])
 def test_builtin_inputs_declare_only_scalar_parameters_and_bind_ambient(input_type, arguments, expected):
     source = input_type(**arguments)

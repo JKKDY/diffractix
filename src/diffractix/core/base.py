@@ -4,10 +4,11 @@ import copy
 import weakref
 
 from dataclasses import field, fields, is_dataclass
-from numbers import Real
+from numbers import Complex, Real
 from typing import ClassVar, get_args, get_origin, get_type_hints
+import numpy as np
 
-from diffractix.graph import InputNode, Node, Parameter
+from diffractix.graph import ComplexParameter, InputNode, Node, Parameter
 
 
 _GRAPH_PARAMETER = object()
@@ -21,7 +22,7 @@ def parameter(default=None):
 
     Parameters
     ----------
-    default : float or Node, optional
+    default : float, complex or Node, optional
         Default value. Defaults to ``None``, meaning no value.
 
     Returns
@@ -55,8 +56,9 @@ class OpticalBase:
 
     A field annotated with ``Node`` (or declared with :func:`parameter`) is a
     parameter. Parameters can be made variable and optimized in inverse
-    design. By default they are fixed and act as constants. Assigning a number creates a `Parameter` named after the field;
-    assigning a graph expression uses it as is. The attribute is a handle to that
+    design. By default they are fixed and act as constants. Assigning a number
+    creates a `Parameter` or `ComplexParameter` named after the field.
+    Assigning a graph expression uses it as is. The attribute is a handle to that
     value, so ``lens.f.variable()`` and ``lens.f.value`` work, and assigning
     ``lens.f = 0.2`` later replaces what the handle points to.
 
@@ -161,7 +163,7 @@ class OpticalBase:
         return tuple(getattr(self, name) for name in self.parameter_names)
 
     @property
-    def values(self) -> tuple[float | None, ...]:
+    def values(self) -> tuple[float | complex | None, ...]:
         """Values: the current value of each parameter, or ``None`` where it has none (for example an unbound `Symbol`)."""
         values = []
         for handle in self.parameters:
@@ -215,11 +217,15 @@ class OpticalBase:
     # PARAMETER ASSIGNMENT
     # --------------------
     def __setattr__(self, name, value):
-        def convert_value_to_node(name: str) -> Node | None:
+        def convert_value_to_node(name: str, value) -> Node | None:
             if isinstance(value, Node):
                 return value
+            if getattr(value, "shape", None) == () and hasattr(value, "dtype"):
+                value = np.asarray(value).item()
             if isinstance(value, Real) and not isinstance(value, bool):
                 return Parameter(value=value, name=name, owner=self)
+            if isinstance(value, Complex) and not isinstance(value, Real):
+                return ComplexParameter(value=value, name=name, owner=self)
             if value is None:
                 return None
             raise TypeError(
@@ -230,9 +236,9 @@ class OpticalBase:
         if name in self.parameter_names:
             handle = self.__dict__.get(name)
             if isinstance(handle, InputNode):
-                handle.node = convert_value_to_node(name)
+                handle.node = convert_value_to_node(name, value)
                 return
-            value = InputNode(convert_value_to_node(name,))
+            value = InputNode(convert_value_to_node(name, value))
         object.__setattr__(self, name, value)
 
     def __deepcopy__(self, memo):
@@ -245,6 +251,8 @@ class OpticalBase:
             node = getattr(clone.__dict__.get(name), "node", None)
             if isinstance(node, Parameter) and node.owner is self:
                 node._owner = weakref.ref(clone)
+            if isinstance(node, ComplexParameter) and node.real.owner is self:
+                node.real._owner = node.imag._owner = weakref.ref(clone)
         return clone
 
     def _get_parameter_label(self, name: str) -> str:
@@ -253,11 +261,11 @@ class OpticalBase:
             return f"{label}.{name}"
         return f"{type(self).__name__}.{name}"
 
-    def _get_parameter_node(self, name: str) -> Parameter | None:
+    def _get_parameter_node(self, name: str) -> Parameter | ComplexParameter | None:
         handle = getattr(self, name)
         if not isinstance(handle, InputNode):
             raise TypeError( f"Parameter {self._get_parameter_label(name)!r} is not an InputNode.")
-        if isinstance(handle.node, Parameter):
+        if isinstance(handle.node, (Parameter, ComplexParameter)):
             return handle.node
         return None
 
@@ -288,9 +296,10 @@ class OpticalBase:
         ----------
         *parameter_names : str
             Names of parameters to mark variable. Their bounds stay as they are (default: (-inf, +inf)).
-        **bounds : tuple of float
+        **bounds : tuple
             Parameters to mark variable with new bounds, as ``name=(lower, upper)``.
             A ``None`` endpoint keeps the current one.
+            For a `ComplexParameter`, supply a pair of intervals in real, imaginary order.
 
         Returns
         -------
@@ -317,6 +326,12 @@ class OpticalBase:
         >>> lens = lens.variable(R1=(50 * mm, 200 * mm), d=(3 * mm, 10 * mm))
         >>> lens.R1.node.is_variable, lens.R2.node.is_variable
         (True, False)
+
+        >>> from diffractix import GaussianBeam
+        >>> beam = GaussianBeam(q=0.02 + 0.04j, wavelength=1e-6)
+        >>> _ = beam.variable(q=((-0.1, 0.1), (0.01, 0.2)))
+        >>> beam.q.bounds
+        ((-0.1, 0.1), (0.01, 0.2))
         """
         duplicated = set(parameter_names) & set(bounds)
         if duplicated:
@@ -336,7 +351,12 @@ class OpticalBase:
                     "a Parameter and cannot itself be marked variable."
                 )
 
-        previous = [(parameter, parameter.bounds, parameter.is_variable) for parameter, _ in parameters]
+        components = [
+            component for parameter, _ in parameters
+            for component in ((parameter.real, parameter.imag)
+                              if isinstance(parameter, ComplexParameter) else (parameter,))
+        ]
+        previous = [(parameter, parameter.bounds, parameter.is_variable) for parameter in components]
         try:
             for parameter, pair in parameters:
                 parameter.variable(bounds=pair)

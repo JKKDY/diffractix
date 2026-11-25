@@ -276,6 +276,8 @@ def prepare_constraints(constraints, *, tracer, bindings):
         if not has_inputs:
             value = np.asarray(expression.evaluate(bindings=bindings))
             description = constraint.label or f"Constraint {position}"
+            if np.iscomplexobj(value):
+                raise TypeError(f"{description} must be real-valued. Use the real or imaginary part, or its magnitude.")
             if not np.all(np.isfinite(value)):
                 raise ValueError(f"{description} has a non-finite constant value.")
             if not np.all((value >= constraint.lower_bound) & (value <= constraint.upper_bound)):

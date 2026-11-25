@@ -10,7 +10,7 @@ import numpy as np
 from diffractix.graph import InputNode, Node, Parameter, Symbol, evaluate_ast, walk_ast
 from diffractix.simulation import Simulation
 from diffractix.simulation.result import ResultSymbolKey, resolve_symbol
-from diffractix.system.info import ParameterData
+from diffractix.system.info import ComplexParameterData, ParameterData
 
 from .scale import Scaling
 
@@ -282,14 +282,14 @@ class Solution:
 
         Parameters
         ----------
-        quantity : Parameter, InputNode or Node
+        quantity : Parameter, ComplexParameter, InputNode or Node
             A variable `Parameter` in the model (or its direct handle) to read its
             solved value, or any other graph expression to evaluate, such as a
             derived gap.
 
         Returns
         -------
-        float or array_like
+        float, complex or array_like
             The value. Solved values replace the model's variable Parameters, fixed
             Parameters keep their current value, and the `Simulation`'s bindings
             resolve its Symbols.
@@ -447,12 +447,16 @@ class Solution:
         ]
 
         if self.simulation.parameter_data:
-            rows = [
-                (info.name or "-", f"{initial:.4g}", f"{value:.4g}",
-                 f"[{info.lower_bound:.4g}, {info.upper_bound:.4g}]")
-                for info, initial, value in zip(
-                    self.simulation.parameter_data, self._initial_x, self.x, strict=True)
-            ]
+            rows = []
+            for info in self.simulation.grouped_parameter_data:
+                if isinstance(info, ComplexParameterData):
+                    real, imag = info.real.parameter_index, info.imag.parameter_index
+                    initial = complex(self._initial_x[real], self._initial_x[imag])
+                    bounds = ", ".join(f"[{lo:.4g}, {hi:.4g}]" for lo, hi in info.bounds)
+                else:
+                    initial = self._initial_x[info.parameter_index]
+                    bounds = f"[{info.lower_bound:.4g}, {info.upper_bound:.4g}]"
+                rows.append((info.name or "-", f"{initial:.4g}", f"{info.value:.4g}", bounds))
             lines.extend(["", "Variables", "", *render_table(("Parameter", "Initial", "Solved", "Bounds"), rows)])
 
         if self.objectives:

@@ -56,6 +56,27 @@ class ParameterData:
 
 
 @dataclass(frozen=True)
+class ComplexParameterData:
+    """Grouped reporting data for the real and imaginary theta entries."""
+
+    real: ParameterData
+    imag: ParameterData
+
+    @property
+    def name(self) -> str | None:
+        return self.real.name.removesuffix(".real") if self.real.name is not None else None
+
+    @property
+    def value(self) -> complex:
+        return complex(self.real.value, self.imag.value)
+
+    @property
+    def bounds(self) -> tuple[tuple[float, float], tuple[float, float]]:
+        return ((self.real.lower_bound, self.real.upper_bound),
+                (self.imag.lower_bound, self.imag.upper_bound))
+
+
+@dataclass(frozen=True)
 class Placement:
     """An element added to a system, including its requested position and call site."""
 

@@ -173,6 +173,14 @@ class Node:
     def __abs__(self) -> UnaryOp:
         return Node._make_unary_op(Op.ABS, self)
 
+    @property
+    def real(self) -> Node:
+        return Node._make_unary_op(Op.REAL, self)
+
+    @property
+    def imag(self) -> Node:
+        return Node._make_unary_op(Op.IMAG, self)
+
     def sigmoid(self) -> UnaryOp:
         return Node._make_unary_op(Op.SIGMOID, self)
 
@@ -543,6 +551,9 @@ class Parameter(Node):
 
     @bounds.setter
     def bounds(self, bounds):
+        self.lower_bound, self.upper_bound = self._resolve_bounds(bounds)
+
+    def _resolve_bounds(self, bounds):
         try:
             lower_bound, upper_bound = bounds
         except (TypeError, ValueError):
@@ -557,8 +568,7 @@ class Parameter(Node):
                 f"[{lower_bound}, {upper_bound}]."
             )
 
-        self.lower_bound = lower_bound
-        self.upper_bound = upper_bound
+        return lower_bound, upper_bound
 
     @property
     def owner(self):
@@ -587,6 +597,122 @@ class Parameter(Node):
         status = "V" if self.is_variable else "F"
         return f"{self.full_name}={self.value:.4g}[{status}]"
 
+
+
+class ComplexParameter(BinaryOp):
+    """A complex design value backed by two real Parameters.
+
+    Its graph expression is ``real + 1j * imag``. The real and imaginary
+    components occupy separate entries in theta when variable.
+
+    Parameters
+    ----------
+    value : complex
+        Initial value. Both components must be finite.
+    name : str, optional
+        Name used in reports. The components take the suffixes ``.real``
+        and ``.imag``. Defaults to no name.
+    bounds : tuple of two pairs, optional
+        Real bounds and imaginary bounds, in that order. Each pair is
+        ``(lower, upper)`` and follows the rules of `Parameter.bounds`.
+        Defaults to two unbounded intervals.
+    variable : bool, optional
+        Whether both components vary. Defaults to ``False``.
+    owner : OpticalBase, optional
+        Element or state that owns the components. Defaults to no owner.
+    """
+
+    def __init__(self, value: complex, name: str | None = None, *,
+                 bounds=None, variable: bool = False, owner=None):
+        value = self._validate_value(value)
+        self.name = name
+        self._real = Parameter(value.real, f"{name or '<parameter>'}.real", variable=variable, owner=owner)
+        self._imag = Parameter(value.imag, f"{name or '<parameter>'}.imag", variable=variable, owner=owner)
+        self._real._complex_parameter = self
+        self._imag._complex_parameter = self
+        super().__init__(Op.ADD, self._real, 1j * self._imag)
+        if bounds is not None:
+            self.bounds = bounds
+
+    @staticmethod
+    def _validate_value(value):
+        if isinstance(value, bool) or not isinstance(value, Scalar):
+            raise TypeError("ComplexParameter value must be a numeric scalar.")
+        value = complex(value)
+        if not math.isfinite(value.real) or not math.isfinite(value.imag):
+            raise ValueError("ComplexParameter value must be finite.")
+        return value
+
+    @property
+    def real(self) -> Parameter:
+        """Real component. Assign a finite real number to update its value."""
+        return self._real
+
+    @real.setter
+    def real(self, value: float):
+        self._real.value = self._validate_component(value)
+
+    @property
+    def imag(self) -> Parameter:
+        """Imaginary component. Assign a finite real number to update its value."""
+        return self._imag
+
+    @imag.setter
+    def imag(self, value: float):
+        self._imag.value = self._validate_component(value)
+
+    @staticmethod
+    def _validate_component(value) -> float:
+        if isinstance(value, bool) or not isinstance(value, Real):
+            raise TypeError("ComplexParameter component must be a real scalar.")
+        value = float(value)
+        if not math.isfinite(value):
+            raise ValueError("ComplexParameter component must be finite.")
+        return value
+
+    @property
+    def value(self) -> complex:
+        """Current complex value."""
+        return complex(self.real.value, self.imag.value)
+
+    @value.setter
+    def value(self, value):
+        value = self._validate_value(value)
+        self.real.value, self.imag.value = value.real, value.imag
+
+    @property
+    def bounds(self):
+        """Real and imaginary bound pairs, in that order."""
+        return self.real.bounds, self.imag.bounds
+
+    @bounds.setter
+    def bounds(self, bounds):
+        try:
+            real, imag = bounds
+        except (TypeError, ValueError):
+            raise ValueError("Complex bounds must be a pair of real and imaginary intervals.") from None
+        real = self.real._resolve_bounds(real)
+        imag = self.imag._resolve_bounds(imag)
+        self.real.lower_bound, self.real.upper_bound = real
+        self.imag.lower_bound, self.imag.upper_bound = imag
+
+    def variable(self, *, bounds=None) -> ComplexParameter:
+        """Mark both components variable, optionally replacing their bounds."""
+        if bounds is not None:
+            self.bounds = bounds
+        self.real.variable()
+        self.imag.variable()
+        return self
+
+    def fixed(self) -> ComplexParameter:
+        """Mark both components fixed."""
+        self.real.fixed()
+        self.imag.fixed()
+        return self
+
+    def __repr__(self):
+        status = "V" if self.is_variable else "F"
+        return f"{self.name or '<parameter>'}={self.value:.4g}[{status}]"
 
 
 class Symbol(Node):

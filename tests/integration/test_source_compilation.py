@@ -1,8 +1,8 @@
 """Source fields and element fields share canonical theta and snapshot values."""
 import numpy as np
 import pytest
-from diffractix import GaussianBeam, Parameter, Ray, RayBundle, Space, System
-from diffractix.backend import grad,hessian,jit,xp
+from diffractix import ABCD, ComplexParameter, GaussianBeam, Parameter, Ray, RayBundle, Solver, Space, System
+from diffractix.backend import grad,hessian,jacobian,jit,xp
 
 
 def test_source_and_optical_fields_share_one_parameter_and_derivatives():
@@ -54,3 +54,97 @@ def test_build_rejects_source_q_mutated_after_construction(q):
     source.q = q
     with pytest.raises(ValueError, match="Invalid q-parameter"):
         System(Space(d=0.1), source=source).build()
+
+
+def test_complex_source_parameter_runs_and_solves_in_real_coordinates():
+    q = ComplexParameter(0.02 + 0.04j, "source_q").variable(bounds=((-0.1, 0.1), (0.01, 0.2)))
+    source = GaussianBeam(q=q, wavelength=1e-6)
+    simulation = System(Space(d=0.03), source=source).build()
+    real, imag = simulation.parameter_data
+    assert real.parameter is q.real
+    assert imag.parameter is q.imag
+    group, = simulation.grouped_parameter_data
+    assert group.value == q.value
+    assert group.bounds == q.bounds
+
+    guess = simulation.initial_values
+    guess[source.q] = 0.01 + 0.03j
+    assert guess[q] == 0.01 + 0.03j
+    np.testing.assert_array_equal(guess.values, [0.01, 0.03])
+    assert simulation.initial_values[q] == 0.02 + 0.04j
+    assert simulation.run(guess.values).final.q == pytest.approx(0.04 + 0.03j)
+    with pytest.raises(ValueError, match="positive imaginary part"):
+        simulation.run([0.02, -0.01])
+
+    def final_parts(theta):
+        final = simulation.run(theta).final.q
+        return xp.stack((xp.real(final), xp.imag(final)))
+
+    np.testing.assert_allclose(jit(jacobian(final_parts))(guess.values), np.eye(2))
+    solver = Solver(simulation)
+    solver.target(value=simulation.symbolic.final.q.real, target=0.05)
+    solver.target(value=simulation.symbolic.final.q.imag, target=0.06)
+    solution = solver.solve(x0=guess)
+    assert solution.success and solution.feasible, solution.message
+    assert solution.value(source.q) == pytest.approx(0.02 + 0.06j, abs=1e-7)
+    assert solution.value(q) == solution.simulation.initial_values[q]
+    assert "source_q.real" not in str(solution)
+    assert "source_q" in str(solution)
+    assert "0.02+0.06j" in str(solution)
+
+
+def test_complex_abcd_entry_uses_the_same_graph_parameters():
+    b = ComplexParameter(0.02 + 0.01j).variable()
+    simulation = System(ABCD(B=b), source=GaussianBeam(q=0.03j, wavelength=1e-6)).build()
+    guess = simulation.initial_values
+    np.testing.assert_array_equal(guess.values, [0.02, 0.01])
+    assert simulation.run().final.q == pytest.approx(0.02 + 0.04j)
+    assert jit(grad(lambda theta: xp.imag(simulation.run(theta).final.q)))(guess.values)[1] == pytest.approx(1)
+
+
+def test_complex_bounds_are_atomic_and_literal_q_is_a_parameter():
+    source = GaussianBeam(q=0.02 + 0.04j, wavelength=1e-6)
+    q = source.q.node
+    assert isinstance(q, ComplexParameter)
+    old_bounds = q.bounds
+    with pytest.raises(ValueError, match="outside bounds"):
+        source.variable(q=((-0.1, 0.1), (0.05, 0.1)))
+    assert q.bounds == old_bounds
+    assert not q.real.is_variable and not q.imag.is_variable
+    source.variable("q")
+    assert q.real.is_variable and q.imag.is_variable
+    source.fixed("q")
+    assert not q.real.is_variable and not q.imag.is_variable
+    source.q = 0.04 + 0.05j
+    assert source.numeric({"ambient_n": 1.0}).q == pytest.approx(0.04 + 0.05j)
+
+
+def test_complex_component_assignment_keeps_graph_identity_and_bounds():
+    source = GaussianBeam(q=0.02 + 0.04j, wavelength=1e-6, n=1)
+    q = source.q.node.variable(bounds=((-0.1, 0.1), (0.01, 0.2)))
+    real, imag = q.real, q.imag
+    bounds = q.bounds
+    expression = 2 * source.q
+
+    q.real = 0.01
+    source.q.imag = 0.06
+
+    assert q.real is real and q.imag is imag
+    assert real.is_variable and imag.is_variable
+    assert q.bounds == bounds
+    assert q.value == 0.01 + 0.06j
+    assert expression.evaluate() == pytest.approx(0.02 + 0.12j)
+    assert source.numeric().q == pytest.approx(q.value)
+
+    with pytest.raises(TypeError, match="real scalar"):
+        q.imag = 1j
+    with pytest.raises(ValueError, match="finite"):
+        source.q.real = np.inf
+    assert q.value == 0.01 + 0.06j
+
+
+def test_complex_residual_requires_a_real_quantity():
+    source = GaussianBeam(q=0.03j, wavelength=1e-6).variable("q")
+    solver = Solver(System(source=source)).target(source.q)
+    with pytest.raises(TypeError, match="Objective must be real-valued"):
+        solver.solve()

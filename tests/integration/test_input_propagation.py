@@ -74,14 +74,13 @@ def test_numerical_gaussian_factory_and_complex_propagation_derivatives():
         np.testing.assert_allclose(jit(function)(focal), expected, rtol=1e-12, atol=1e-14)
 
 
-def test_numeric_preserves_tracers_in_ordinary_complex_fields():
+def test_numerical_gaussian_state_preserves_complex_tracers():
     wavelength, index, rayleigh = 1e-6, 1.5, 0.03
     coefficient = wavelength / (np.pi * index * rayleigh)
 
     def width_squared(position):
         q = position + 1j * rayleigh
-        declaration = GaussianBeam(q=q, wavelength=wavelength, n=index)
-        numerical = declaration.numeric()
+        numerical = GaussianBeam.numerical_type()(q=q, wavelength=wavelength, n=index)
         assert numerical.q is q
         return numerical.w**2
 

@@ -63,7 +63,7 @@ def test_factories_describe_the_same_waist_in_a_non_air_medium():
 def test_wavefront_radius_allows_both_signs_and_plane_limit(radius):
     beam = GaussianBeam.from_w_and_R(1e-3, radius, 1e-6)
     expected_inverse_q = (0.0 if np.isinf(radius) else 1.0 / radius) - 1j / np.pi
-    assert 1 / beam.q == pytest.approx(expected_inverse_q)
+    assert 1 / beam.q.evaluate() == pytest.approx(expected_inverse_q)
 
 
 @pytest.mark.parametrize("radius", [0.0, np.nan])
@@ -240,7 +240,7 @@ def test_waist_envelope_derivatives_remain_finite_through_plane_curvature():
                               complex(np.inf, 1), complex(0, np.inf)])
 @pytest.mark.parametrize("entry", ["declarative", "numerical", "width"])
 def test_invalid_q_is_rejected_before_division_or_width_evaluation(q, entry):
-    with pytest.raises(ValueError, match="Invalid q-parameter"):
+    with pytest.raises(ValueError, match="Invalid q-parameter|ComplexParameter value must be finite"):
         if entry == "width":
             GaussianBeam.w_R_from_q(q, wavelength=1e-6, n=1)
         else:

@@ -177,16 +177,9 @@ norm belongs on `Objective` or on `Solver.target`.
 
 ## 12. Complex parameters
 
-Complex quantities (a Gaussian beam's `q`, complex ABCD entries such as an aperture's)
-can only be constants today. A complex parameter would let the optimizer vary them.
-Design agreed with the maintainer: back it by two real `Parameter`s, so theta gets
-a real entry for the real part and one for the imaginary part, and in the graph it is
-just `re + 1j * im`. The optimizers (SciPy, IPOPT, NLopt) stay purely real, and
-gradients stay ordinary real gradients. Needs: a way to create one (a factory or a
-complex flavour of `Parameter`), bounds per part, `variable()`/`fixed()` acting on
-both, `parameter_data` and `Solution.value()` reporting the pair as one complex value,
-printing, and fields such as `GaussianBeam.q` accepting it. Do not add special-case
-complex fields to elements or states for this; it belongs in the graph.
+Implemented as `ComplexParameter`. It is backed by two real `Parameter`s in theta
+and represented as `re + 1j * im` in the graph. See the parameters guide for
+declaring and optimizing a Gaussian beam's `q`.
 
 ## 13. Elliptical Gaussian beams and per-axis elements
 

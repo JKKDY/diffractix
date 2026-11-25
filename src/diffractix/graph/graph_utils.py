@@ -4,6 +4,7 @@ from .node import (
     Node,
     Literal,
     Parameter,
+    ComplexParameter,
     Symbol,
     InputNode,
     BinaryOp,
@@ -99,7 +100,7 @@ def clone_ast(node: Node, memo: dict[int, Node] | None = None) -> Node:
             raise ASTCycleError(f"Cycle detected at {describe_node(node)}.")
         active.add(node_id)
 
-        if isinstance(node, (Literal, Parameter, Symbol)):
+        if isinstance(node, (Literal, Parameter, ComplexParameter, Symbol)):
             copy = node
         elif isinstance(node, BinaryOp):
             copy = BinaryOp(node.op, clone(node.left), clone(node.right))

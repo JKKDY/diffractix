@@ -1,4 +1,4 @@
-from .node import Node, Literal, Parameter, Symbol, InputNode, UnaryOp, BinaryOp, Scalar
+from .node import Node, Literal, Parameter, ComplexParameter, Symbol, InputNode, UnaryOp, BinaryOp, Scalar
 from .compile import compile_graph, precompile, optimize
 from .program import Program, Input, Register, Constant, UnaryInstruction, BinaryInstruction
 from .graph_utils import clone_ast, evaluate_ast, walk_ast
@@ -10,6 +10,7 @@ __all__ = [
     "Scalar",
     "Literal",
     "Parameter",
+    "ComplexParameter",
     "Symbol",
     "InputNode",
     "UnaryOp",

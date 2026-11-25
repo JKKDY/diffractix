@@ -28,9 +28,48 @@ print(lens.f.value, lens.f.is_variable, lens.f.bounds)
 the current bound, which is unbounded by default. The starting value must lie within
 the bounds.
 
-Light states have parameters too: a ray's `x`, `theta` and `n`, and a Gaussian beam's
-wavelength and index can be variable. A Gaussian beam's `q` and a bundle's arrays of
-heights and angles are plain numbers and stay fixed.
+Light states have parameters too. A ray's `x`, `theta` and `n` and a Gaussian beam's
+`q`, wavelength and index can all vary. A ray bundle's arrays of heights and angles
+stay fixed.
+
+## Complex parameters
+
+A `ComplexParameter` stores a real and an imaginary `Parameter`. Use a pair of
+intervals `((real_lower, real_upper), (imag_lower, imag_upper))` to bound them.
+For a Gaussian beam's `q`, use a positive lower bound on the imaginary part so
+the optimizer evaluates valid beam states.
+
+```python
+from diffractix import ComplexParameter, GaussianBeam
+
+q = ComplexParameter(0.02 + 0.04j, name="source_q")
+q.variable(bounds=((-0.1, 0.1), (0.01, 0.2)))
+beam = GaussianBeam(q=q, wavelength=1e-6, n=1)
+simulation = System(Space(d=0.03), source=beam).build()
+guess = simulation.initial_values
+guess[q] = 0.01 + 0.03j
+print(guess[q])
+print(guess.values.tolist())
+```
+
+```text title="Output"
+(0.01+0.03j)
+[0.01, 0.03]
+```
+
+You can also give a complex number directly to a parameter field and call
+`beam.q.variable(bounds=...)`. Assigning `q.real = 0.01` or
+`beam.q.imag = 0.06` updates the existing component's value and keeps its bounds
+and variable status. The declared `beam.q` is a graph handle.
+`beam.numeric().q` and `simulation.run().initial.q` are numerical values.
+Use `GaussianBeam.numerical_type()` when constructing a numerical state from
+backend tracers inside a differentiated function.
+
+Both components have entries in theta and `simulation.parameter_data`.
+`simulation.grouped_parameter_data` shows the pair together for display.
+`solution.value(q)` returns the solved complex value. To write real objectives
+or constraints on a complex expression, use its `.real` or `.imag` part, or
+`abs(expression)` for its magnitude.
 
 ## Shared parameters
 
@@ -100,7 +139,8 @@ error that names it. A design with a contradiction in its fixed values therefore
 reaches the optimizer.
 
 Some requirements are added for you. Every `Space` requires `d >= 0`, every source
-requires a positive refractive index (and a Gaussian beam a positive wavelength), and
+requires a positive refractive index (and a Gaussian beam a positive wavelength and
+positive imaginary part of `q`), and
 generated gaps must not be negative.
 
 ## Values provided by the system

@@ -18,7 +18,7 @@ class ABCD(OpticalElement):
 
     Parameters
     ----------
-    A, B, C, D : float or Node, optional
+    A, B, C, D : float, complex or Node, optional
         Matrix entries, acting on ``[x, theta]``: `B` in [m], `C` in [1/m].
         Default to the identity.
     d : float or Node, optional

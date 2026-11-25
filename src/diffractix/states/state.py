@@ -6,7 +6,7 @@ from functools import cache
 import numpy as np
 
 from diffractix.core import OpticalBase
-from diffractix.graph import Literal, Parameter, Symbol
+from diffractix.graph import ComplexParameter, Literal, Parameter, Symbol
 
 
 @cache
@@ -103,7 +103,7 @@ class OpticalState(OpticalBase):
                 return "-"
             if isinstance(node, Symbol):
                 return str(node.key)
-            if isinstance(node, (Parameter, Literal)):
+            if isinstance(node, (Parameter, ComplexParameter, Literal)):
                 return number(node.value)
             return repr(node)
 

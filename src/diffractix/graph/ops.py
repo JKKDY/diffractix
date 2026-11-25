@@ -19,6 +19,8 @@ class Op(Enum):
     NEG = auto()
     POS = auto()
     ABS = auto()
+    REAL = auto()
+    IMAG = auto()
 
     # unary functions
     SIGMOID = auto()
@@ -66,6 +68,8 @@ OP_ARITY = {
     Op.NEG: 1,
     Op.POS: 1,
     Op.ABS: 1,
+    Op.REAL: 1,
+    Op.IMAG: 1,
     Op.SIGMOID: 1,
     Op.EXP: 1,
     Op.LOG: 1,
@@ -100,6 +104,8 @@ OP_SYMBOLS = {
     Op.NEG: "-",
     Op.POS: "+",
     Op.ABS: "abs",
+    Op.REAL: "real",
+    Op.IMAG: "imag",
     Op.SIGMOID: "sigmoid",
     Op.EXP: "exp",
     Op.LOG: "log",
@@ -142,6 +148,8 @@ def get_op_functions():
         Op.NEG: xp.negative,
         Op.POS: lambda x: x,
         Op.ABS: xp.abs,
+        Op.REAL: xp.real,
+        Op.IMAG: xp.imag,
         Op.SIGMOID: lambda x: 1.0 / (1.0 + xp.exp(-x)),
         Op.EXP: xp.exp,
         Op.LOG: xp.log,

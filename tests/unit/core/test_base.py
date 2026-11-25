@@ -264,7 +264,7 @@ def test_discovery_combines_annotations_metadata_and_inherited_fields():
     assert child.phase == 1j and child.enabled is True
 
 
-@pytest.mark.parametrize("invalid", [True, "invalid", 1j, np.array([1.0]), object()])
+@pytest.mark.parametrize("invalid", [True, "invalid", np.array([1.0]), object()])
 def test_failed_assignment_keeps_handle_target_and_downstream_expression(invalid):
     element = DummyElement(2.0)
     handle, target = element.x, element.x.node

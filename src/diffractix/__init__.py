@@ -45,6 +45,7 @@ from .composites import (
 from .graph import (
     Node,
     Parameter,
+    ComplexParameter,
     Symbol,
     SymbolicControlFlowError,
 )
@@ -104,6 +105,7 @@ __all__ = [
     # Graph
     "Node",
     "Parameter",
+    "ComplexParameter",
     "Symbol",
     "SymbolicControlFlowError",
 
