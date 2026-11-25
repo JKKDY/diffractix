@@ -5,6 +5,37 @@ from diffractix import Constraint, Parameter, Ray, Solver, Space, System
 from diffractix.graph import Symbol
 
 
+@pytest.mark.parametrize("exact_match", [True, False])
+def test_reporting_only_reuses_constraints_at_the_exact_returned_point(monkeypatch, exact_match):
+    from diffractix.solver import solver as solver_module
+    from diffractix.solver.solution import SolverResult
+
+    p = Parameter(0.5).variable(bounds=(0, 1))
+    simulation = System(Space(d=1), source=Ray(x=p, theta=0.1, n=1)).build()
+    solver = Solver(simulation).target(p - 0.5)
+    solver.require(p >= 0, simulation.symbolic.final.x <= 0.7)
+
+    def solve(problem, **kwargs):
+        problem.constraints(problem.x0)
+        point = problem.x0 if exact_match else problem.x0 + 0.5
+        return SolverResult(point, True, 0, "stub")
+
+    monkeypatch.setattr(solver_module, "solve_scipy", solve)
+    solution = solver.solve(optimizer="scipy")
+    assert "constraints" not in solution.__dict__
+    original_run = solution.run
+    calls = []
+
+    def record_run():
+        calls.append(1)
+        return original_run()
+
+    monkeypatch.setattr(solution, "run", record_run)
+    assert solution.feasible is exact_match
+    assert len(solution.constraints) == 2
+    assert calls == ([] if exact_match else [1])
+
+
 @pytest.mark.parametrize("use_jit", [False, True])
 def test_bound_relaxation_restores_constraints_and_keeps_earlier_solution(use_jit):
     distance = Parameter(0.03).variable(bounds=(0.01, 0.3))

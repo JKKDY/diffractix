@@ -317,6 +317,38 @@ rather than patching them.
 Cost to watch: inspecting the caller's frame on every construction. It should be
 cheap (one frame lookup) and must not change behaviour or results.
 
+## 19. One system at two fidelities
+
+For simulations too slow to solve interactively (field propagation, higher-order methods),
+describe the same system at two fidelities that share their Parameters: a cheap model
+(Gaussian/paraxial) and the full one. A solution of one is a valid starting point for the
+other, parameter for parameter.
+
+- Build both from one description, so they can't drift apart; elements say what they mean
+  at each fidelity (or that they have no cheap counterpart).
+- A corrected cheap model: goal values of the cheap model plus the difference to the full
+  model at the last full evaluation (`full(x0) - cheap(x0)`, optionally the gradient
+  difference too). Near `x0` the two then agree, so a design solved on the cheap model
+  lands close to the full model's answer. Known as output space mapping or a corrected
+  surrogate.
+- Studio would solve drag frames on the corrected cheap model and run full solves when the
+  user lets go: one warm-started from the dragged state, one from the design before the
+  drag, keeping the better (not a blend: halfway between two optima is generally neither).
+
+## 20. A global solve: several starting points
+
+A slower solve that tries several initial guesses and keeps the best feasible result,
+reporting the others (a design can meet its goals in several ways, and users may want to
+see them). Allowed to take seconds.
+
+- Where the guesses come from is pluggable: random or Latin-hypercube samples within the
+  bounds to start, later a model trained on past designs, an LLM, or a decision model
+  choosing among strategies.
+- Starts are independent, so they can run in parallel (processes natively, workers in
+  Studio), and stop early once a good enough result is found.
+- Results come back ranked, with which are distinct solutions and which are the same
+  optimum found twice.
+
 ## Order of the Studio-related ideas
 
 Suggested order, by what each unlocks in Studio: idea 12 (a graph-backed complex

@@ -42,11 +42,15 @@ def test_dynamic_branch_optimizes_numerical_outputs_eagerly():
 
 
 def test_deferred_returned_node_fails_instead_of_becoming_a_live_graph():
+    from diffractix import Node
+
     position = Parameter(0.5).variable(bounds=(0.1, 2))
     solver = Solver(System(source=Ray(x=position, theta=0, n=1)))
 
     def residual(sim):
-        return position - 1 if sim.final.x > 0 else 10.
+        if isinstance(sim.final.x, Node):
+            raise TypeError("Requires a numerical result.")
+        return position - 1
 
     solver.target(residual)
     with pytest.raises(TypeError, match="numerical.*symbolic Node"):

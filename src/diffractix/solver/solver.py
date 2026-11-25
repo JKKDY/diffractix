@@ -4,13 +4,14 @@ from enum import Enum
 from importlib.util import find_spec
 from math import isfinite
 from numbers import Real
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
+from functools import partial
 from typing import TYPE_CHECKING, Callable
 
 import numpy as np
 from contextlib import contextmanager
 
-from diffractix.backend import _solver_callback_compiler, _TracingError, require, tracing_errors, xp
+from diffractix.backend import _get_backend, _solver_callback_compiler, _TracingError, require, tracing_errors, xp
 
 from diffractix.graph import (
     Node,
@@ -78,6 +79,7 @@ class Optimizer(str, Enum):
     IPOPT = "ipopt"
     SCIPY = "scipy"
     NLOPT = "nlopt"
+    CASADI = "casadi"
 
 
 
@@ -131,6 +133,7 @@ class Solver:
         constraints: Callable
         jacobian: Callable
         constraint_hessian: Callable
+        constraint_shapes: tuple = ()
 
 
     @dataclass
@@ -148,8 +151,12 @@ class Solver:
         graph_constraint_rows:     tuple[range, ...]
         callable_constraint_rows:  tuple[range, ...]
 
+        optimizer_cache:           dict = field(default_factory=dict)
+
         parameter_lower:           np.ndarray | None = None
         parameter_upper:           np.ndarray | None = None
+        reduction_mode:            str | None = None
+        declared_bounds_reduction: tuple[tuple[int, ...], tuple[ConstraintDescriptor, ...]] | None = None
 
         output_indices:            tuple[int, ...] | None = None
         active_descriptors:        tuple[ConstraintDescriptor, ...] | None = None
@@ -157,6 +164,7 @@ class Solver:
         reduced_callbacks:         Solver._Callbacks | None = None
         constraint_lower:          np.ndarray | None = None
         constraint_upper:          np.ndarray | None = None
+        active_rows:               np.ndarray | None = None  # Scalar rows kept for the current solve.
 
 
     #-----------
@@ -314,6 +322,7 @@ class Solver:
         method=None,
         options: dict | None = None,
         feasibility_tolerance: float = DEFAULT_FEASIBILITY_TOLERANCE,
+        constraint_reduction: str = "auto",
         jit: bool = True,
         x0=None,
         x_lower=None,
@@ -327,14 +336,21 @@ class Solver:
             Backend to use. With neither an optimizer nor a method specified,
             uses NLopt's SLSQP when installed and SciPy's SLSQP otherwise.
             A method supplied on its own selects SciPy.
+            ``"casadi"`` requires the CasADi numerical backend and runs a compiled NLP.
         method : str, optional
             Backend-specific algorithm name. Defaults to the backend's own default.
+            For the CasADi optimizer, the default is ``"sqpmethod"`` with ``"qrqp"``.
         options : dict, optional
             Backend-specific options. Automatic NLopt selection defaults to
             ``ftol_rel=1e-12``, ``xtol_rel=1e-12``, and ``maxeval=500``.
         feasibility_tolerance : float, optional
             Maximum constraint or bound violation still counted as feasible. Defaults
             to `DEFAULT_FEASIBILITY_TOLERANCE`.
+        constraint_reduction : str, optional
+            ``"auto"`` (default) reduces constraints for the bounds of this solve.
+            ``"declared"`` reuses a reduction over the Simulation's declared bounds
+            when this solve stays inside them, and uses ``"auto"`` otherwise.
+            ``"off"`` passes all constraints to the optimizer.
         jit : bool, optional
             Whether to just-in-time compile the objective and constraints. Defaults
             to ``True``; pass ``False`` if a deferred callable's control flow cannot
@@ -380,8 +396,12 @@ class Solver:
         except ValueError:
             choices = ", ".join(repr(item.value) for item in Optimizer)
             raise ValueError(f"Unsupported optimizer {optimizer!r}; choose one of {choices}.") from None
+        if constraint_reduction not in ("auto", "declared", "off"):
+            raise ValueError("constraint_reduction must be 'auto', 'declared', or 'off'.")
         if n == 0:
             raise ValueError("Optimization problem must have at least one variable parameter.")
+        if optimizer == Optimizer.CASADI and _get_backend().name != "casadi":
+            raise ValueError("optimizer='casadi' requires the CasADi numerical backend.")
         if isinstance(feasibility_tolerance, bool) or not isinstance(feasibility_tolerance, Real):
             raise TypeError("feasibility_tolerance must be a real numeric scalar.")
         if not isfinite(feasibility_tolerance) or feasibility_tolerance < 0:
@@ -404,16 +424,10 @@ class Solver:
         if isinstance(x0, InitialValues):
             x0 = x0.values
         initial_values = np.array(x0, dtype=float)
-        parameter_lower = np.array(
-            x_lower if x_lower is not None 
-                else [item.lower_bound for item in self.simulation.parameter_data],
-            dtype=float,
-        )
-        parameter_upper = np.array(
-            x_upper if x_upper is not None 
-                else [item.upper_bound for item in self.simulation.parameter_data],
-            dtype=float,
-        )
+        declared_lower = [item.lower_bound for item in self.simulation.parameter_data]
+        declared_upper = [item.upper_bound for item in self.simulation.parameter_data]
+        parameter_lower = np.array(declared_lower if x_lower is None else x_lower, dtype=float)
+        parameter_upper = np.array(declared_upper if x_upper is None else x_upper, dtype=float)
 
 
         for name, values in (("x0", initial_values), ("x_lower", parameter_lower), ("x_upper", parameter_upper)):
@@ -437,13 +451,22 @@ class Solver:
 
         cache = self._cache
 
-        if (
-            not np.array_equal(cache.parameter_lower, parameter_lower)
-            or not np.array_equal(cache.parameter_upper, parameter_upper)
-        ):
-            self._update_reduction(cache, parameter_lower, parameter_upper)
+        self._update_reduction(
+            cache, parameter_lower, parameter_upper,
+            declared_bounds=(declared_lower, declared_upper), mode=constraint_reduction,
+        )
 
         callbacks = cache.reduced_callbacks
+        constraints = callbacks.constraints
+        last_theta = last_values = None
+        active_rows = cache.active_rows
+        if len(active_rows) and not cache.callable_constraints:
+            def constraints(theta):
+                nonlocal last_theta, last_values
+                values = cache.callbacks.constraints(theta)
+                if isinstance(theta, np.ndarray):
+                    last_theta, last_values = theta.copy(), values
+                return values[active_rows]
 
         problem = Problem(
             x0=initial_values,
@@ -453,7 +476,7 @@ class Solver:
             objective=callbacks.objective,
             gradient=callbacks.gradient,
             objective_hessian=callbacks.objective_hessian,
-            constraints=callbacks.constraints,
+            constraints=constraints,
             jacobian=callbacks.jacobian,
             constraint_hessian=callbacks.constraint_hessian,
 
@@ -465,15 +488,28 @@ class Solver:
             case Optimizer.IPOPT: solve = solve_ipopt
             case Optimizer.SCIPY: solve = solve_scipy
             case Optimizer.NLOPT: solve = solve_nlopt
+            case Optimizer.CASADI:
+                from .optimizers.casadi import solve_casadi
+
+                solve = partial(
+                    solve_casadi, cache=cache.optimizer_cache, active_rows=active_rows,
+                    objective=cache.callbacks.objective, constraints=cache.callbacks.constraints,
+                )
 
         scaled_problem = problem.scale()
         with _explain_tracing_errors(jit):
             result = solve(scaled_problem, method=method, options={} if options is None else options)
         result = problem.scaling.unscale(result)
-        result = replace(result, x=_clip_rounding(result.x, problem))
+        final_x = _clip_rounding(result.x, problem)
 
+        constraint_values = None
+        if last_theta is not None and np.array_equal(last_theta, final_x):
+            constraint_values = tuple(
+                np.asarray(last_values[rows.start:rows.stop]).reshape(shape)
+                for rows, shape in zip(cache.graph_constraint_rows, cache.callbacks.constraint_shapes, strict=True)
+            )
         return Solution(
-            result, problem, self.simulation,
+            replace(result, x=final_x), problem, self.simulation,
             objective_program=cache.objective_program,
             objective_descriptors=cache.objective_descriptors,
             callable_objectives=cache.callable_objectives,
@@ -481,6 +517,7 @@ class Solver:
             constraint_descriptors=cache.constraint_descriptors,
             callable_constraints=cache.callable_constraints,
             feasibility_tolerance=feasibility_tolerance,
+            constraint_values=constraint_values,
         )
 
     #-----------------
@@ -703,18 +740,42 @@ class Solver:
             constraints        = checked_constraints,
             jacobian           = compiler.jit(constraint_jacobian) if jit else constraint_jacobian,
             constraint_hessian = compiler.jit(constraint_hessian)  if jit else constraint_hessian,
+            constraint_shapes  = constraint_shapes,
         )
 
         return callbacks, graph_constraint_rows, callable_constraint_rows
 
 
-    def _update_reduction(self, cache, parameter_lower, parameter_upper):
-        cache.output_indices, cache.active_descriptors = reduce_constraints(
-            cache.constraint_program,
-            cache.constraint_descriptors,
-            parameter_lower=parameter_lower,
-            parameter_upper=parameter_upper,
-        )
+    def _update_reduction(self, cache, parameter_lower, parameter_upper, *, declared_bounds, mode):
+        declared_lower, declared_upper = declared_bounds
+        if mode == "declared" and (
+            np.any(parameter_lower < declared_lower) or np.any(parameter_upper > declared_upper)
+        ):
+            mode = "auto"
+
+        if cache.reduction_mode == mode and (
+            mode != "auto" or (
+                np.array_equal(cache.parameter_lower, parameter_lower)
+                and np.array_equal(cache.parameter_upper, parameter_upper)
+            )
+        ):
+            return
+
+        use_declared_bounds = mode == "declared"
+        if mode == "off":
+            reduction = tuple(range(len(cache.constraint_descriptors))), cache.constraint_descriptors
+        elif use_declared_bounds and cache.declared_bounds_reduction is not None:
+            reduction = cache.declared_bounds_reduction
+        else:
+            reduction = reduce_constraints(
+                cache.constraint_program,
+                cache.constraint_descriptors,
+                parameter_lower=np.asarray(declared_lower) if use_declared_bounds else parameter_lower,
+                parameter_upper=np.asarray(declared_upper) if use_declared_bounds else parameter_upper,
+            )
+            if use_declared_bounds:
+                cache.declared_bounds_reduction = reduction
+        cache.output_indices, cache.active_descriptors = reduction
 
         graph_constraints = zip(
             cache.active_descriptors,
@@ -727,6 +788,7 @@ class Solver:
         active_constraints = (*graph_constraints, *callable_constraints)
 
         active_rows = np.array([row for _, rows in active_constraints for row in rows], dtype=int)
+        cache.active_rows = active_rows
         full_size = sum(len(rows) for rows in (*cache.graph_constraint_rows, *cache.callable_constraint_rows))
 
         multiplier_map = xp.asarray(np.eye(full_size)[active_rows])
@@ -752,3 +814,4 @@ class Solver:
 
         cache.parameter_lower = parameter_lower.copy()
         cache.parameter_upper = parameter_upper.copy()
+        cache.reduction_mode = mode

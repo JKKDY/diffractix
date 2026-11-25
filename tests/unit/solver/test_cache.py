@@ -73,6 +73,33 @@ def test_overrides_accept_infinite_and_inclusive_bounds(solver, start, lower, up
     assert [(p.lower_bound, p.upper_bound) for p in solver.simulation.parameter_data] == [(1., 4.)]
 
 
+def test_declared_reduction_survives_pin_changes_and_uses_actual_bounds_outside(solver):
+    parameter = solver.simulation.parameter_data[0].parameter
+    solver.require(parameter <= 2.5)
+
+    with patch.object(solver_module, "reduce_constraints", wraps=solver_module.reduce_constraints) as reduce:
+        for value in (1.5, 3.0):
+            problem = capture_problem(
+                solver, x0=[value], x_lower=[value], x_upper=[value], constraint_reduction="declared",
+            )
+            assert problem.constraint_count == 1
+        assert reduce.call_count == 1
+        np.testing.assert_array_equal(reduce.call_args.kwargs["parameter_upper"], [4.0])
+
+        problem = capture_problem(solver, x_upper=[5.0], constraint_reduction="declared")
+        assert problem.constraint_count == 1
+        np.testing.assert_array_equal(reduce.call_args.kwargs["parameter_upper"], [5.0])
+        assert reduce.call_count == 2
+
+        problem = capture_problem(solver, x_upper=[2.0])
+        assert problem.constraint_count == 0
+        problem = capture_problem(solver, x_upper=[2.0], constraint_reduction="off")
+        assert problem.constraint_count == 1
+        problem = capture_problem(solver, x_upper=[2.0], constraint_reduction="declared")
+        assert problem.constraint_count == 1
+        assert reduce.call_count == 3
+
+
 def test_invalid_later_solve_preserves_cache_and_next_solve_defaults(solver):
     capture_problem(solver)
     cache = solver._cache

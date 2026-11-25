@@ -151,6 +151,10 @@ class Solution:
     feasibility_tolerance : float, optional
         Maximum constraint or bound violation still counted as feasible. Defaults
         to `DEFAULT_FEASIBILITY_TOLERANCE`.
+    constraint_values : tuple of ndarray, optional
+        Constraint program outputs already evaluated at ``result.x``, in
+        ``constraint_descriptors`` order. Defaults to evaluating the program
+        when constraints are first requested.
 
     Raises
     ------
@@ -185,6 +189,7 @@ class Solution:
         constraint_descriptors,
         callable_constraints,
         feasibility_tolerance=DEFAULT_FEASIBILITY_TOLERANCE,
+        constraint_values: tuple[np.ndarray, ...] | None = None,
     ):
         if isinstance(feasibility_tolerance, bool) or not isinstance(feasibility_tolerance, Real):
             raise TypeError("feasibility_tolerance must be a real numeric scalar.")
@@ -203,6 +208,7 @@ class Solution:
         self._objective_program = objective_program
         self._objective_descriptors = tuple(objective_descriptors)
         self._callable_objectives = tuple(callable_objectives)
+        self._constraint_values = constraint_values
 
         self._initial_x = tuple(info.value for info in simulation.parameter_data)
         parameters = tuple(
@@ -332,11 +338,12 @@ class Solution:
         value = np.array(evaluate_ast(quantity, bindings, parameter_values))
         return value.item() if value.ndim == 0 else value
 
-    def _evaluate(self, program, descriptors, callables, description):
-        bindings = {key: resolve_symbol(key, self.run()) for key in program.runtime_symbols}
-        values = program.evaluate(self.x, bindings)
+    def _evaluate(self, program, descriptors, callables, description, *, program_outputs=None):
+        if program_outputs is None:
+            bindings = {key: resolve_symbol(key, self.run()) for key in program.runtime_symbols}
+            program_outputs = program.evaluate(self.x, bindings)
         entries = [(descriptor.position, descriptor, value)
-                   for descriptor, value in zip(descriptors, values, strict=True)]
+                   for descriptor, value in zip(descriptors, program_outputs, strict=True)]
         if callables:
             view = self.run().view()
             for position, entry in callables:
@@ -379,6 +386,7 @@ class Solution:
         for position, entry, value in self._evaluate(
             self.simulation._constraint_program, self.simulation._constraint_descriptors,
             self.simulation._callable_constraints, "Constraint",
+            program_outputs=self._constraint_values,
         ):
             margin = np.minimum(value - entry.lower_bound, entry.upper_bound - value)
             violation = np.maximum(-margin, 0.0)

@@ -105,9 +105,30 @@ optimizer. With automatic NLopt selection, it overrides the default settings
 `ftol_rel=1e-12`, `xtol_rel=1e-12`, and `maxeval=500`.
 `x0`, `x_lower` and `x_upper` override the starting values and bounds for one solve.
 
+With the CasADi numerical backend, `solver.solve(optimizer="casadi")` runs
+the optimization in compiled CasADi code. The default is `sqpmethod` with
+the `qrqp` QP solver and a convexified Hessian for the QP steps. Other installed `nlpsol` plugins, such as
+`method="ipopt"`, can be selected explicitly. `options` takes CasADi's
+`nlpsol` options. The first solve compiles the objective and constraints.
+Later solves with the same method and options reuse it with updated starting
+values and bounds. A reduced constraint row is disabled through its bounds so
+changes in the reduction do not require another compilation.
+
 The objectives and constraints are fixed at the first `solve()`. Later calls can use
 other starting values, bounds or optimizers, but a different problem needs a new
 `Solver`.
+
+By default, `constraint_reduction="auto"` analyzes the bounds of each solve to
+remove redundant constraints. For repeated solves, `constraint_reduction="declared"`
+reuses a reduction computed over the Simulation's original parameter bounds.
+Temporary bounds inside that range, including pinned values, can share this
+reduction. Bounds outside the declared range use per-solve analysis. Use
+`constraint_reduction="off"` to send every constraint to the optimizer.
+
+`solution.feasible` and `solution.violations` are evaluated only on access.
+They include all original constraints, even when the optimizer solved a reduced
+problem. When the optimizer evaluated the full constraint vector at exactly the
+returned point, Diffractix can reuse those values for reporting.
 
 ### Try another starting point
 
