@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from diffractix import Optimizer, Parameter, Ray, RayBundle, Solver, Space, System, ThinLens
+from diffractix import Constraint, GaussianBeam, Optimizer, Parameter, Plane, Ray, RayBundle, Solver, Space, System, ThinLens
 from diffractix.backend import current_backend, xp
 
 
@@ -51,6 +51,42 @@ def test_casadi_optimizer_reuses_the_nlp_when_pin_and_active_rows_change(model, 
     assert released.value(theta) == pytest.approx(0.5)
     assert released.iterations is not None
     assert "sqpmethod" in released.message
+
+
+@pytest.mark.parametrize("options", [None, {"elastic_mode": False}])
+def test_casadi_optimizer_respects_per_solve_bounds_on_a_reused_nlp(model, monkeypatch, options):
+    from unittest.mock import Mock
+
+    from diffractix.solver.optimizers import casadi
+    compile_nlp = Mock(wraps=casadi._compile_nlp)
+    monkeypatch.setattr(casadi, "_compile_nlp", compile_nlp)
+
+    f1 = 0.05
+    f2 = Parameter(0.3, name="f2").variable(bounds=(-np.inf, np.inf))
+    image = Plane(label="Image")
+    wavelength = 532e-9
+    simulation = System(
+        Space(d=f1), ThinLens(f=f1, label="L1"), Space(d=f1 + f2), ThinLens(f=f2, label="L2"),
+        Space(d=f2), image,
+        source=GaussianBeam(q=1j * np.pi * (0.05e-3)**2 / wavelength, wavelength=wavelength),
+    ).build()
+    solver = Solver(simulation)
+    radius = simulation.symbolic[image].after.w
+    solver.require(Constraint((radius - 0.1e-3) / 0.1e-3, lower_bound=0, upper_bound=0, label="radius"))
+
+    for lower in (0.225, 0.2, 0.15):
+        result = solver.solve(optimizer="casadi", x0=[0.3], x_lower=[lower], x_upper=[0.3], options=options)
+        assert lower <= result.x[0] <= 0.3
+        assert result.x[0] == pytest.approx(lower)
+        assert not result.success
+        assert not result.feasible
+        if options is not None:
+            assert "projected onto parameter bounds" in result.message
+
+    result = solver.solve(optimizer="casadi", x0=[0.3], x_lower=[0.05], x_upper=[0.3], options=options)
+    assert result.x[0] == pytest.approx(0.1)
+    assert result.feasible
+    assert compile_nlp.call_count == 1
 
 
 def test_casadi_optimizer_returns_an_unsuccessful_solution_at_its_iteration_limit(model):

@@ -33,6 +33,8 @@ def _compile_nlp(objective, constraints, variable_count, method, options):
             "error_on_fail": False,
             **settings.get("qpsol_options", {}),
         }
+        # An infeasible QP can otherwise hand SQP a step outside the variable box.
+        settings.setdefault("elastic_mode", not settings["qpsol_options"]["error_on_fail"])
 
     (x,), theta = _symbol(0, (variable_count,), np.dtype(float))
     ((cost,), _, _) = _output(objective(theta))

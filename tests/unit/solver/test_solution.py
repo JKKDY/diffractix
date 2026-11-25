@@ -442,6 +442,7 @@ def test_solved_values_are_kept_inside_their_bounds_so_solves_can_be_chained(mon
     simulation, solver, _, distance = focus_model()
     solution = solver.solve(optimizer="scipy")
     assert solution.x[0] == 1.0 == distance.upper_bound
+    assert solution.success
     chained = Solver(solution.simulation).target(value=solution.simulation.symbolic.final.x, target=0.0)
     assert chained.solve(optimizer="scipy").x[0] == 1.0
 
@@ -462,15 +463,20 @@ def test_objectives_and_constraints_compare_by_identity():
     assert objective == objective and objective != Objective(p) and len({objective}) == 1
 
 
-def test_a_real_bound_violation_is_not_clipped_and_is_reported(monkeypatch):
+@pytest.mark.parametrize("optimizer", ["scipy", "nlopt", "ipopt"])
+def test_an_out_of_bounds_result_is_projected_and_reported_as_failure(monkeypatch, optimizer):
     from diffractix.solver import solver as solver_module
 
     def overshooting(problem, method=None, options=None):
-        return SolverResult(problem.x_upper + 0.5, False, 0.0, "stub")
+        return SolverResult(problem.x_upper + 0.5, True, 0.0, "stub")
 
-    monkeypatch.setattr(solver_module, "solve_scipy", overshooting)
+    monkeypatch.setattr(solver_module, f"solve_{optimizer}", overshooting)
     _, solver, _, distance = focus_model()
-    solution = solver.solve(optimizer="scipy")
-    assert solution.x[0] > distance.upper_bound
-    assert not solution.feasible
-    assert isinstance(solution.violations[-1], ParameterBoundResult)
+    solution = solver.solve(optimizer=optimizer)
+    assert solution.x[0] == distance.upper_bound
+    assert not solution.success
+    assert "projected onto parameter bounds" in solution.message
+    assert solution.feasible
+    assert solution.violations == ()
+    assert solution.cost == pytest.approx(sum(entry.cost for entry in solution.objectives))
+    assert solution.cost > 0

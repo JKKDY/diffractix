@@ -30,6 +30,23 @@ class SolverResult:
     raw: Any = None
     scaling: Scaling | None = None
 
+    def _project_bounds(self, problem) -> SolverResult:
+        """Enforce solve-time parameter bounds in physical coordinates."""
+        x = self.x
+        clipped = np.clip(x, problem.x_lower, problem.x_upper)
+        if np.array_equal(x, clipped) or not np.all(np.isfinite(x)):
+            return self
+        scaling = problem.scaling
+        eps = 8 * np.finfo(float).eps
+        rounding = eps * np.abs(scaling.x_center) + eps * scaling.x_scale + eps * np.abs(x)
+        if np.all(np.abs(x - clipped) <= rounding):
+            return replace(self, x=clipped)
+        return replace(
+            self, x=clipped, success=False,
+            cost=float(problem.objective(clipped)) + problem.proximal_cost(clipped),
+            message=f"{self.message} (iterate projected onto parameter bounds)",
+        )
+
 
 DEFAULT_FEASIBILITY_TOLERANCE = 1e-8
 
@@ -136,7 +153,7 @@ class Solution:
     Parameters
     ----------
     result : SolverResult
-        The backend's raw result.
+        The optimizer result in physical coordinates after any bound correction.
     problem : Problem
         The optimization problem in physical coordinates.
     simulation : Simulation
@@ -254,12 +271,12 @@ class Solution:
 
     @property
     def success(self):
-        """Success: whether the optimizer reports successful termination."""
+        """Whether the optimizer converged and the returned point needed no substantial bound correction."""
         return self._result.success
 
     @property
     def message(self):
-        """Message: the termination message from the optimizer."""
+        """Termination message, including any projection onto the parameter bounds."""
         return self._result.message
 
     @property

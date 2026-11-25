@@ -349,6 +349,13 @@ see them). Allowed to take seconds.
 - Results come back ranked, with which are distinct solutions and which are the same
   optimum found twice.
 
+## 21. Black-box inverse design
+
+Describe the outcomes an unknown optical system should produce, then infer the
+properties the black box must have to achieve them. The desired outcomes could
+cover several inputs or operating conditions, so the inferred properties explain
+how the black box behaves across cases rather than matching one measurement.
+
 ## Order of the Studio-related ideas
 
 Suggested order, by what each unlocks in Studio: idea 12 (a graph-backed complex

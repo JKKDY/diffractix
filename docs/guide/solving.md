@@ -124,7 +124,9 @@ Both arguments can change between calls without recompiling the CasADi NLP.
 
 With the CasADi numerical backend, `solver.solve(optimizer="casadi")` runs
 the optimization in compiled CasADi code. The default is `sqpmethod` with
-the `qrqp` QP solver and a convexified Hessian for the QP steps. Other installed `nlpsol` plugins, such as
+the `qrqp` QP solver and a convexified Hessian. If a QP is infeasible, elastic
+mode lets SQP relax the linearized constraints while keeping the parameter
+bounds. Other installed `nlpsol` plugins, such as
 `method="ipopt"`, can be selected explicitly. `options` takes CasADi's
 `nlpsol` options. The first solve compiles the objective and constraints.
 Later solves with the same method and options reuse it with updated starting
@@ -133,6 +135,13 @@ changes in the reduction do not require another compilation.
 If CasADi stops because the SQP step is too small, Diffractix checks feasibility
 and the first-order optimality conditions at the returned point before reporting
 success.
+
+For any optimizer, if the returned iterate leaves the parameter bounds by more
+than rounding error, Diffractix projects it onto the bounds and sets
+`solution.success` to false. The projected point is a candidate you can use as a
+starting point for another solve. Its costs and constraint violations describe
+that point, and `solution.feasible` still tells you whether it satisfies the hard
+constraints.
 
 The objectives and constraints are fixed at the first `solve()`. Later calls can use
 other starting values, bounds or optimizers, but a different problem needs a new
