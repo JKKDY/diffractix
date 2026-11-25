@@ -143,7 +143,8 @@ def import_fake_nlopt_backend(monkeypatch):
     [
         (Optimizer.SCIPY, "solve_scipy", "SLSQP", {"maxiter": 100}, True, {"maxiter": 100}),
         (Optimizer.IPOPT, "solve_ipopt", None, {"maxeval": 100}, True, {"maxeval": 100}),
-        (Optimizer.NLOPT, "solve_nlopt", "LD_SLSQP", {"maxeval": 100}, True, {"maxeval": 100}),
+        (Optimizer.NLOPT, "solve_nlopt", "LD_SLSQP", {"maxeval": 100}, True,
+         {"ftol_rel": 1e-12, "xtol_rel": 1e-12, "maxeval": 100}),
         pytest.param(None, "solve_scipy", None, None, False, {}, id="fallback-scipy"),
         pytest.param(None, "solve_scipy", "trust-constr", None, True, {}, id="implicit-scipy-method"),
         pytest.param(

@@ -101,9 +101,26 @@ Focal length: 66.4 mm
 `method="trust-constr"`, selects SciPy and requires the `diffractix[scipy]` extra.
 Use `optimizer="scipy"`, `optimizer="ipopt"`, or `optimizer="nlopt"` to select an
 optimizer explicitly. `options` passes backend-specific settings to the chosen
-optimizer. With automatic NLopt selection, it overrides the default settings
+optimizer. For NLopt, it overrides the default settings
 `ftol_rel=1e-12`, `xtol_rel=1e-12`, and `maxeval=500`.
 `x0`, `x_lower` and `x_upper` override the starting values and bounds for one solve.
+
+For repeated solves, pass the previous answer as `proximal`, for example
+`solver.solve(x0=previous.x, proximal=previous.x, proximal_weight=0.01)`.
+`x0` is where the optimizer starts. `proximal` is the point it prefers to stay
+near. Both use physical parameter values in theta order.
+
+The optimizer adds `proximal_weight` times squared distance to the reference
+in solver-scaled coordinates. Pinned coordinates are excluded. With only hard
+goals, the penalty prefers the nearest feasible point the optimizer finds.
+With soft goals, it trades goal fit against movement. Start with a small weight
+relative to the soft-goal costs when goal fit matters most. When you provide a
+reference, the weight must be positive and defaults to 1. Omit the reference
+to disable the penalty.
+
+Both arguments can change between calls without recompiling the CasADi NLP.
+`solution.cost` and `solution.objectives` report the original goal costs.
+`solution.proximal_cost` reports the movement penalty separately.
 
 With the CasADi numerical backend, `solver.solve(optimizer="casadi")` runs
 the optimization in compiled CasADi code. The default is `sqpmethod` with
@@ -113,6 +130,9 @@ the `qrqp` QP solver and a convexified Hessian for the QP steps. Other installed
 Later solves with the same method and options reuse it with updated starting
 values and bounds. A reduced constraint row is disabled through its bounds so
 changes in the reduction do not require another compilation.
+If CasADi stops because the SQP step is too small, Diffractix checks feasibility
+and the first-order optimality conditions at the returned point before reporting
+success.
 
 The objectives and constraints are fixed at the first `solve()`. Later calls can use
 other starting values, bounds or optimizers, but a different problem needs a new

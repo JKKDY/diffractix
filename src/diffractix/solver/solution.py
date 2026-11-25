@@ -138,7 +138,7 @@ class Solution:
     result : SolverResult
         The backend's raw result.
     problem : Problem
-        The scaled optimization problem that was solved.
+        The optimization problem in physical coordinates.
     simulation : Simulation
         The `Simulation` the Solver optimized.
     objective_program, constraint_program : Program
@@ -209,6 +209,7 @@ class Solution:
         self._objective_descriptors = tuple(objective_descriptors)
         self._callable_objectives = tuple(callable_objectives)
         self._constraint_values = constraint_values
+        self._proximal_cost = problem.proximal_cost(x) if problem.proximal is not None else None
 
         self._initial_x = tuple(info.value for info in simulation.parameter_data)
         parameters = tuple(
@@ -239,10 +240,17 @@ class Solution:
         `simulation.parameter_data` order."""
         return self._x
 
-    @property
+    @cached_property
     def cost(self):
-        """Cost: the total objective cost at the solution."""
-        return self._result.cost
+        """Cost: the total goal cost at the solution, excluding `proximal_cost`."""
+        if self._proximal_cost is None:
+            return self._result.cost
+        return float(sum(entry.cost for entry in self.objectives))
+
+    @property
+    def proximal_cost(self) -> float:
+        """Weighted squared distance to the reference in solver-scaled coordinates."""
+        return 0.0 if self._proximal_cost is None else self._proximal_cost
 
     @property
     def success(self):

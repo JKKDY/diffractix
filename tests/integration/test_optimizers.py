@@ -65,16 +65,18 @@ def test_real_nlopt_backend_smoke():
 
 
 @pytest.mark.nlopt
-def test_solver_defaults_to_nlopt_when_installed():
+@pytest.mark.parametrize("optimizer", [None, "nlopt"])
+def test_solver_uses_stopping_defaults_for_nlopt(optimizer):
     nlopt = pytest.importorskip("nlopt")
     from diffractix import Parameter, Ray, Solver, System
 
     x = Parameter(0.5).variable(bounds=(0.0, 2.0))
     solver = Solver(System(source=Ray(x=x, theta=0, n=1))).target(x - 1.25)
 
-    solution = solver.solve()
+    solution = solver.solve(optimizer=optimizer)
 
     assert solution.success, solution.message
+    assert 0 < solution.function_evaluations <= 500
     assert solution.value(x) == pytest.approx(1.25)
     assert solution._result.raw["algorithm"] == nlopt.opt(nlopt.LD_SLSQP, 1).get_algorithm_name()
 

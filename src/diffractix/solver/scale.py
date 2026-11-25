@@ -119,6 +119,8 @@ class Scaling:
                 constraint_lower=(obj.constraint_lower - a) / t,
                 constraint_upper=(obj.constraint_upper - a) / t,
                 scaling=self,
+                proximal=obj.proximal,
+                proximal_weight=obj.proximal_weight,
             )
 
         raise TypeError(f"Cannot scale {type(obj).__name__}.")
@@ -172,6 +174,8 @@ class Scaling:
                 constraint_lower=a + t * obj.constraint_lower,
                 constraint_upper=a + t * obj.constraint_upper,
                 scaling=self,
+                proximal=obj.proximal,
+                proximal_weight=obj.proximal_weight,
             )
 
         raise TypeError(f"Cannot unscale {type(obj).__name__}.")

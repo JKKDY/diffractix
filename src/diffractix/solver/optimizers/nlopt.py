@@ -64,6 +64,7 @@ def solve_nlopt(
 ) -> SolverResult:
     """Solve a compiled optimization problem with NLopt."""
 
+    problem = problem.with_proximal()
     options = {} if options is None else dict(options)
 
     constraint_tol = options.pop("constraint_tol", 1e-8)

@@ -58,6 +58,7 @@ def solve_ipopt(
 
     options = {} if options is None else dict(options)
 
+    problem = problem.with_proximal()
     callbacks = _IpoptProblem(problem)
 
     # maybe add sparsity information later

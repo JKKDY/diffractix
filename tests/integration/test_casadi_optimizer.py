@@ -63,6 +63,29 @@ def test_casadi_optimizer_returns_an_unsuccessful_solution_at_its_iteration_limi
     assert "Maximum_Iterations_Exceeded" in result.message
 
 
+@pytest.mark.parametrize("case", ["stationary", "nonstationary", "infeasible"])
+def test_small_sqp_step_is_successful_only_when_kkt_tolerances_are_met(model, case):
+    solver, x, theta = model
+    if case == "stationary":
+        solver.target(x - 1.8)
+        solver.require(theta == 0.5)
+        x0, options = [1.8, 0.5], {"tol_pr": 0.0}
+    elif case == "nonstationary":
+        solver.target(x**2 - 2)
+        solver.require(theta == 0.5)
+        x0, options = [1.0, 0.5], {"min_step_size": 1.0}
+    else:
+        solver.target(x - 1)
+        solver.require(solver.simulation.symbolic.initial.theta**2 == 0.25)
+        x0, options = [1.0, 0.8], {"min_step_size": 1.0}
+
+    result = solver.solve(optimizer="casadi", x0=x0, options=options)
+    assert result._result.raw["return_status"] == "Search_Direction_Becomes_Too_Small"
+    assert result.success is (case == "stationary")
+    assert result.feasible is (case != "infeasible")
+    assert ("KKT tolerances met" in result.message) is (case == "stationary")
+
+
 def test_casadi_optimizer_solves_a_nonlinear_model_without_constraints(model):
     length, radius = 0.1, 0.001
     focal = Parameter(0.15).variable(bounds=(0.05, 0.3))

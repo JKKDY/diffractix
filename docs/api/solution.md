@@ -26,6 +26,10 @@ Inspect the result of [Solver.solve()](solver.md#diffractix.Solver.solve). Check
     options:
       heading_level: 3
 
+::: diffractix.Solution.proximal_cost
+    options:
+      heading_level: 3
+
 ::: diffractix.Solution.iterations
     options:
       heading_level: 3

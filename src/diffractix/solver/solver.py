@@ -327,6 +327,8 @@ class Solver:
         x0=None,
         x_lower=None,
         x_upper=None,
+        proximal=None,
+        proximal_weight: float = 1.0,
     ) -> Solution:
         """Solve the optimization problem.
 
@@ -341,7 +343,7 @@ class Solver:
             Backend-specific algorithm name. Defaults to the backend's own default.
             For the CasADi optimizer, the default is ``"sqpmethod"`` with ``"qrqp"``.
         options : dict, optional
-            Backend-specific options. Automatic NLopt selection defaults to
+            Backend-specific options. NLopt defaults to
             ``ftol_rel=1e-12``, ``xtol_rel=1e-12``, and ``maxeval=500``.
         feasibility_tolerance : float, optional
             Maximum constraint or bound violation still counted as feasible. Defaults
@@ -361,6 +363,14 @@ class Solver:
         x_lower, x_upper : array_like, optional
             `Parameter` bounds, in `simulation.parameter_data` order. Default to the
             `Simulation`'s own bounds.
+        proximal : array_like or InitialValues, optional
+            Reference point in physical units and `simulation.parameter_data`
+            order. Defaults to ``None``, which disables the movement penalty.
+            Fixed coordinates (equal solve-time bounds) do not contribute.
+        proximal_weight : float, optional
+            Multiplier on squared distance to `proximal` in scaled coordinates.
+            Defaults to 1 and must be positive when `proximal` is supplied.
+            Use a small weight relative to soft objectives when preserving their fit matters.
 
         Returns
         -------
@@ -372,11 +382,15 @@ class Solver:
         ValueError
             If `optimizer` is not a supported name, `feasibility_tolerance` is not
             finite or is negative, the model has no variable `Parameter`, the
-            model has no objective or constraint, `x0`, `x_lower` or `x_upper` has
-            the wrong shape, `x0` is non-finite, `x_lower` or `x_upper` is NaN,
+            model has no objective, constraint or active proximal term, `x0`,
+            `x_lower` or `x_upper` has the wrong shape, `x0` is non-finite,
+            `x_lower` or `x_upper` is NaN,
             `x_lower` exceeds `x_upper`, or `x0` lies outside the bounds.
+            Also raised for a non-finite or negative `proximal_weight`, a zero
+            weight with a `proximal` point, or a point with the wrong shape or
+            non-finite coordinates.
         TypeError
-            If `feasibility_tolerance` or `jit` has the wrong type, or the model
+            If `feasibility_tolerance`, `proximal_weight` or `jit` has the wrong type, or the model
             contains something other than `Objective` or `Constraint` instances.
 
         Notes
@@ -389,23 +403,26 @@ class Solver:
             optimizer = Optimizer.SCIPY
             if method is None and find_spec("nlopt") is not None:
                 optimizer = Optimizer.NLOPT
-                options = {"ftol_rel": 1e-12, "xtol_rel": 1e-12, "maxeval": 500, **(options or {})}
 
         try:
             optimizer = Optimizer(optimizer.lower() if isinstance(optimizer, str) else optimizer)
         except ValueError:
             choices = ", ".join(repr(item.value) for item in Optimizer)
             raise ValueError(f"Unsupported optimizer {optimizer!r}; choose one of {choices}.") from None
+        if optimizer == Optimizer.NLOPT:
+            options = {"ftol_rel": 1e-12, "xtol_rel": 1e-12, "maxeval": 500, **(options or {})}
+        if optimizer == Optimizer.CASADI and _get_backend().name != "casadi":
+            raise ValueError("optimizer='casadi' requires the CasADi numerical backend.")
         if constraint_reduction not in ("auto", "declared", "off"):
             raise ValueError("constraint_reduction must be 'auto', 'declared', or 'off'.")
         if n == 0:
             raise ValueError("Optimization problem must have at least one variable parameter.")
-        if optimizer == Optimizer.CASADI and _get_backend().name != "casadi":
-            raise ValueError("optimizer='casadi' requires the CasADi numerical backend.")
         if isinstance(feasibility_tolerance, bool) or not isinstance(feasibility_tolerance, Real):
             raise TypeError("feasibility_tolerance must be a real numeric scalar.")
         if not isfinite(feasibility_tolerance) or feasibility_tolerance < 0:
             raise ValueError("feasibility_tolerance must be finite and non-negative.")
+        if isinstance(proximal, InitialValues):
+            proximal = proximal.values
         if not isinstance(jit, (bool, np.bool_)):
             raise TypeError("jit must be a bool.")
         if not all(isinstance(item, Objective) for item in self._objectives):
@@ -413,7 +430,7 @@ class Solver:
         if not all(isinstance(item, Constraint) for item in self._constraints):
             raise TypeError("Solver constraints must contain only Constraint instances.")
         if not (
-            self._objectives or self._constraints
+            proximal is not None or self._objectives or self._constraints
             or self.simulation._constraint_descriptors or self.simulation._callable_constraints
         ):
             raise ValueError("Optimization problem must have at least one objective or constraint.")
@@ -444,12 +461,10 @@ class Solver:
 
 
         jit = bool(jit)
-        if self._cache is None or self._cache_jit != jit:
-            with _explain_tracing_errors(jit):
-                self._cache = self._build_cache(jit, initial_values)
-            self._cache_jit = jit
-
         cache = self._cache
+        if cache is None or self._cache_jit != jit:
+            with _explain_tracing_errors(jit):
+                cache = self._build_cache(jit, initial_values)
 
         self._update_reduction(
             cache, parameter_lower, parameter_upper,
@@ -481,8 +496,11 @@ class Solver:
             constraint_hessian=callbacks.constraint_hessian,
 
             constraint_lower=cache.constraint_lower,
-            constraint_upper=cache.constraint_upper
+            constraint_upper=cache.constraint_upper,
+            proximal=proximal,
+            proximal_weight=proximal_weight,
         )
+        self._cache, self._cache_jit = cache, jit
 
         match optimizer:
             case Optimizer.IPOPT: solve = solve_ipopt
@@ -494,6 +512,7 @@ class Solver:
                 solve = partial(
                     solve_casadi, cache=cache.optimizer_cache, active_rows=active_rows,
                     objective=cache.callbacks.objective, constraints=cache.callbacks.constraints,
+                    feasibility_tolerance=feasibility_tolerance,
                 )
 
         scaled_problem = problem.scale()

@@ -23,6 +23,7 @@ def solve_scipy(
             f"Unsupported SciPy method {method!r}. Choose one of {sorted(SUPPORTED_METHODS)!r}."
         )
 
+    problem = problem.with_proximal()
     constraints = []
     if problem.constraint_count:
         equality = problem.constraint_lower == problem.constraint_upper

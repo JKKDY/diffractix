@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 from diffractix.solver import SolverResult
@@ -45,6 +47,18 @@ def test_unconstrained_scaling_preserves_empty_callbacks_and_result_round_trip()
     assert restored_result.cost == result.cost
     assert restored_result.success == result.success
     assert restored_result.message == result.message
+
+
+def test_proximal_reporting_uses_scaled_distance():
+    problem = replace(
+        make_problem(), x0=np.array([0.0]), x_lower=np.array([-1e308]),
+        x_upper=np.array([1e308]), objective=lambda x: 0.0, scaling=None,
+        proximal=np.array([-1e308]),
+    )
+    scaled = problem.scale().with_proximal()
+
+    assert scaled.objective(np.array([1.0])) == 4.0
+    assert problem.proximal_cost(np.array([1e308])) == 4.0
 
 
 def test_variable_constraint_scaling_initialization_and_zero_sensitivity():

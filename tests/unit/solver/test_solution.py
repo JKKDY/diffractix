@@ -1,7 +1,5 @@
 """Solution reporting uses complete compiled models in physical coordinates."""
 
-from types import SimpleNamespace
-
 import numpy as np
 import pytest
 
@@ -10,6 +8,7 @@ from diffractix.graph import InputNode, Literal, Symbol, UnresolvedInputError
 from diffractix.simulation.result import ResultSymbolKey, ResultSymbolKind
 from diffractix.backend import xp
 from diffractix.solver import Solution, SolverResult, DEFAULT_FEASIBILITY_TOLERANCE
+from diffractix.solver.problem import Problem
 from diffractix.solver.solution import ParameterBoundResult
 
 
@@ -21,9 +20,18 @@ def make_solution(*, solver=None, x=(2.,), lower=None, upper=None,
     cache = solver._build_cache(False, solver.simulation.initial_values.values)
     result = SolverResult(np.array(x), success, 7.5, "stopped",
                           iterations=iterations, function_evaluations=function_evaluations)
-    problem = SimpleNamespace(
+    problem = Problem(
+        x0=solver.simulation.initial_values.values,
         x_lower=np.full(len(solver.simulation.parameter_data), -np.inf) if lower is None else np.array(lower),
         x_upper=np.full(len(solver.simulation.parameter_data), np.inf) if upper is None else np.array(upper),
+        objective=cache.callbacks.objective,
+        gradient=cache.callbacks.gradient,
+        objective_hessian=cache.callbacks.objective_hessian,
+        constraints=cache.callbacks.constraints,
+        jacobian=cache.callbacks.jacobian,
+        constraint_hessian=cache.callbacks.constraint_hessian,
+        constraint_lower=np.empty(0),
+        constraint_upper=np.empty(0),
     )
     solution = Solution(
         result, problem, solver.simulation,
